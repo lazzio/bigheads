@@ -1,3 +1,3 @@
 # bigheads
 
-[Edit in StackBlitz next generation editor ⚡️](https://stackblitz.com/~/github.com/lazzio/bigheads)
+Mobile app made with Expo
