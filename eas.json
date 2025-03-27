@@ -12,9 +12,6 @@
       "environment": "preview",
       "distribution": "internal",
       "android": {
-        "gradleProperties": {
-          "kotlinVersion": "1.9.25"
-        },
         "buildType": "apk"
       },
       "env": {
