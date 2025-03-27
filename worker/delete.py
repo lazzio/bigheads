@@ -47,7 +47,7 @@ def get_date_days_ago(days_ago: int) -> str:
 def get_old_episodes(supabase: Client) -> List[Dict[str, Any]]:
     """Retrieves episodes older than days_ago ago from the database."""
     date_days_ago: str = get_date_days_ago(days_ago)
-    response = supabase.table("episodes").select("uuid, mp3_link").lt("publication_date", date_days_ago).execute()
+    response = supabase.table("episodes").select("id, mp3_link").lt("publication_date", date_days_ago).execute()
     return response.data
 
 
