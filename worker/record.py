@@ -1,6 +1,6 @@
 import requests
 import requests_random_user_agent
-import re, json
+import re
 import xmltodict
 from bs4 import BeautifulSoup
 import os
@@ -8,6 +8,7 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 from urllib.parse import urlparse
 from google.cloud import storage
+from pathlib import Path
 
 load_dotenv()
 
@@ -235,6 +236,13 @@ def generate_episodes_data(data_src: dict, nb_to_get: int) -> list:
             if not origin_mp3_link.endswith(".mp3"):
                 raise Exception("MP3 link not found")
 
+            mp3_filename = extract_mp3_filename_from_url(origin_mp3_link)
+            if not mp3_filename:
+                raise Exception("MP3 filename not found")
+            if Path(mp3_filename).exists():
+                print(f"Le fichier {mp3_filename} existe déjà. Pas de téléchargement nécessaire.")
+                continue
+            
             episode["original_mp3_link"] = origin_mp3_link
             episode["duration"] = ep["itunes:duration"]
 

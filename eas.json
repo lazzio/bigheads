@@ -7,6 +7,12 @@
     "base": {
       "node": "22.12.0"
     },
+    "development": {
+      "extends": "base",
+      "environment": "development",
+      "developmentClient": true,
+      "distribution": "internal"
+    },
     "preview": {
       "extends": "base",
       "environment": "preview",

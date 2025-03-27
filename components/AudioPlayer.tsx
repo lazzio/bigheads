@@ -3,6 +3,17 @@ import { View, Text, TouchableOpacity, StyleSheet, Platform, Pressable } from 'r
 import { Audio } from 'expo-av';
 import { Play, Pause, SkipBack, SkipForward, Moon, Rewind, FastForward, Forward as Forward10 } from 'lucide-react-native';
 import { Episode } from '../types/episode';
+import Animated, { 
+  useAnimatedStyle, 
+  withSpring, 
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
+import { 
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView 
+} from 'react-native-gesture-handler';
 
 interface AudioPlayerProps {
   episode: Episode;
@@ -23,6 +34,10 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const progressBarRef = useRef<View>(null);
+  
+  // Animation values
+  const knobScale = useSharedValue(0);
+  const isPressed = useSharedValue(false);
 
   useEffect(() => {
     return () => {
@@ -44,6 +59,41 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       setupNativeAudio();
     }
   }, [episode]);
+
+  const knobAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: knobScale.value }],
+      opacity: knobScale.value,
+    };
+  });
+
+  const gesture = Gesture.Pan()
+    .onBegin(() => {
+      isPressed.value = true;
+      knobScale.value = withSpring(1);
+    })
+    .onUpdate((e) => {
+      if (!progressBarRef.current) return;
+      progressBarRef.current.measure((x, y, width, height, pageX, pageY) => {
+        const touchX = e.absoluteX - pageX;
+        const percentage = Math.max(0, Math.min(touchX / width, 1));
+        const newPosition = percentage * duration;
+        
+        setPosition(newPosition);
+        setIsSeeking(true);
+        
+        if (Platform.OS === 'web' && audioRef.current) {
+          audioRef.current.currentTime = newPosition / 1000;
+        } else if (sound) {
+          sound.setPositionAsync(newPosition);
+        }
+      });
+    })
+    .onFinalize(() => {
+      isPressed.value = false;
+      knobScale.value = withTiming(0);
+      setIsSeeking(false);
+    });
 
   function setupWebAudio() {
     try {
@@ -182,28 +232,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     await handleSeek(600); // 600 seconds = 10 minutes
   };
 
-  const handleProgressBarPress = async (event: any) => {
-    try {
-      if (!progressBarRef.current) return;
-
-      progressBarRef.current.measure((x, y, width, height, pageX, pageY) => {
-        const touchX = event.nativeEvent.pageX - pageX;
-        const percentage = Math.max(0, Math.min(touchX / width, 1));
-        const newPosition = percentage * duration;
-
-        setPosition(newPosition);
-        
-        if (Platform.OS === 'web' && audioRef.current) {
-          audioRef.current.currentTime = newPosition / 1000;
-        } else if (sound) {
-          sound.setPositionAsync(newPosition);
-        }
-      });
-    } catch (err) {
-      console.error('Error seeking:', err);
-    }
-  };
-
   const formatTime = (milliseconds: number) => {
     const totalSeconds = Math.floor(milliseconds / 1000);
     const minutes = Math.floor(totalSeconds / 60);
@@ -236,19 +264,27 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
   const progress = duration > 0 ? (position / duration) * 100 : 0;
 
   return (
-    <View style={styles.container}>
+    <GestureHandlerRootView style={styles.container}>
       <Text style={styles.title}>{episode.title}</Text>
       <Text style={styles.description}>{episode.description}</Text>
       
       <View style={styles.progressContainer}>
-        <Pressable 
-          ref={progressBarRef}
-          onPress={handleProgressBarPress}
-          style={styles.progressBarContainer}
-        >
-          <View style={styles.progressBackground} />
-          <View style={[styles.progressBar, { width: `${progress}%` }]} />
-        </Pressable>
+        <GestureDetector gesture={gesture}>
+          <View 
+            ref={progressBarRef}
+            style={styles.progressBarContainer}
+          >
+            <View style={styles.progressBackground} />
+            <View style={[styles.progressBar, { width: `${progress}%` }]} />
+            <Animated.View 
+              style={[
+                styles.progressKnob,
+                { left: `${progress}%` },
+                knobAnimatedStyle
+              ]} 
+            />
+          </View>
+        </GestureDetector>
         <View style={styles.timeContainer}>
           <Text style={styles.timeText}>{formatTime(position)}</Text>
           <Text style={styles.timeText}>-{formatTime(Math.max(0, duration - position))}</Text>
@@ -298,7 +334,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
           {sleepTimerActive ? 'Minuteur actif' : 'Arrêt après cet épisode'}
         </Text>
       </TouchableOpacity>
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
@@ -342,11 +378,11 @@ const styles = StyleSheet.create({
   },
   progressBarContainer: {
     width: '100%',
-    height: 4,
+    height: 8,
     backgroundColor: '#333',
-    borderRadius: 2,
-    overflow: 'hidden',
-    marginBottom: 8,
+    borderRadius: 4,
+    overflow: 'visible',
+    position: 'relative',
   },
   progressBackground: {
     position: 'absolute',
@@ -357,11 +393,24 @@ const styles = StyleSheet.create({
   progressBar: {
     height: '100%',
     backgroundColor: '#0ea5e9',
+    borderRadius: 4,
+  },
+  progressKnob: {
+    position: 'absolute',
+    width: 20,
+    height: 20,
+    backgroundColor: '#0ea5e9',
+    borderRadius: 10,
+    top: '50%',
+    marginTop: -10,
+    marginLeft: -10,
+    transform: [{ scale: 0 }],
   },
   timeContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
+    marginTop: 8,
   },
   timeText: {
     color: '#fff',

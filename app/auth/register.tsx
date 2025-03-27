@@ -88,24 +88,6 @@ export default function RegisterScreen() {
         </Text>
       </TouchableOpacity>
 
-      <View style={styles.divider}>
-        <View style={styles.dividerLine} />
-        <Text style={styles.dividerText}>ou</Text>
-        <View style={styles.dividerLine} />
-      </View>
-
-      <TouchableOpacity
-        style={styles.googleButton}
-        onPress={handleGoogleSignIn}
-        disabled={loading}>
-        <Image
-          source={{ uri: 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg' }}
-          style={styles.googleIcon}
-          resizeMode="contain"
-        />
-        <Text style={styles.googleButtonText}>Continuer avec Google</Text>
-      </TouchableOpacity>
-
       <Link href="/auth/login" style={styles.link}>
         <Text style={styles.linkText}>Déjà un compte ? Se connecter</Text>
       </Link>
@@ -161,42 +143,5 @@ const styles = StyleSheet.create({
     color: '#ef4444',
     marginBottom: 10,
     textAlign: 'center',
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 20,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#333',
-  },
-  dividerText: {
-    color: '#666',
-    paddingHorizontal: 10,
-  },
-  googleButton: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    padding: 12,
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 1,
-  },
-  googleIcon: {
-    width: 18,
-    height: 18,
-    marginRight: 24,
-  },
-  googleButtonText: {
-    color: '#757575',
-    fontSize: 15,
-    fontWeight: '500',
-  },
+  }
 });
