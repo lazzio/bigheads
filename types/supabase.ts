@@ -5,28 +5,28 @@ export interface Database {
         Row: {
           id: string;
           title: string;
-          audio_url: string;
-          publication_date: string;
-          source: string;
-          source_url: string;
+          description: string;
+          originalMp3Link: string;
+          mp3Link: string;
+          duration: string;
           created_at: string;
         };
         Insert: {
           id?: string;
           title: string;
-          audio_url: string;
-          publication_date: string;
-          source: string;
-          source_url: string;
+          description: string;
+          originalMp3Link: string;
+          mp3Link: string;
+          duration: string;
           created_at?: string;
         };
         Update: {
           id?: string;
           title?: string;
-          audio_url?: string;
-          publication_date?: string;
-          source?: string;
-          source_url?: string;
+          description?: string;
+          originalMp3Link?: string;
+          mp3Link?: string;
+          duration?: string;
           created_at?: string;
         };
       };

@@ -11,24 +11,39 @@ export default function RootLayout() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
+      // Only redirect if we're not already on the correct screen
       const inAuthGroup = segments[0] === 'auth';
 
       if (session && inAuthGroup) {
+        router.replace('/(tabs)');
+      } else if (!session && !inAuthGroup) {
+        // Clear any existing session data to prevent token errors
+        supabase.auth.signOut().then(() => {
+          router.replace('/auth/login');
+        });
+      }
+    }).catch(() => {
+      // If there's any error getting the session, sign out and redirect to login
+      supabase.auth.signOut().then(() => {
+        router.replace('/auth/login');
+      });
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      const inAuthGroup = segments[0] === 'auth';
+
+      if (event === 'SIGNED_OUT') {
+        router.replace('/auth/login');
+      } else if (session && inAuthGroup) {
         router.replace('/(tabs)');
       } else if (!session && !inAuthGroup) {
         router.replace('/auth/login');
       }
     });
 
-    supabase.auth.onAuthStateChange((event, session) => {
-      const inAuthGroup = segments[0] === 'auth';
-
-      if (session && inAuthGroup) {
-        router.replace('/(tabs)');
-      } else if (!session && !inAuthGroup) {
-        router.replace('/auth/login');
-      }
-    });
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [segments]);
 
   return (

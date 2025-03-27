@@ -26,17 +26,17 @@ export default function EpisodesScreen() {
       const { data, error } = await supabase
         .from('episodes')
         .select('*')
-        .order('publication_date', { ascending: false });
+        .order('created_at', { ascending: true });
 
       if (error) throw error;
 
       const formattedEpisodes: Episode[] = (data as SupabaseEpisode[]).map(episode => ({
         id: episode.id,
         title: episode.title,
-        audioUrl: episode.audio_url,
-        publicationDate: episode.publication_date,
-        source: episode.source,
-        sourceUrl: episode.source_url
+        description: episode.description,
+        originalMp3Link: episode.originalMp3Link,
+        mp3Link: episode.mp3Link,
+        duration: episode.duration
       }));
 
       setEpisodes(formattedEpisodes);
@@ -61,14 +61,6 @@ export default function EpisodesScreen() {
       console.error('Error fetching watched episodes:', err);
     }
   }
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('fr-FR', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-  };
 
   if (loading) {
     return (
@@ -104,9 +96,10 @@ export default function EpisodesScreen() {
           >
             <View style={styles.episodeInfo}>
               <Text style={styles.episodeTitle}>{item.title}</Text>
-              <Text style={styles.episodeDate}>
-                {formatDate(item.publicationDate)}
+              <Text style={styles.episodeDescription} numberOfLines={2}>
+                {item.description}
               </Text>
+              <Text style={styles.episodeDuration}>{item.duration}</Text>
             </View>
             {watchedEpisodes.has(item.id) ? (
               <CheckCircle2 size={24} color="#0ea5e9" />
@@ -149,9 +142,14 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginBottom: 4,
   },
-  episodeDate: {
+  episodeDescription: {
     fontSize: 14,
     color: '#888',
+    marginBottom: 4,
+  },
+  episodeDuration: {
+    fontSize: 12,
+    color: '#666',
   },
   loadingText: {
     color: '#fff',

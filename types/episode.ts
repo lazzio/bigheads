@@ -1,8 +1,8 @@
 export interface Episode {
   id: string;
   title: string;
-  audioUrl: string;
-  publicationDate: string;
-  source: string;
-  sourceUrl: string;
+  description: string;
+  originalMp3Link: string;
+  mp3Link: string;
+  duration: string;
 }

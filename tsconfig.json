@@ -2,6 +2,10 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "jsx": "react-native",
     "paths": {
       "@/*": ["./*"]
     }
@@ -11,6 +15,12 @@
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts",
-    "nativewind-env.d.ts"
+    "nativewind-env.d.ts",
+    "tsconfig.json"
+  ],
+  "exclude": [
+    "node_modules",
+    "ios",
+    "android",
   ]
 }

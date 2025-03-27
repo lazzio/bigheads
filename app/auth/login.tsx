@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -9,6 +11,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const redirectUrl = Linking.createURL('/(tabs)');
 
   async function handleLogin() {
     try {
@@ -30,6 +33,48 @@ export default function LoginScreen() {
     }
   }
 
+  async function handleGoogleSignIn() {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+          redirectTo: redirectUrl,
+          skipBrowserRedirect: Platform.OS !== 'web',
+        },
+      });
+
+      if (error) throw error;
+
+      if (Platform.OS !== 'web' && data?.url) {
+        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+        if (result.type === 'success') {
+          const { url } = result;
+          const { access_token, refresh_token } = Object.fromEntries(
+            url.split('#')[1].split('&').map(param => param.split('='))
+          );
+          
+          await supabase.auth.setSession({
+            access_token,
+            refresh_token,
+          });
+          
+          router.replace('/(tabs)');
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Connexion</Text>
@@ -39,6 +84,7 @@ export default function LoginScreen() {
       <TextInput
         style={styles.input}
         placeholder="Email"
+        placeholderTextColor="#666"
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
@@ -48,6 +94,7 @@ export default function LoginScreen() {
       <TextInput
         style={styles.input}
         placeholder="Mot de passe"
+        placeholderTextColor="#666"
         value={password}
         onChangeText={setPassword}
         secureTextEntry
@@ -60,6 +107,24 @@ export default function LoginScreen() {
         <Text style={styles.buttonText}>
           {loading ? 'Connexion...' : 'Se connecter'}
         </Text>
+      </TouchableOpacity>
+
+      <View style={styles.divider}>
+        <View style={styles.dividerLine} />
+        <Text style={styles.dividerText}>ou</Text>
+        <View style={styles.dividerLine} />
+      </View>
+
+      <TouchableOpacity
+        style={styles.googleButton}
+        onPress={handleGoogleSignIn}
+        disabled={loading}>
+        <Image
+          source={{ uri: 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg' }}
+          style={styles.googleIcon}
+          resizeMode="contain"
+        />
+        <Text style={styles.googleButtonText}>Continuer avec Google</Text>
       </TouchableOpacity>
 
       <Link href="/auth/register" style={styles.link}>
@@ -117,5 +182,42 @@ const styles = StyleSheet.create({
     color: '#ef4444',
     marginBottom: 10,
     textAlign: 'center',
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#333',
+  },
+  dividerText: {
+    color: '#666',
+    paddingHorizontal: 10,
+  },
+  googleButton: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1,
+  },
+  googleIcon: {
+    width: 18,
+    height: 18,
+    marginRight: 24,
+  },
+  googleButtonText: {
+    color: '#757575',
+    fontSize: 15,
+    fontWeight: '500',
   },
 });
