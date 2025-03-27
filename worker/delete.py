@@ -93,7 +93,8 @@ def delete_watched_episodes(supabase: Client, episode_uuids: List[str]) -> None:
 def extract_filename_from_url(url: str) -> str:
     """Extracts filename from the mp3 URL."""
     parsed_url = urlparse(url)
-    return PurePath.name(parsed_url.path)
+    path = PurePath(parsed_url.path)
+    return path.name
 
 
 def delete_mp3_files(mp3_links: List[Optional[str]]) -> None:

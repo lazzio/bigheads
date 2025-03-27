@@ -9,7 +9,7 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 from urllib.parse import urlparse
 from google.cloud import storage
-from pathlib import Path, PurePath
+from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 
@@ -267,7 +267,7 @@ class PodcastFetcher:
             clean_url = url.split('?', 1)[0]
             
             # Extract filename
-            filename = PurePath.name(urlparse(clean_url).path)
+            filename = os.path.basename(urlparse(clean_url).path)
             if not filename.endswith(".mp3"):
                 logger.warning(f"URL doesn't point to MP3 file: {url}")
                 return None
