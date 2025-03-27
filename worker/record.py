@@ -13,9 +13,37 @@ from pathlib import Path, PurePath
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+"""
+Logger Configuration
+"""
+# Get the script name for the log file
+script_name = os.path.basename(__file__)
+log_file = os.path.splitext(script_name)[0] + '.log'
+
+# Create logger
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Remove any existing handlers
+if logger.hasHandlers():
+    logger.handlers.clear()
+
+# Create handlers
+file_handler = logging.FileHandler(log_file)
+console_handler = logging.StreamHandler()
+
+# Set log level for handlers
+file_handler.setLevel(logging.INFO)
+console_handler.setLevel(logging.INFO)
+
+# Create formatter and add to handlers
+formatter = logging.Formatter("%(asctime)s - %(levelname)s: %(message)s")
+file_handler.setFormatter(formatter)
+console_handler.setFormatter(formatter)
+
+# Add handlers to logger
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 
 # Load environment variables
 load_dotenv()

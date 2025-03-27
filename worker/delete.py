@@ -9,11 +9,36 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 
 """
-Logger
+Logger Configuration
 """
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-logger = logging.getLogger(__name__)
+# Get the script name for the log file
+script_name = os.path.basename(__file__)
+log_file = os.path.splitext(script_name)[0] + '.log'
 
+# Create logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Remove any existing handlers
+if logger.hasHandlers():
+    logger.handlers.clear()
+
+# Create handlers
+file_handler = logging.FileHandler(log_file)
+console_handler = logging.StreamHandler()
+
+# Set log level for handlers
+file_handler.setLevel(logging.INFO)
+console_handler.setLevel(logging.INFO)
+
+# Create formatter and add to handlers
+formatter = logging.Formatter("%(asctime)s - %(levelname)s: %(message)s")
+file_handler.setFormatter(formatter)
+console_handler.setFormatter(formatter)
+
+# Add handlers to logger
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -49,6 +74,13 @@ def get_old_episodes(supabase: Client) -> List[Dict[str, Any]]:
     date_days_ago: str = get_date_days_ago(days_ago)
     response = supabase.table("episodes").select("id, mp3_link").lt("publication_date", date_days_ago).execute()
     return response.data
+
+
+def delete_episodes(supabase: Client, episode_uuids: List[str]) -> None:
+    """Deletes entries from episodes table for the given episode UUIDs."""
+    for uuid in episode_uuids:
+        supabase.table("episodes").delete().eq("episode_id", uuid).execute()
+        logger.info(f"Deleted episodes records for episode {uuid}")
 
 
 def delete_watched_episodes(supabase: Client, episode_uuids: List[str]) -> None:
@@ -109,6 +141,9 @@ def clean_old_episodes() -> None:
     
     # Delete watched episodes records
     delete_watched_episodes(supabase, episode_uuids)
+    
+    # Delete episodes records
+    delete_episodes(supabase, episode_uuids)
     
     # Delete MP3 files from storage
     delete_mp3_files(mp3_links)
