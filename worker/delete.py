@@ -79,7 +79,7 @@ def get_old_episodes(supabase: Client) -> List[Dict[str, Any]]:
 def delete_episodes(supabase: Client, episode_uuids: List[str]) -> None:
     """Deletes entries from episodes table for the given episode UUIDs."""
     for uuid in episode_uuids:
-        supabase.table("episodes").delete().eq("episode_id", uuid).execute()
+        supabase.table("episodes").delete().eq("id", uuid).execute()
         logger.info(f"Deleted episodes records for episode {uuid}")
 
 
