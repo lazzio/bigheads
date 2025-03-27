@@ -1,8 +1,19 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, Pressable } from 'react-native';
 import { Audio } from 'expo-av';
-import { Play, Pause, SkipBack, SkipForward, Moon, Rewind, FastForward } from 'lucide-react-native';
+import { Play, Pause, SkipBack, SkipForward, Moon, Rewind, FastForward, Forward as Forward10 } from 'lucide-react-native';
 import { Episode } from '../types/episode';
+import Animated, { 
+  useAnimatedStyle, 
+  withSpring, 
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
+import { 
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView 
+} from 'react-native-gesture-handler';
 
 interface AudioPlayerProps {
   episode: Episode;
@@ -17,52 +28,157 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
   const [sleepTimerActive, setSleepTimerActive] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isSeeking, setIsSeeking] = useState(false);
+  
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const progressBarRef = useRef<View>(null);
+  
+  // Animation values
+  const knobScale = useSharedValue(0);
+  const isPressed = useSharedValue(false);
 
   useEffect(() => {
-    return sound
-      ? () => {
-          sound.unloadAsync();
+    return () => {
+      if (Platform.OS === 'web') {
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.src = '';
         }
-      : undefined;
-  }, [sound]);
+      } else if (sound) {
+        sound.unloadAsync();
+      }
+    };
+  }, []);
 
-  const formatTime = (milliseconds: number) => {
-    const totalSeconds = Math.floor(milliseconds / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      setupWebAudio();
+    } else {
+      setupNativeAudio();
+    }
+  }, [episode]);
 
-  async function loadAudio() {
+  const knobAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: knobScale.value }],
+      opacity: knobScale.value,
+    };
+  });
+
+  const gesture = Gesture.Pan()
+    .onBegin(() => {
+      isPressed.value = true;
+      knobScale.value = withSpring(1);
+    })
+    .onUpdate((e) => {
+      if (!progressBarRef.current) return;
+      progressBarRef.current.measure((x, y, width, height, pageX, pageY) => {
+        const touchX = e.absoluteX - pageX;
+        const percentage = Math.max(0, Math.min(touchX / width, 1));
+        const newPosition = percentage * duration;
+        
+        setPosition(newPosition);
+        setIsSeeking(true);
+        
+        if (Platform.OS === 'web' && audioRef.current) {
+          audioRef.current.currentTime = newPosition / 1000;
+        } else if (sound) {
+          sound.setPositionAsync(newPosition);
+        }
+      });
+    })
+    .onFinalize(() => {
+      isPressed.value = false;
+      knobScale.value = withTiming(0);
+      setIsSeeking(false);
+    });
+
+  function setupWebAudio() {
     try {
+      setIsLoading(true);
+      setError(null);
+
+      const audio = new window.Audio(episode.mp3Link);
+      audioRef.current = audio;
+      
+      audio.addEventListener('loadedmetadata', () => {
+        setDuration(audio.duration * 1000);
+        setIsLoading(false);
+      });
+
+      audio.addEventListener('timeupdate', () => {
+        if (!isSeeking) {
+          setPosition(audio.currentTime * 1000);
+        }
+      });
+
+      audio.addEventListener('ended', () => {
+        setIsPlaying(false);
+        onComplete?.();
+        if (sleepTimerActive) {
+          handleSleepTimer();
+        }
+      });
+
+      audio.addEventListener('error', () => {
+        setError('Erreur lors du chargement de l\'audio');
+        setIsLoading(false);
+      });
+
+      audio.load();
+    } catch (err) {
+      setError('Erreur lors du chargement de l\'audio');
+      console.error('Error setting up web audio:', err);
+      setIsLoading(false);
+    }
+  }
+
+  async function setupNativeAudio() {
+    try {
+      setIsLoading(true);
+      setError(null);
+
       if (sound) {
         await sound.unloadAsync();
       }
+
+      await Audio.setAudioModeAsync({
+        staysActiveInBackground: true,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+      });
+
       const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: episode.audioUrl },
+        { uri: episode.mp3Link },
         { shouldPlay: false },
         onPlaybackStatusUpdate
       );
+
       setSound(newSound);
+
       const status = await newSound.getStatusAsync();
       if (status.isLoaded) {
         setDuration(status.durationMillis || 0);
       }
-    } catch (error) {
-      console.error('Error loading audio:', error);
+    } catch (err) {
+      setError('Erreur lors du chargement de l\'audio');
+      console.error('Error loading native audio:', err);
+    } finally {
+      setIsLoading(false);
     }
   }
 
-  useEffect(() => {
-    loadAudio();
-  }, [episode]);
-
   const onPlaybackStatusUpdate = (status: any) => {
     if (status.isLoaded) {
-      setPosition(status.positionMillis);
+      if (!isSeeking) {
+        setPosition(status.positionMillis);
+      }
       setIsPlaying(status.isPlaying);
 
       if (status.didJustFinish) {
+        setIsPlaying(false);
         onComplete?.();
         if (sleepTimerActive) {
           handleSleepTimer();
@@ -72,41 +188,107 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
   };
 
   const handlePlayPause = async () => {
-    if (!sound) return;
-
-    if (isPlaying) {
-      await sound.pauseAsync();
-    } else {
-      await sound.playAsync();
+    try {
+      if (Platform.OS === 'web' && audioRef.current) {
+        if (isPlaying) {
+          audioRef.current.pause();
+        } else {
+          await audioRef.current.play();
+        }
+        setIsPlaying(!isPlaying);
+      } else if (sound) {
+        if (isPlaying) {
+          await sound.pauseAsync();
+        } else {
+          await sound.playAsync();
+        }
+      }
+    } catch (err) {
+      setError('Erreur lors de la lecture');
+      console.error('Error playing/pausing:', err);
     }
   };
 
-  const handleSleepTimer = async () => {
-    if (sleepTimerActive) {
-      setSleepTimerActive(false);
-    } else {
-      setSleepTimerActive(true);
-      if (!isPlaying) {
-        await handlePlayPause();
-      }
-    }
+  const handleSleepTimer = () => {
+    setSleepTimerActive(!sleepTimerActive);
   };
 
   const handleSeek = async (seconds: number) => {
-    if (!sound) return;
-    
-    const newPosition = Math.max(0, Math.min(position + seconds * 1000, duration));
-    await sound.setPositionAsync(newPosition);
+    try {
+      if (Platform.OS === 'web' && audioRef.current) {
+        const newTime = Math.max(0, Math.min(audioRef.current.currentTime + seconds, audioRef.current.duration));
+        audioRef.current.currentTime = newTime;
+      } else if (sound) {
+        const newPosition = Math.max(0, Math.min(position + seconds * 1000, duration));
+        await sound.setPositionAsync(newPosition);
+      }
+    } catch (err) {
+      setError('Erreur lors de la recherche');
+      console.error('Error seeking:', err);
+    }
   };
 
+  const handleSkip10Minutes = async () => {
+    await handleSeek(600); // 600 seconds = 10 minutes
+  };
+
+  const formatTime = (milliseconds: number) => {
+    const totalSeconds = Math.floor(milliseconds / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  if (isLoading) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.loadingText}>Chargement de l'audio...</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity 
+          style={styles.retryButton} 
+          onPress={Platform.OS === 'web' ? setupWebAudio : setupNativeAudio}
+        >
+          <Text style={styles.retryText}>Réessayer</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const progress = duration > 0 ? (position / duration) * 100 : 0;
+
   return (
-    <View style={styles.container}>
+    <GestureHandlerRootView style={styles.container}>
       <Text style={styles.title}>{episode.title}</Text>
-      <Text style={styles.source}>{episode.source}</Text>
+      <Text style={styles.description}>{episode.description}</Text>
       
-      <View style={styles.timeContainer}>
-        <Text style={styles.timeText}>{formatTime(position)}</Text>
-        <Text style={styles.timeText}>-{formatTime(Math.max(0, duration - position))}</Text>
+      <View style={styles.progressContainer}>
+        <GestureDetector gesture={gesture}>
+          <View 
+            ref={progressBarRef}
+            style={styles.progressBarContainer}
+          >
+            <View style={styles.progressBackground} />
+            <View style={[styles.progressBar, { width: `${progress}%` }]} />
+            <Animated.View 
+              style={[
+                styles.progressKnob,
+                { left: `${progress}%` },
+                knobAnimatedStyle
+              ]} 
+            />
+          </View>
+        </GestureDetector>
+        <View style={styles.timeContainer}>
+          <Text style={styles.timeText}>{formatTime(position)}</Text>
+          <Text style={styles.timeText}>-{formatTime(Math.max(0, duration - position))}</Text>
+        </View>
       </View>
 
       <View style={styles.controls}>
@@ -136,6 +318,14 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       </View>
 
       <TouchableOpacity
+        onPress={handleSkip10Minutes}
+        style={styles.skipButton}
+      >
+        <Forward10 size={20} color="#fff" />
+        <Text style={styles.skipText}>Passer les auditeurs</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
         onPress={handleSleepTimer}
         style={[styles.sleepButton, sleepTimerActive && styles.sleepButtonActive]}
       >
@@ -144,7 +334,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
           {sleepTimerActive ? 'Minuteur actif' : 'Arrêt après cet épisode'}
         </Text>
       </TouchableOpacity>
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
@@ -176,16 +366,51 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 8,
   },
-  source: {
+  description: {
     fontSize: 16,
     color: '#888',
     marginBottom: 20,
+    textAlign: 'center',
+  },
+  progressContainer: {
+    width: '100%',
+    marginBottom: 20,
+  },
+  progressBarContainer: {
+    width: '100%',
+    height: 8,
+    backgroundColor: '#333',
+    borderRadius: 4,
+    overflow: 'visible',
+    position: 'relative',
+  },
+  progressBackground: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#333',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#0ea5e9',
+    borderRadius: 4,
+  },
+  progressKnob: {
+    position: 'absolute',
+    width: 20,
+    height: 20,
+    backgroundColor: '#0ea5e9',
+    borderRadius: 10,
+    top: '50%',
+    marginTop: -10,
+    marginLeft: -10,
+    transform: [{ scale: 0 }],
   },
   timeContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
-    marginBottom: 20,
+    marginTop: 8,
   },
   timeText: {
     color: '#fff',
@@ -208,6 +433,19 @@ const styles = StyleSheet.create({
     padding: 15,
     marginHorizontal: 12,
   },
+  skipButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#333',
+    padding: 12,
+    borderRadius: 20,
+    marginBottom: 12,
+    gap: 8,
+  },
+  skipText: {
+    color: '#fff',
+    fontSize: 14,
+  },
   sleepButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -227,5 +465,24 @@ const styles = StyleSheet.create({
   },
   sleepTextActive: {
     color: '#fff',
+  },
+  loadingText: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  errorText: {
+    color: '#ef4444',
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: '#333',
+    padding: 12,
+    borderRadius: 8,
+  },
+  retryText: {
+    color: '#fff',
+    fontSize: 14,
   },
 });

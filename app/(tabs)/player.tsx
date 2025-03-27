@@ -33,17 +33,17 @@ export default function PlayerScreen() {
       const { data, error } = await supabase
         .from('episodes')
         .select('*')
-        .order('publication_date', { ascending: false });
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
 
       const formattedEpisodes: Episode[] = (data as SupabaseEpisode[]).map(episode => ({
         id: episode.id,
         title: episode.title,
-        audioUrl: episode.audio_url,
-        publicationDate: episode.publication_date,
-        source: episode.source,
-        sourceUrl: episode.source_url
+        description: episode.description,
+        originalMp3Link: episode.original_mp3_link,
+        mp3Link: episode.mp3_link,
+        duration: episode.duration
       }));
 
       setEpisodes(formattedEpisodes);
