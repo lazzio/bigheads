@@ -37,3 +37,6 @@ yarn-error.*
 worker/*.log
 worker/downloads/*
 !worker/downloads/.gitkeep
+
+# Service account file
+worker/sa.json
