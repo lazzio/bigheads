@@ -4,6 +4,7 @@ import { Link, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
+import { storage } from '../../lib/storage';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -38,38 +39,65 @@ export default function LoginScreen() {
       setLoading(true);
       setError(null);
 
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
+      // Clear any existing auth data before starting new auth flow
+      await storage.removeItem('supabase.auth.token');
+      await storage.removeItem('supabase.auth.refreshToken');
+      await storage.removeItem('supabase.auth.user');
+
+      if (Platform.OS === 'web') {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: window.location.origin,
+            queryParams: {
+              access_type: 'offline',
+              prompt: 'consent',
+            },
           },
-          redirectTo: redirectUrl,
-          skipBrowserRedirect: Platform.OS !== 'web',
-        },
-      });
+        });
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: redirectUrl,
+            queryParams: {
+              access_type: 'offline',
+              prompt: 'consent',
+            },
+            skipBrowserRedirect: true,
+          },
+        });
 
-      if (error) throw error;
+        if (error) throw error;
 
-      if (Platform.OS !== 'web' && data?.url) {
-        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
-        if (result.type === 'success') {
-          const { url } = result;
-          const { access_token, refresh_token } = Object.fromEntries(
-            url.split('#')[1].split('&').map(param => param.split('='))
-          );
-          
-          await supabase.auth.setSession({
-            access_token,
-            refresh_token,
-          });
-          
-          router.replace('/(tabs)');
+        if (data?.url) {
+          const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+
+          if (result.type === 'success') {
+            const { url } = result;
+            const params = new URLSearchParams(url.split('#')[1]);
+            const access_token = params.get('access_token');
+            const refresh_token = params.get('refresh_token');
+
+            if (access_token && refresh_token) {
+              const { error: sessionError } = await supabase.auth.setSession({
+                access_token,
+                refresh_token,
+              });
+
+              if (sessionError) throw sessionError;
+              router.replace('/(tabs)');
+            }
+          }
         }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue');
+      // Clear any partial auth data on error
+      await storage.removeItem('supabase.auth.token');
+      await storage.removeItem('supabase.auth.refreshToken');
+      await storage.removeItem('supabase.auth.user');
     } finally {
       setLoading(false);
     }
@@ -120,7 +148,7 @@ export default function LoginScreen() {
         onPress={handleGoogleSignIn}
         disabled={loading}>
         <Image
-          source={{ uri: 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg' }}
+          source={{ uri: '../assets/images/google.svg' }}
           style={styles.googleIcon}
           resizeMode="contain"
         />

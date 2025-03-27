@@ -342,7 +342,7 @@ const styles = StyleSheet.create({
   },
   progressBarContainer: {
     width: '100%',
-    height: 4,
+    height: 8,
     backgroundColor: '#333',
     borderRadius: 2,
     overflow: 'hidden',
