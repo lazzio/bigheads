@@ -38,12 +38,12 @@ export default function LoginScreen() {
     try {
       setLoading(true);
       setError(null);
-
-      // Clear any existing auth data before starting new auth flow
+  
+      // Clear any existing auth data
       await storage.removeItem('supabase.auth.token');
       await storage.removeItem('supabase.auth.refreshToken');
       await storage.removeItem('supabase.auth.user');
-
+  
       if (Platform.OS === 'web') {
         const { error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
@@ -57,6 +57,12 @@ export default function LoginScreen() {
         });
         if (error) throw error;
       } else {
+        // Pour mobile
+        const redirectUrl = Linking.createURL('/(tabs)');
+        
+        // Log pour déboguer - utile pour configurer votre client OAuth2
+        console.log("Redirect URL:", redirectUrl);
+        
         const { data, error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
@@ -68,33 +74,62 @@ export default function LoginScreen() {
             skipBrowserRedirect: true,
           },
         });
-
+  
         if (error) throw error;
-
+  
         if (data?.url) {
+          // Ouvrir le navigateur pour l'authentification
           const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
-
+  
           if (result.type === 'success') {
+            // Extraire les paramètres de l'URL
             const { url } = result;
-            const params = new URLSearchParams(url.split('#')[1]);
-            const access_token = params.get('access_token');
-            const refresh_token = params.get('refresh_token');
-
-            if (access_token && refresh_token) {
-              const { error: sessionError } = await supabase.auth.setSession({
-                access_token,
-                refresh_token,
-              });
-
+            
+            // Gérer correctement l'URL de redirection
+            // L'URL peut contenir soit un fragment (#) soit des paramètres de requête (?)
+            let params;
+            if (url.includes('#')) {
+              params = new URLSearchParams(url.split('#')[1]);
+            } else if (url.includes('?')) {
+              params = new URLSearchParams(url.split('?')[1]);
+            }
+            
+            // Vérifier si nous avons un code d'autorisation (pour flow PKCE)
+            const code = params?.get('code');
+            
+            if (code) {
+              // Pour le flux PKCE, on utilise exchangeCodeForSession
+              const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
+              
               if (sessionError) throw sessionError;
-              router.replace('/(tabs)');
+              
+              if (sessionData?.session) {
+                router.replace('/(tabs)');
+              }
+            } else {
+              // Fallback à l'ancienne méthode (implicite) avec access_token et refresh_token
+              const access_token = params?.get('access_token');
+              const refresh_token = params?.get('refresh_token');
+              
+              if (access_token && refresh_token) {
+                const { error: sessionError } = await supabase.auth.setSession({
+                  access_token,
+                  refresh_token,
+                });
+                
+                if (sessionError) throw sessionError;
+                router.replace('/(tabs)');
+              } else {
+                throw new Error("Tokens non trouvés dans l'URL de redirection");
+              }
             }
           }
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue');
-      // Clear any partial auth data on error
+      console.error("Erreur d'authentification:", err);
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue lors de la connexion');
+      // Nettoyer les données d'authentification partielles
       await storage.removeItem('supabase.auth.token');
       await storage.removeItem('supabase.auth.refreshToken');
       await storage.removeItem('supabase.auth.user');
