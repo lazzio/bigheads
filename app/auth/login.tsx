@@ -183,7 +183,7 @@ export default function LoginScreen() {
         onPress={handleGoogleSignIn}
         disabled={loading}>
         <Image
-          source={{ uri: '../assets/images/google.svg' }}
+          source={require('../../assets/images/google.svg')}
           style={styles.googleIcon}
           resizeMode="contain"
         />
@@ -263,8 +263,8 @@ const styles = StyleSheet.create({
   googleButton: {
     flexDirection: 'row',
     backgroundColor: '#fff',
-    padding: 12,
-    borderRadius: 4,
+    padding: 15,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 1,
