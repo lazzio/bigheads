@@ -4,366 +4,422 @@ import re
 import xmltodict
 from bs4 import BeautifulSoup
 import os
+import logging
 from supabase import create_client, Client
 from dotenv import load_dotenv
 from urllib.parse import urlparse
 from google.cloud import storage
 from pathlib import Path
 from datetime import datetime
+from typing import List, Dict, Optional, Any
 
+"""
+Logger Configuration
+"""
+# Get the script name for the log file
+script_name = os.path.basename(__file__)
+log_file = os.path.splitext(script_name)[0] + '.log'
+
+# Create logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Remove any existing handlers
+if logger.hasHandlers():
+    logger.handlers.clear()
+
+# Create handlers
+file_handler = logging.FileHandler(log_file)
+console_handler = logging.StreamHandler()
+
+# Set log level for handlers
+file_handler.setLevel(logging.INFO)
+console_handler.setLevel(logging.INFO)
+
+# Create formatter and add to handlers
+formatter = logging.Formatter("%(asctime)s - %(levelname)s: %(message)s")
+file_handler.setFormatter(formatter)
+console_handler.setFormatter(formatter)
+
+# Add handlers to logger
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
+
+# Load environment variables
 load_dotenv()
 
-# Supabase credentials
-supabase_url: str = os.environ.get("SUPABASE_URL")
-supabase_key: str  = os.environ.get("SUPABASE_KEY")
-# GCP informations
-gcp_sa: str = os.environ.get("GCP_SERVICE_ACCOUNT_PATH")
-gcp_public_base_url = os.environ.get("GCP_PUBLIC_BASE_URL")
+# Environment variables
+SUPABASE_URL: str = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY: str = os.environ.get("SUPABASE_KEY", "")
+GCP_SA_PATH: str = os.environ.get("GCP_SERVICE_ACCOUNT_PATH", "")
+GCP_PUBLIC_BASE_URL: str = os.environ.get("GCP_PUBLIC_BASE_URL", "")
+AUDIO_SOURCE_URL: str = os.environ.get("AUDIO_SOURCE_URL", "")
+DOWNLOAD_DIR: str = "./downloads"
+NB_EPISODES_TO_KEEP: int = int(os.environ.get("NB_EPISODES_TO_KEEP", 15))
+
+# Ensure download directory exists
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 
-class MySupabase:
-    def __init__(self):
-        # Init Supabase client
-        self.supabase: Client = create_client(supabase_url, supabase_key)
-
-
-    def record_in_supabase_pg(self, episode: dict, table_name: str):
-        try:
-            if "mp3_link" not in episode:
-                    print(f"Warning: The 'mp3_link' key is missing in the episode: {episode}. This item will be ignored.")
-                    
-            mp3_lien_a_verifier = episode["mp3_link"]
+class StorageManager:
+    """Manages cloud storage operations."""
     
-            # Check if an entry with the same publication_date already exists
-            response_verification = MySupabase().supabase.table("episodes").select("publication_date").eq("publication_date", episode["publication_date"]).execute()
-    
-            if len(response_verification.data) > 0:
-                print(f"Episode with publication date '{episode['publication_date']}' already in database. Skipping.")
-            else:
-                # No existing entry, proceed with the record
-                response_insertion = self.supabase.table(table_name).insert(episode).execute()
-                print(response_insertion)
-        except Exception as e:
-            raise Exception(e)
-
-  
-    def upload_gcs(self, local_filename: str, bucket: str, folder_dest: str, filename:str) -> bool:
-        """Upload a file to a Google Cloud Storage bucket.
-    
+    def __init__(self, service_account_path: str):
+        """Initialize with GCP service account details.
+        
         Args:
-            local_filename (str): The complete path to the local file to upload.
-            bucket (str): The name of the Google Cloud Storage bucket.
-            filename (str): The name under which to save the file in the GCS bucket.
-        """    
-        # Initialize the Storage client with credentials
-        client = storage.Client.from_service_account_json(gcp_sa)
+            service_account_path: Path to GCP service account JSON file
+        """
+        self.service_account_path = service_account_path
+        self.client = storage.Client.from_service_account_json(service_account_path)
     
-        # Get the bucket
-        bucket = client.bucket(bucket)
-    
-        # Create a Blob object (represents the file in the bucket)
-        dest: str = f"{folder_dest}/{filename}"
-        blob = bucket.blob(dest)
-    
-        try:
-            # Upload the file from the local path
-            blob.upload_from_filename(local_filename)
-    
-            print(f"The file '{local_filename}' has been successfully uploaded to 'gs://{bucket}/{filename}'")
-            return True
-    
-        except Exception as e:
-            print(f"An error occurred during the upload to GCS: {e}")
-            raise Exception(e)
-            return False
-
-  
-    def get_public_url(self, nom_bucket_gcs, nom_fichier_gcs) -> str:
-        """Makes a Google Cloud Storage object publicly accessible and returns its public link.
-    
+    def upload_file(self, local_path: str, bucket_name: str, destination_folder: str, filename: str) -> bool:
+        """Upload a file to Google Cloud Storage.
+        
         Args:
-            nom_bucket_gcs (str): The name of the Google Cloud Storage bucket.
-            nom_fichier_gcs (str): The name of the file in the GCS bucket.
-    
+            local_path: Path to local file
+            bucket_name: GCS bucket name
+            destination_folder: Target folder in bucket
+            filename: Target filename
+            
         Returns:
-            str: The public link of the object, or None in case of error.
+            bool: Success status
         """
         try:
-            # Initialiser le client Storage avec les informations d'identification
-            client = storage.Client.from_service_account_json(gcp_sa)
-
-            storage_client = client
-            bucket = storage_client.bucket(nom_bucket_gcs)
-            blob = bucket.blob(nom_fichier_gcs)
-    
-            # Rendre l'objet publiquement accessible
-            try:
-              blob.make_public()
-            except:
-              pass
-    
-            # Construire le lien public
-            public_url = blob.public_url
-    
-            print(f"The object 'gs://{nom_bucket_gcs}/{nom_fichier_gcs}' is now public. Link: {public_url}")
-            return public_url
-    
+            bucket = self.client.bucket(bucket_name)
+            destination = f"{destination_folder}/{filename}"
+            blob = bucket.blob(destination)
+            
+            blob.upload_from_filename(local_path)
+            logger.info(f"Uploaded '{local_path}' to 'gs://{bucket_name}/{destination}'")
+            return True
         except Exception as e:
-            raise Exception(e)
+            logger.error(f"Failed to upload to GCS: {e}")
+            return False
+    
+    def get_public_url(self, bucket_name: str, file_path: str) -> str:
+        """Make a file publicly accessible and return its URL.
+        
+        Args:
+            bucket_name: GCS bucket name
+            file_path: Path to file in bucket
+            
+        Returns:
+            str: Public URL for the file
+        """
+        try:
+            bucket = self.client.bucket(bucket_name)
+            blob = bucket.blob(file_path)
+            
+            try:
+                blob.make_public()
+            except Exception:
+                logger.warning(f"File may already be public: {file_path}")
+                
+            public_url = blob.public_url
+            logger.info(f"Public URL for 'gs://{bucket_name}/{file_path}': {public_url}")
+            return public_url
+        except Exception as e:
+            logger.error(f"Failed to get public URL: {e}")
+            raise
 
 
-def extract_rss_link(url_podcast_addict):
-    """
-    Récupère le lien du flux RSS à partir d'une page Podcast Addict
+class DatabaseManager:
+    """Manages database operations."""
+    
+    def __init__(self, url: str, key: str):
+        """Initialize with Supabase credentials.
+        
+        Args:
+            url: Supabase URL
+            key: Supabase API key
+        """
+        self.client: Client = create_client(url, key)
+    
+    def episode_exists(self, publication_date: str) -> bool:
+        """Check if an episode with given date exists.
+        
+        Args:
+            publication_date: Episode publication date
+            
+        Returns:
+            bool: True if episode exists
+        """
+        response = self.client.table("episodes").select("publication_date").eq("publication_date", publication_date).execute()
+        return len(response.data) > 0
+    
+    def episode_exists_by_url(self, original_url: str) -> bool:
+        """Check if an episode with given original URL exists.
+        
+        Args:
+            original_url: Original MP3 URL
+            
+        Returns:
+            bool: True if episode exists
+        """
+        response = self.client.table("episodes").select("mp3_link").eq("original_mp3_link", original_url).execute()
+        return len(response.data) > 0
+    
+    def save_episode(self, episode: Dict[str, Any], table_name: str = "episodes") -> bool:
+        """Save episode data to database.
+        
+        Args:
+            episode: Episode data dictionary
+            table_name: Target table name
+            
+        Returns:
+            bool: Success status
+        """
+        try:
+            if "mp3_link" not in episode:
+                logger.warning(f"Missing 'mp3_link' in episode data: {episode}")
+                return False
+                
+            if self.episode_exists(episode["publication_date"]):
+                logger.info(f"Episode with date '{episode['publication_date']}' already exists")
+                return False
+                
+            response = self.client.table(table_name).insert(episode).execute()
+            logger.info(f"Saved episode: {episode['title']}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save episode: {e}")
+            return False
 
-    Args:
-        url_podcast_addict: URL de la page Podcast Addict
 
-    Returns:
-        str: URL du flux RSS ou None si non trouvé
-    """
-    try:
-        response = requests.get(url_podcast_addict)
-
-        if response.status_code != 200:
-            print(f"Error accessing the page: {response.status_code}")
+class PodcastFetcher:
+    """Handles podcast feed fetching and processing."""
+    
+    def extract_rss_link(self, podcast_url: str) -> Optional[str]:
+        """Extract RSS feed URL from podcast page.
+        
+        Args:
+            podcast_url: Podcast page URL
+            
+        Returns:
+            str or None: RSS feed URL if found
+        """
+        try:            
+            response = requests.get(podcast_url)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Try finding RSS link in anchor tags
+            links = soup.find_all('a', href=re.compile(r'https://feeds\.audiomeans\.fr/feed'))
+            if links:
+                return links[0]['href']
+            
+            # Try meta tag
+            meta_rss = soup.find('meta', {'name': 'rss'})
+            if meta_rss and 'content' in meta_rss.attrs:
+                return meta_rss['content']
+                
+            logger.warning("RSS link not found on page")
             return None
-
-        soup = BeautifulSoup(response.text, 'html.parser')
-
-        liens = soup.find_all('a', href=re.compile(r'https://feeds\.audiomeans\.fr/feed'))
-
-        if liens:
-            # Return firt found link
-            return liens[0]['href']
-
-        # Alternative
-        meta_rss = soup.find('meta', {'name': 'rss'})
-        if meta_rss and 'content' in meta_rss.attrs:
-            return meta_rss['content']
-
-        print("RSS link not found on the page.")
-        return None
-
-    except Exception as e:
-        print(f"Error extracting the RSS link: {e}")
-        return None
-
-
-def get_xml_content(url: str) -> str:
-    response = requests.get(url)
-
-    if response.status_code != 200:
-        print("Error getting XML RSS page")
-        return None
-
-    return response.text
-
-
-def convert_xml_to_dict(xml_src: str) -> dict:
-    try:
-        return xmltodict.parse(xml_src)
-    except Exception as e:
-        print(f"Error: {e}")
-
-
-def extract_mp3_filename_from_url(url: str) -> str:
-        # Extract mp3 file name from url
-        parsed_url = urlparse(url)
-        path = parsed_url.path
-        filename = os.path.basename(path)
-
-        return filename
-
-
-def download_mp3_file(url_mp3):
-    """Télécharge un fichier MP3 depuis une URL et l'enregistre localement
-    avec le même nom que celui présent dans l'URL.
-
-    Args:
-        url_mp3 (str): L'URL du fichier MP3 à télécharger.
-    """
-    try:
-        response = requests.get(url_mp3, stream=True)
-        response.raise_for_status()
-
-        filename: str = extract_mp3_filename_from_url(url_mp3)
-
-        if not filename.endswith(".mp3"):
-            print("Warning: The URL does not seem to point directly to an .mp3 file.")
-            return
-
-        with open(f"./download/{filename}", 'wb') as local_file:
-            for chunk in response.iter_content(chunk_size=8192):
-                local_file.write(chunk)
-
-        print(f"The MP3 file has been successfully downloaded with the name: {filename}")
-
-        return filename
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error downloading the file: {e}")
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+        except Exception as e:
+            logger.error(f"Failed to extract RSS link: {e}")
+            return None
+    
+    def get_feed_content(self, feed_url: str) -> Optional[str]:
+        """Fetch RSS feed content.
+        
+        Args:
+            feed_url: RSS feed URL
+            
+        Returns:
+            str or None: XML content if successful
+        """
+        try:
+            response = requests.get(feed_url)
+            response.raise_for_status()
+            return response.text
+        except Exception as e:
+            logger.error(f"Failed to fetch RSS feed: {e}")
+            return None
+    
+    def parse_feed(self, xml_content: str) -> Optional[Dict]:
+        """Parse XML feed to dictionary.
+        
+        Args:
+            xml_content: XML feed content
+            
+        Returns:
+            dict or None: Parsed feed data
+        """
+        try:
+            return xmltodict.parse(xml_content)
+        except Exception as e:
+            logger.error(f"Failed to parse XML: {e}")
+            return None
+    
+    def download_mp3(self, url: str) -> Optional[str]:
+        """Download MP3 file from URL.
+        
+        Args:
+            url: MP3 file URL
+            
+        Returns:
+            str or None: Local filename if successful
+        """
+        try:
+            # Clean URL by removing query parameters
+            clean_url = url.split('?', 1)[0]
+            
+            # Extract filename
+            filename = os.path.basename(urlparse(clean_url).path)
+            if not filename.endswith(".mp3"):
+                logger.warning(f"URL doesn't point to MP3 file: {url}")
+                return None
+                
+            local_path = os.path.join(DOWNLOAD_DIR, filename)
+            
+            # Check if already downloaded
+            if Path.exists(local_path):
+                logger.info(f"File already exists: {filename}")
+                return filename
+                            
+            response = requests.get(clean_url, stream=True)
+            response.raise_for_status()
+            
+            with open(local_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+                    
+            logger.info(f"Downloaded MP3: {filename}")
+            return filename
+        except Exception as e:
+            logger.error(f"Failed to download MP3: {e}")
+            return None
 
 
 def convert_pubdate_format(pub_date_str: str) -> str:
-    """
-    Converts a publication date string from 'Wed, 26 Mar 2025 17:02:00 GMT' format
-    to 'YYYY-mm-dd' format.
+    """Convert publication date to ISO format.
     
     Args:
-        pub_date_str (str): The publication date in RSS format
-    
+        pub_date_str: Date string in RSS format
+        
     Returns:
-        str: The date in YYYY-mm-dd format
+        str: Date in YYYY-MM-DD format
     """
     try:
-        # Parse the date string
+        # Try standard format with timezone
         date_obj = datetime.strptime(pub_date_str, '%a, %d %b %Y %H:%M:%S %Z')
-        # Format to YYYY-mm-dd
         return date_obj.strftime('%Y-%m-%d')
     except ValueError:
-        # Try alternative format without timezone
         try:
+            # Try without timezone
             date_obj = datetime.strptime(pub_date_str.split(' GMT')[0], '%a, %d %b %Y %H:%M:%S')
             return date_obj.strftime('%Y-%m-%d')
         except Exception as e:
-            print(f"Error converting date format: {e}")
-            return pub_date_str  # Return original if conversion fails
-    except Exception as e:
-        print(f"Error converting date format: {e}")
-        return pub_date_str  # Return original if conversion fails
+            logger.warning(f"Could not parse date '{pub_date_str}': {e}")
+            return pub_date_str
 
 
-def generate_episodes_data(data_src: dict, nb_to_get: int) -> list:
+def process_episodes(feed_data: Dict, max_episodes: int, db_manager: DatabaseManager, 
+                     storage_manager: StorageManager) -> List[Dict]:
+    """Process episodes from feed data.
+    
+    Args:
+        feed_data: Parsed feed dictionary
+        max_episodes: Maximum number of episodes to process
+        db_manager: Database manager instance
+        storage_manager: Storage manager instance
+        
+    Returns:
+        list: Processed episodes
     """
-    [
-      {
-        "title": "",
-        "original_mp3_link": "",
-        "duration": "",
-        "publication_date": "",
-        "desription": "",
-        "mp3_link": ""
-      },
-    ]
-    """
+    processed_episodes = []
+    fetcher = PodcastFetcher()
+    
     try:
-        episodes: list = []
-        base = data_src["rss"]["channel"]["item"]
-
-        i = 0
-        for ep in base:
-            if i == nb_to_get:
-              break
-
-            episode: dict = {}
-
-            episode["title"] = ep["title"]
+        items = feed_data["rss"]["channel"]["item"]
+        count = 0
+        
+        for item in items:
+            if count >= max_episodes:
+                break
+                
+            # Extract basic episode data
+            episode = {
+                "title": item["title"],
+                "publication_date": convert_pubdate_format(item["pubDate"]),
+                "duration": item["itunes:duration"],
+                "description": item["description"].split('\n', 1)[0]
+            }
             
-            # Convert publication date to desired format
-            original_date = ep["pubDate"]
-            episode["publication_date"] = convert_pubdate_format(original_date)
-
-            origin_mp3_link = ep["enclosure"]["@url"].split('?', 1)[0]
-
-            if not origin_mp3_link.endswith(".mp3"):
-                raise Exception("MP3 link not found")
-
-            mp3_filename = extract_mp3_filename_from_url(origin_mp3_link)
+            # Get original MP3 URL
+            original_mp3_url = item["enclosure"]["@url"].split('?', 1)[0]
+            if not original_mp3_url.endswith(".mp3"):
+                logger.warning(f"Not an MP3 URL: {original_mp3_url}")
+                continue
+                
+            episode["original_mp3_link"] = original_mp3_url
+            
+            # Skip if already in database
+            if db_manager.episode_exists(episode["publication_date"]) or db_manager.episode_exists_by_url(original_mp3_url):
+                logger.info(f"Episode already exists: {episode['title']}")
+                count += 1
+                continue
+                
+            # Download MP3
+            mp3_filename = fetcher.download_mp3(original_mp3_url)
             if not mp3_filename:
-                raise Exception("MP3 filename not found")
-            
-            # Check if publication_date exists already in the database
-            response_verification = MySupabase().supabase.table("episodes").select("publication_date").eq("publication_date", episode["publication_date"]).execute()
-            if len(response_verification.data) > 0:
-                # Already in the database, skip this episode
-                print(f"Episode with publication date '{episode['publication_date']}' already in database. Skipping.")
-                i += 1
+                logger.warning(f"Failed to download MP3 for: {episode['title']}")
                 continue
-            
-            # Check if file exists in the download directory
-            if Path(f"./download/{mp3_filename}").exists():
-                print(f"The file {mp3_filename} already exists. No download needed.")
                 
-                # Create episode data for existing file too
-                episode["original_mp3_link"] = origin_mp3_link
-                episode["duration"] = ep["itunes:duration"]
+            # Upload to cloud storage
+            local_path = os.path.join(DOWNLOAD_DIR, mp3_filename)
+            if storage_manager.upload_file(local_path, "bigheads", "mp3", mp3_filename):
+                # Get public URL
+                public_url = storage_manager.get_public_url("bigheads", f"mp3/{mp3_filename}")
+                episode["mp3_link"] = public_url
                 
-                description = ep["description"].split('\n', 1)[0]
-                if not description:
-                    raise Exception("Description not found")
-                
-                episode["description"] = description
-                
-                # Use existing file, no need to download
-                supa = MySupabase()
-                # Check if it's already uploaded by checking if it exists in Supabase
-                try:
-                    response_verification = supa.supabase.table("episodes").select("mp3_link").eq("original_mp3_link", origin_mp3_link).execute()
-                    if len(response_verification.data) > 0:
-                        # Already in the database, skip this episode
-                        print(f"Episode with original MP3 link '{origin_mp3_link}' already in database. Skipping.")
-                        i += 1
-                        continue
+                # Save to database
+                if db_manager.save_episode(episode):
+                    processed_episodes.append(episode)
                     
-                    # Upload existing file if not already uploaded
-                    supa.upload_gcs(f"./download/{mp3_filename}", "bigheads", "mp3", mp3_filename)
-                    pub_link = supa.get_public_url("bigheads", f"mp3/{mp3_filename}")
-                    episode["mp3_link"] = pub_link
-                    
-                    # Record episode in Supabase postgres
-                    supa.record_in_supabase_pg(episode, "episodes")
-                    episodes.append(episode)
-                except Exception as e:
-                    print(f"Error checking database: {e}")
-                
-                i += 1
-                continue
+            count += 1
             
-            episode["original_mp3_link"] = origin_mp3_link
-            episode["duration"] = ep["itunes:duration"]
-
-            description = ep["description"].split('\n', 1)[0]
-            if not description:
-                raise Exception("Decsription not found")
-
-            episode["description"] = description
-
-            filename: str = download_mp3_file(episode["original_mp3_link"])
-
-            if not filename:
-                raise Exception("MP3 file not downloaded")
-              
-            supa = MySupabase()
-            supa.upload_gcs(f"./downloads/{filename}", "bigheads", "mp3", filename)
-            pub_link = supa.get_public_url("bigheads", f"mp3/{filename}")
-            episode["mp3_link"] = pub_link
-
-            # Record episode in Supabase postgres
-            supa.record_in_supabase_pg(episode, "episodes")
-            episodes.append(episode)
-            i += 1
-
-        return episodes
+        return processed_episodes
     except Exception as e:
-        print(f"Error : {e}")
+        logger.error(f"Failed to process episodes: {e}")
+        return processed_episodes
 
 
 def main():
-  try:
-    # "https://podcastaddict.com/podcast/les-grosses-tetes-integrales/5080893"
-    rss_link: str = extract_rss_link(os.environ.get("AUDIO_SOURCE_URL"))
-    
-    xml_content = get_xml_content(rss_link)
-    
-    xml_dict: dict = convert_xml_to_dict(xml_content)
-    
-    episodes: list = generate_episodes_data(xml_dict, 15)
-
-  except Exception as e:
-      print(f"Error : {e}")
+    """Main function to run the podcast processing pipeline."""
+    try:
+        logger.info("Starting podcast processing")
+        
+        # Initialize managers
+        db_manager = DatabaseManager(SUPABASE_URL, SUPABASE_KEY)
+        storage_manager = StorageManager(GCP_SA_PATH)
+        fetcher = PodcastFetcher()
+        
+        # Get RSS feed
+        rss_link = fetcher.extract_rss_link(AUDIO_SOURCE_URL)
+        if not rss_link:
+            logger.error("Could not find RSS link")
+            return
+            
+        # Get and parse feed
+        xml_content = fetcher.get_feed_content(rss_link)
+        if not xml_content:
+            logger.error("Could not fetch feed content")
+            return
+            
+        feed_data = fetcher.parse_feed(xml_content)
+        if not feed_data:
+            logger.error("Could not parse feed")
+            return
+            
+        # Process episodes
+        episodes = process_episodes(feed_data, NB_EPISODES_TO_KEEP, db_manager, storage_manager)
+        logger.info(f"Processed {len(episodes)} episodes")
+        
+    except Exception as e:
+        logger.error(f"Error in main process: {e}")
 
 
 if __name__ == "__main__":
