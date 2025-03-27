@@ -33,3 +33,7 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+worker/*.log
+worker/downloads/*
+!worker/downloads/.gitkeep
