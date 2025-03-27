@@ -26,7 +26,7 @@ export default function EpisodesScreen() {
       const { data, error } = await supabase
         .from('episodes')
         .select('*')
-        .order('created_at', { ascending: true });
+        .order('publication_date', { ascending: false });
 
       if (error) throw error;
 
@@ -36,7 +36,8 @@ export default function EpisodesScreen() {
         description: episode.description,
         originalMp3Link: episode.originalMp3Link,
         mp3Link: episode.mp3Link,
-        duration: episode.duration
+        duration: episode.duration,
+        publicationDate: episode.publicationDate,
       }));
 
       setEpisodes(formattedEpisodes);

@@ -5,4 +5,5 @@ export interface Episode {
   originalMp3Link: string;
   mp3Link: string;
   duration: string;
+  publicationDate: string;
 }

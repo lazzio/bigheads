@@ -9,6 +9,7 @@ export interface Database {
           originalMp3Link: string;
           mp3Link: string;
           duration: string;
+          publicationDate: string;
           created_at: string;
         };
         Insert: {
@@ -18,6 +19,7 @@ export interface Database {
           originalMp3Link: string;
           mp3Link: string;
           duration: string;
+          publicationDate: string;
           created_at?: string;
         };
         Update: {

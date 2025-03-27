@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from urllib.parse import urlparse
 from google.cloud import storage
 from pathlib import Path
+from datetime import datetime
 
 load_dotenv()
 
@@ -33,11 +34,11 @@ class MySupabase:
                     
             mp3_lien_a_verifier = episode["mp3_link"]
     
-            # Check if an entry with the same mp3_link already exists
-            response_verification = self.supabase.table(table_name).select("mp3_link").eq("mp3_link", mp3_lien_a_verifier).execute()
+            # Check if an entry with the same publication_date already exists
+            response_verification = MySupabase().supabase.table("episodes").select("publication_date").eq("publication_date", episode["publication_date"]).execute()
     
             if len(response_verification.data) > 0:
-                print(f"MP3 link '{mp3_lien_a_verifier}' already present in the database. Moving to the next item.")
+                print(f"Episode with publication date '{episode['publication_date']}' already in database. Skipping.")
             else:
                 # No existing entry, proceed with the record
                 response_insertion = self.supabase.table(table_name).insert(episode).execute()
@@ -192,7 +193,7 @@ def download_mp3_file(url_mp3):
             print("Warning: The URL does not seem to point directly to an .mp3 file.")
             return
 
-        with open(filename, 'wb') as local_file:
+        with open(f"./download/{filename}", 'wb') as local_file:
             for chunk in response.iter_content(chunk_size=8192):
                 local_file.write(chunk)
 
@@ -206,6 +207,35 @@ def download_mp3_file(url_mp3):
         print(f"An unexpected error occurred: {e}")
 
 
+def convert_pubdate_format(pub_date_str: str) -> str:
+    """
+    Converts a publication date string from 'Wed, 26 Mar 2025 17:02:00 GMT' format
+    to 'YYYY-mm-dd' format.
+    
+    Args:
+        pub_date_str (str): The publication date in RSS format
+    
+    Returns:
+        str: The date in YYYY-mm-dd format
+    """
+    try:
+        # Parse the date string
+        date_obj = datetime.strptime(pub_date_str, '%a, %d %b %Y %H:%M:%S %Z')
+        # Format to YYYY-mm-dd
+        return date_obj.strftime('%Y-%m-%d')
+    except ValueError:
+        # Try alternative format without timezone
+        try:
+            date_obj = datetime.strptime(pub_date_str.split(' GMT')[0], '%a, %d %b %Y %H:%M:%S')
+            return date_obj.strftime('%Y-%m-%d')
+        except Exception as e:
+            print(f"Error converting date format: {e}")
+            return pub_date_str  # Return original if conversion fails
+    except Exception as e:
+        print(f"Error converting date format: {e}")
+        return pub_date_str  # Return original if conversion fails
+
+
 def generate_episodes_data(data_src: dict, nb_to_get: int) -> list:
     """
     [
@@ -213,6 +243,7 @@ def generate_episodes_data(data_src: dict, nb_to_get: int) -> list:
         "title": "",
         "original_mp3_link": "",
         "duration": "",
+        "publication_date": "",
         "desription": "",
         "mp3_link": ""
       },
@@ -230,6 +261,10 @@ def generate_episodes_data(data_src: dict, nb_to_get: int) -> list:
             episode: dict = {}
 
             episode["title"] = ep["title"]
+            
+            # Convert publication date to desired format
+            original_date = ep["pubDate"]
+            episode["publication_date"] = convert_pubdate_format(original_date)
 
             origin_mp3_link = ep["enclosure"]["@url"].split('?', 1)[0]
 
@@ -239,8 +274,51 @@ def generate_episodes_data(data_src: dict, nb_to_get: int) -> list:
             mp3_filename = extract_mp3_filename_from_url(origin_mp3_link)
             if not mp3_filename:
                 raise Exception("MP3 filename not found")
-            if Path(mp3_filename).exists():
+            
+            # Check if publication_date exists already in the database
+            response_verification = MySupabase().supabase.table("episodes").select("publication_date").eq("publication_date", episode["publication_date"]).execute()
+            if len(response_verification.data) > 0:
+                # Already in the database, skip this episode
+                print(f"Episode with publication date '{episode['publication_date']}' already in database. Skipping.")
+                i += 1
+                continue
+            
+            # Check if file exists in the download directory
+            if Path(f"./download/{mp3_filename}").exists():
                 print(f"The file {mp3_filename} already exists. No download needed.")
+                
+                # Create episode data for existing file too
+                episode["original_mp3_link"] = origin_mp3_link
+                episode["duration"] = ep["itunes:duration"]
+                
+                description = ep["description"].split('\n', 1)[0]
+                if not description:
+                    raise Exception("Description not found")
+                
+                episode["description"] = description
+                
+                # Use existing file, no need to download
+                supa = MySupabase()
+                # Check if it's already uploaded by checking if it exists in Supabase
+                try:
+                    response_verification = supa.supabase.table("episodes").select("mp3_link").eq("original_mp3_link", origin_mp3_link).execute()
+                    if len(response_verification.data) > 0:
+                        # Already in the database, skip this episode
+                        print(f"Episode with original MP3 link '{origin_mp3_link}' already in database. Skipping.")
+                        i += 1
+                        continue
+                    
+                    # Upload existing file if not already uploaded
+                    supa.upload_gcs(f"./download/{mp3_filename}", "bigheads", "mp3", mp3_filename)
+                    pub_link = supa.get_public_url("bigheads", f"mp3/{mp3_filename}")
+                    episode["mp3_link"] = pub_link
+                    
+                    # Record episode in Supabase postgres
+                    supa.record_in_supabase_pg(episode, "episodes")
+                    episodes.append(episode)
+                except Exception as e:
+                    print(f"Error checking database: {e}")
+                
                 i += 1
                 continue
             
@@ -259,7 +337,7 @@ def generate_episodes_data(data_src: dict, nb_to_get: int) -> list:
                 raise Exception("MP3 file not downloaded")
               
             supa = MySupabase()
-            supa.upload_gcs(filename, "bigheads", "mp3", filename)
+            supa.upload_gcs(f"./downloads/{filename}", "bigheads", "mp3", filename)
             pub_link = supa.get_public_url("bigheads", f"mp3/{filename}")
             episode["mp3_link"] = pub_link
 
