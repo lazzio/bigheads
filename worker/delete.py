@@ -82,9 +82,9 @@ def delete_mp3_files(mp3_links: List[Optional[str]]) -> None:
                 logger.info(f"Deleted MP3 file from bucket: {blob_path}")
                 
                 # Optionally, delete the file from the local filesystem
-                local_file_path: str = os.path.join("downloads", filename)
-                if Path.exists(local_file_path):
-                    Path.unlink(local_file_path)
+                local_file_path = Path(os.path.join("downloads", filename))
+                if local_file_path.exists():
+                    local_file_path.unlink()
                     logger.info(f"Deleted local MP3 file: {local_file_path}")
     
     except Exception as e:
