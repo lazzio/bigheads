@@ -25,9 +25,9 @@ export default function DownloadsScreen() {
     checkDownloadedEpisodes();
   }, []);
 
-  // Nettoyage hebdomadaire des fichiers
+  // Weekly file cleanup
   useEffect(() => {
-    const cleanupInterval = setInterval(cleanupOldDownloads, 7 * 24 * 60 * 60 * 1000); // 7 jours
+    const cleanupInterval = setInterval(cleanupOldDownloads, 7 * 24 * 60 * 60 * 1000); // 7 days
     return () => clearInterval(cleanupInterval);
   }, []);
 
@@ -52,7 +52,7 @@ export default function DownloadsScreen() {
 
     const downloads = await FileSystem.readDirectoryAsync(
       FileSystem.documentDirectory + 'downloads/'
-    ).catch(() => []);
+    ).catch(() => [] as string[]);
 
     const status: DownloadStatus = {};
     episodes.forEach(episode => {
@@ -82,11 +82,11 @@ export default function DownloadsScreen() {
       const downloadDir = FileSystem.documentDirectory + 'downloads/';
       const fileUri = downloadDir + filename;
 
-      // Créer le dossier downloads s'il n'existe pas
+      // Create downloads folder if it doesn't exist
       await FileSystem.makeDirectoryAsync(downloadDir, { intermediates: true })
         .catch(() => {});
 
-      // Mettre à jour le statut de téléchargement
+      // Update download status
       setDownloadStatus(prev => ({
         ...prev,
         [episode.id]: {
@@ -112,10 +112,11 @@ export default function DownloadsScreen() {
         }
       );
 
-      const { uri } = await downloadResumable.downloadAsync();
+      const result = await downloadResumable.downloadAsync();
       
-      if (uri) {
-        // Sauvegarder la date de téléchargement
+      if (result) {
+        const { uri } = result;
+        // Save download date
         await FileSystem.writeAsStringAsync(
           fileUri + '.meta',
           JSON.stringify({ downloadDate: new Date().toISOString() })
@@ -192,7 +193,7 @@ export default function DownloadsScreen() {
         }
       }
 
-      // Mettre à jour le statut des téléchargements
+      // Update download statuses
       checkDownloadedEpisodes();
     } catch (err) {
       console.error('Error cleaning up downloads:', err);
