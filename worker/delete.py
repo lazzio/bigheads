@@ -104,7 +104,7 @@ def clean_old_episodes() -> None:
         return
     
     # Extract UUIDs and MP3 links
-    episode_uuids: List[str] = [episode["uuid"] for episode in old_episodes]
+    episode_uuids: List[str] = [episode["id"] for episode in old_episodes]
     mp3_links: List[Optional[str]] = [episode["mp3_link"] for episode in old_episodes]
     
     # Delete watched episodes records
