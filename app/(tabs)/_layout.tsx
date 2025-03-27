@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Play, ListMusic, Chrome as Home, User } from 'lucide-react-native';
+import { Play, ListMusic, Chrome as Home, User, Download } from 'lucide-react-native';
 
 export default function TabLayout() {
   return (
@@ -37,6 +37,15 @@ export default function TabLayout() {
           title: 'Episodes',
           tabBarIcon: ({ size, color }) => (
             <ListMusic size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="downloads"
+        options={{
+          title: 'Téléchargements',
+          tabBarIcon: ({ size, color }) => (
+            <Download size={size} color={color} />
           ),
         }}
       />
