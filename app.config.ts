@@ -2,7 +2,7 @@ import { getPackageJson, ExpoConfig } from "expo/config";
 
 const { version } = getPackageJson(__dirname);
 
-const config = {
+const config: ExpoConfig = {
   version,
   name: "Les Intégrales BigHeads",
   slug: "bigheads",
