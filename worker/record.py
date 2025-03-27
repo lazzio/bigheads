@@ -171,12 +171,8 @@ class PodcastFetcher:
         Returns:
             str or None: RSS feed URL if found
         """
-        try:
-            # Use requests with random user agent
-            headers = {'User-Agent': requests_random_user_agent.random()}
-            logger.info(f"Using User-Agent: {headers['User-Agent']}")
-            
-            response = requests.get(podcast_url, headers=headers)
+        try:            
+            response = requests.get(podcast_url)
             response.raise_for_status()
             
             soup = BeautifulSoup(response.text, 'html.parser')
@@ -207,11 +203,7 @@ class PodcastFetcher:
             str or None: XML content if successful
         """
         try:
-            # Use requests with random user agent
-            headers = {'User-Agent': requests_random_user_agent.random()}
-            logger.info(f"Using User-Agent: {headers['User-Agent']}")
-            
-            response = requests.get(feed_url, headers=headers)
+            response = requests.get(feed_url)
             response.raise_for_status()
             return response.text
         except Exception as e:
@@ -258,12 +250,8 @@ class PodcastFetcher:
             if Path.exists(local_path):
                 logger.info(f"File already exists: {filename}")
                 return filename
-                
-            # Download file with random user agent
-            headers = {'User-Agent': requests_random_user_agent.random()}
-            logger.info(f"Using User-Agent for download: {headers['User-Agent']}")
-            
-            response = requests.get(clean_url, stream=True, headers=headers)
+                            
+            response = requests.get(clean_url, stream=True)
             response.raise_for_status()
             
             with open(local_path, 'wb') as f:
