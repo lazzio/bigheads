@@ -21,6 +21,7 @@ const config = {
   },
   
   android: {
+    kotlinVersion: "1.9.25",
     softwareKeyboardLayoutMode: "pan",
     package: "xyz.myops.bigheads",
   },
