@@ -41,9 +41,10 @@ export default function PlayerScreen() {
         id: episode.id,
         title: episode.title,
         description: episode.description,
-        originalMp3Link: episode.original_mp3_link,
-        mp3Link: episode.mp3_link,
-        duration: episode.duration
+        originalMp3Link: episode.originalMp3Link,
+        mp3Link: episode.mp3Link,
+        duration: episode.duration,
+        publicationDate: episode.publicationDate
       }));
 
       setEpisodes(formattedEpisodes);

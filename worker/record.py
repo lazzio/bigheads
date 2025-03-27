@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from urllib.parse import urlparse
 from google.cloud import storage
 from pathlib import Path
+from datetime import datetime
 
 load_dotenv()
 
@@ -29,17 +30,17 @@ class MySupabase:
     def record_in_supabase_pg(self, episode: dict, table_name: str):
         try:
             if "mp3_link" not in episode:
-                    print(f"Avertissement : La clé 'mp3_link' est manquante dans l'épisode : {episode}. Cet item sera ignoré.")
+                    print(f"Warning: The 'mp3_link' key is missing in the episode: {episode}. This item will be ignored.")
                     
             mp3_lien_a_verifier = episode["mp3_link"]
     
-            # Vérifier si une entrée avec le même mp3_link existe déjà
-            response_verification = self.supabase.table(table_name).select("mp3_link").eq("mp3_link", mp3_lien_a_verifier).execute()
+            # Check if an entry with the same publication_date already exists
+            response_verification = MySupabase().supabase.table("episodes").select("publication_date").eq("publication_date", episode["publication_date"]).execute()
     
             if len(response_verification.data) > 0:
-                print(f"Lien MP3 '{mp3_lien_a_verifier}' déjà présent dans la base de données. Passage à l'item suivant.")
+                print(f"Episode with publication date '{episode['publication_date']}' already in database. Skipping.")
             else:
-                # Aucune entrée existante, procéder à l'enregistrement
+                # No existing entry, proceed with the record
                 response_insertion = self.supabase.table(table_name).insert(episode).execute()
                 print(response_insertion)
         except Exception as e:
@@ -47,45 +48,45 @@ class MySupabase:
 
   
     def upload_gcs(self, local_filename: str, bucket: str, folder_dest: str, filename:str) -> bool:
-        """Upload un fichier vers un bucket Google Cloud Storage.
+        """Upload a file to a Google Cloud Storage bucket.
     
         Args:
-            local_filename (str): Le chemin complet vers le fichier local à uploader.
-            bucket (str): Le nom du bucket Google Cloud Storage.
-            filename (str): Le nom sous lequel enregistrer le fichier dans le bucket GCS.
+            local_filename (str): The complete path to the local file to upload.
+            bucket (str): The name of the Google Cloud Storage bucket.
+            filename (str): The name under which to save the file in the GCS bucket.
         """    
-        # Initialiser le client Storage avec les informations d'identification
+        # Initialize the Storage client with credentials
         client = storage.Client.from_service_account_json(gcp_sa)
     
-        # Récupérer le bucket
+        # Get the bucket
         bucket = client.bucket(bucket)
     
-        # Créer un objet Blob (représente le fichier dans le bucket)
+        # Create a Blob object (represents the file in the bucket)
         dest: str = f"{folder_dest}/{filename}"
         blob = bucket.blob(dest)
     
         try:
-            # Uploader le fichier depuis le chemin local
+            # Upload the file from the local path
             blob.upload_from_filename(local_filename)
     
-            print(f"Le fichier '{local_filename}' a été uploadé avec succès vers 'gs://{bucket}/{filename}'")
+            print(f"The file '{local_filename}' has been successfully uploaded to 'gs://{bucket}/{filename}'")
             return True
     
         except Exception as e:
-            print(f"Une erreur s'est produite lors de l'upload vers GCS : {e}")
+            print(f"An error occurred during the upload to GCS: {e}")
             raise Exception(e)
             return False
 
   
     def get_public_url(self, nom_bucket_gcs, nom_fichier_gcs) -> str:
-        """Rend un objet Google Cloud Storage publiquement accessible et retourne son lien public.
+        """Makes a Google Cloud Storage object publicly accessible and returns its public link.
     
         Args:
-            nom_bucket_gcs (str): Le nom du bucket Google Cloud Storage.
-            nom_fichier_gcs (str): Le nom du fichier dans le bucket GCS.
+            nom_bucket_gcs (str): The name of the Google Cloud Storage bucket.
+            nom_fichier_gcs (str): The name of the file in the GCS bucket.
     
         Returns:
-            str: Le lien public de l'objet, ou None en cas d'erreur.
+            str: The public link of the object, or None in case of error.
         """
         try:
             # Initialiser le client Storage avec les informations d'identification
@@ -104,7 +105,7 @@ class MySupabase:
             # Construire le lien public
             public_url = blob.public_url
     
-            print(f"L'objet 'gs://{nom_bucket_gcs}/{nom_fichier_gcs}' est maintenant public. Lien : {public_url}")
+            print(f"The object 'gs://{nom_bucket_gcs}/{nom_fichier_gcs}' is now public. Link: {public_url}")
             return public_url
     
         except Exception as e:
@@ -125,7 +126,7 @@ def extract_rss_link(url_podcast_addict):
         response = requests.get(url_podcast_addict)
 
         if response.status_code != 200:
-            print(f"Erreur lors de l'accès à la page: {response.status_code}")
+            print(f"Error accessing the page: {response.status_code}")
             return None
 
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -141,11 +142,11 @@ def extract_rss_link(url_podcast_addict):
         if meta_rss and 'content' in meta_rss.attrs:
             return meta_rss['content']
 
-        print("Lien RSS non trouvé sur la page.")
+        print("RSS link not found on the page.")
         return None
 
     except Exception as e:
-        print(f"Erreur lors de l'extraction du lien RSS: {e}")
+        print(f"Error extracting the RSS link: {e}")
         return None
 
 
@@ -189,21 +190,50 @@ def download_mp3_file(url_mp3):
         filename: str = extract_mp3_filename_from_url(url_mp3)
 
         if not filename.endswith(".mp3"):
-            print("Attention : L'URL ne semble pas pointer directement vers un fichier .mp3.")
+            print("Warning: The URL does not seem to point directly to an .mp3 file.")
             return
 
-        with open(filename, 'wb') as local_file:
+        with open(f"./download/{filename}", 'wb') as local_file:
             for chunk in response.iter_content(chunk_size=8192):
                 local_file.write(chunk)
 
-        print(f"Le fichier MP3 a été téléchargé avec succès sous le nom : {filename}")
+        print(f"The MP3 file has been successfully downloaded with the name: {filename}")
 
         return filename
 
     except requests.exceptions.RequestException as e:
-        print(f"Erreur lors du téléchargement du fichier : {e}")
+        print(f"Error downloading the file: {e}")
     except Exception as e:
-        print(f"Une erreur inattendue s'est produite : {e}")
+        print(f"An unexpected error occurred: {e}")
+
+
+def convert_pubdate_format(pub_date_str: str) -> str:
+    """
+    Converts a publication date string from 'Wed, 26 Mar 2025 17:02:00 GMT' format
+    to 'YYYY-mm-dd' format.
+    
+    Args:
+        pub_date_str (str): The publication date in RSS format
+    
+    Returns:
+        str: The date in YYYY-mm-dd format
+    """
+    try:
+        # Parse the date string
+        date_obj = datetime.strptime(pub_date_str, '%a, %d %b %Y %H:%M:%S %Z')
+        # Format to YYYY-mm-dd
+        return date_obj.strftime('%Y-%m-%d')
+    except ValueError:
+        # Try alternative format without timezone
+        try:
+            date_obj = datetime.strptime(pub_date_str.split(' GMT')[0], '%a, %d %b %Y %H:%M:%S')
+            return date_obj.strftime('%Y-%m-%d')
+        except Exception as e:
+            print(f"Error converting date format: {e}")
+            return pub_date_str  # Return original if conversion fails
+    except Exception as e:
+        print(f"Error converting date format: {e}")
+        return pub_date_str  # Return original if conversion fails
 
 
 def generate_episodes_data(data_src: dict, nb_to_get: int) -> list:
@@ -213,6 +243,7 @@ def generate_episodes_data(data_src: dict, nb_to_get: int) -> list:
         "title": "",
         "original_mp3_link": "",
         "duration": "",
+        "publication_date": "",
         "desription": "",
         "mp3_link": ""
       },
@@ -230,6 +261,10 @@ def generate_episodes_data(data_src: dict, nb_to_get: int) -> list:
             episode: dict = {}
 
             episode["title"] = ep["title"]
+            
+            # Convert publication date to desired format
+            original_date = ep["pubDate"]
+            episode["publication_date"] = convert_pubdate_format(original_date)
 
             origin_mp3_link = ep["enclosure"]["@url"].split('?', 1)[0]
 
@@ -239,8 +274,52 @@ def generate_episodes_data(data_src: dict, nb_to_get: int) -> list:
             mp3_filename = extract_mp3_filename_from_url(origin_mp3_link)
             if not mp3_filename:
                 raise Exception("MP3 filename not found")
-            if Path(mp3_filename).exists():
-                print(f"Le fichier {mp3_filename} existe déjà. Pas de téléchargement nécessaire.")
+            
+            # Check if publication_date exists already in the database
+            response_verification = MySupabase().supabase.table("episodes").select("publication_date").eq("publication_date", episode["publication_date"]).execute()
+            if len(response_verification.data) > 0:
+                # Already in the database, skip this episode
+                print(f"Episode with publication date '{episode['publication_date']}' already in database. Skipping.")
+                i += 1
+                continue
+            
+            # Check if file exists in the download directory
+            if Path(f"./download/{mp3_filename}").exists():
+                print(f"The file {mp3_filename} already exists. No download needed.")
+                
+                # Create episode data for existing file too
+                episode["original_mp3_link"] = origin_mp3_link
+                episode["duration"] = ep["itunes:duration"]
+                
+                description = ep["description"].split('\n', 1)[0]
+                if not description:
+                    raise Exception("Description not found")
+                
+                episode["description"] = description
+                
+                # Use existing file, no need to download
+                supa = MySupabase()
+                # Check if it's already uploaded by checking if it exists in Supabase
+                try:
+                    response_verification = supa.supabase.table("episodes").select("mp3_link").eq("original_mp3_link", origin_mp3_link).execute()
+                    if len(response_verification.data) > 0:
+                        # Already in the database, skip this episode
+                        print(f"Episode with original MP3 link '{origin_mp3_link}' already in database. Skipping.")
+                        i += 1
+                        continue
+                    
+                    # Upload existing file if not already uploaded
+                    supa.upload_gcs(f"./download/{mp3_filename}", "bigheads", "mp3", mp3_filename)
+                    pub_link = supa.get_public_url("bigheads", f"mp3/{mp3_filename}")
+                    episode["mp3_link"] = pub_link
+                    
+                    # Record episode in Supabase postgres
+                    supa.record_in_supabase_pg(episode, "episodes")
+                    episodes.append(episode)
+                except Exception as e:
+                    print(f"Error checking database: {e}")
+                
+                i += 1
                 continue
             
             episode["original_mp3_link"] = origin_mp3_link
@@ -258,7 +337,7 @@ def generate_episodes_data(data_src: dict, nb_to_get: int) -> list:
                 raise Exception("MP3 file not downloaded")
               
             supa = MySupabase()
-            supa.upload_gcs(filename, "bigheads", "mp3", filename)
+            supa.upload_gcs(f"./downloads/{filename}", "bigheads", "mp3", filename)
             pub_link = supa.get_public_url("bigheads", f"mp3/{filename}")
             episode["mp3_link"] = pub_link
 
