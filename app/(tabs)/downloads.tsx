@@ -5,7 +5,7 @@ import { Download, Trash2, Play, Trash } from 'lucide-react-native';
 import * as FileSystem from 'expo-file-system';
 import { useRouter } from 'expo-router';
 import { Episode } from '../../types/episode';
-import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 
 type DownloadStatus = {
   [key: string]: {
@@ -149,9 +149,9 @@ export default function DownloadsScreen() {
           }
         }));
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Error downloading episode:', err);
-      if (err.message?.includes('ENOENT')) {
+      if (err instanceof Error && err.message.includes('ENOENT')) {
         setError('Le téléchargement n\'est pas disponible sur cet appareil');
       } else {
         setError('Erreur lors du téléchargement');
