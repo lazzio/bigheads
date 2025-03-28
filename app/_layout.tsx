@@ -3,8 +3,16 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { supabase } from '../lib/supabase';
+import * as Sentry from '@sentry/react-native';
 
-export default function RootLayout() {
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+
+  // uncomment the line below to enable Spotlight (https://spotlightjs.com)
+  // spotlight: __DEV__,
+});
+
+export default Sentry.wrap(function RootLayout() {
   useFrameworkReady();
   const segments = useSegments();
   const router = useRouter();
@@ -56,4 +64,4 @@ export default function RootLayout() {
       <StatusBar style="auto" />
     </>
   );
-}
+});
