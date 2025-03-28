@@ -16,7 +16,8 @@
     ".expo/types/**/*.ts",
     "expo-env.d.ts",
     "nativewind-env.d.ts",
-    "tsconfig.json"
+    "tsconfig.json",
+    "metro.config.js"
   ],
   "exclude": [
     "node_modules",
