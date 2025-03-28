@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Alert } from 'react-native';
 import { supabase } from '../../lib/supabase';
-import { Download, Trash2, Play } from 'lucide-react-native';
+import { Download, Trash2, Play, Trash } from 'lucide-react-native';
 import * as FileSystem from 'expo-file-system';
 import { useRouter } from 'expo-router';
 import { Episode } from '../../types/episode';
+import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 
 type DownloadStatus = {
   [key: string]: {
@@ -22,12 +23,16 @@ export default function DownloadsScreen() {
 
   useEffect(() => {
     fetchEpisodes();
-    checkDownloadedEpisodes();
   }, []);
 
-  // Weekly file cleanup
   useEffect(() => {
-    const cleanupInterval = setInterval(cleanupOldDownloads, 7 * 24 * 60 * 60 * 1000); // 7 days
+    if (episodes.length > 0) {
+      checkDownloadedEpisodes();
+    }
+  }, [episodes]);
+
+  useEffect(() => {
+    const cleanupInterval = setInterval(cleanupOldDownloads, 7 * 24 * 60 * 60 * 1000);
     return () => clearInterval(cleanupInterval);
   }, []);
 
@@ -36,7 +41,7 @@ export default function DownloadsScreen() {
       const { data, error } = await supabase
         .from('episodes')
         .select('*')
-        .order('created_at', { ascending: true });
+        .order('publication_date', { ascending: false });
 
       if (error) throw error;
 
@@ -50,21 +55,28 @@ export default function DownloadsScreen() {
   async function checkDownloadedEpisodes() {
     if (Platform.OS === 'web') return;
 
-    const downloads = await FileSystem.readDirectoryAsync(
-      FileSystem.documentDirectory + 'downloads/'
-    ).catch(() => [] as string[]);
+    try {
+      const downloadDir = FileSystem.documentDirectory + 'downloads/';
+      await FileSystem.makeDirectoryAsync(downloadDir, { intermediates: true })
+        .catch(() => {});
 
-    const status: DownloadStatus = {};
-    episodes.forEach(episode => {
-      const filename = getFilename(episode.mp3Link);
-      status[episode.id] = {
-        progress: 0,
-        downloading: false,
-        downloaded: downloads.includes(filename)
-      };
-    });
+      const downloads = await FileSystem.readDirectoryAsync(downloadDir)
+        .catch(() => [] as string[]);
 
-    setDownloadStatus(status);
+      const status: DownloadStatus = {};
+      episodes.forEach(episode => {
+        const filename = getFilename(episode.mp3Link);
+        status[episode.id] = {
+          progress: 0,
+          downloading: false,
+          downloaded: downloads.includes(filename)
+        };
+      });
+
+      setDownloadStatus(status);
+    } catch (err) {
+      console.error('Error checking downloaded episodes:', err);
+    }
   }
 
   function getFilename(url: string): string {
@@ -78,15 +90,14 @@ export default function DownloadsScreen() {
     }
 
     try {
+      setError(null);
       const filename = getFilename(episode.mp3Link);
       const downloadDir = FileSystem.documentDirectory + 'downloads/';
       const fileUri = downloadDir + filename;
 
-      // Create downloads folder if it doesn't exist
       await FileSystem.makeDirectoryAsync(downloadDir, { intermediates: true })
         .catch(() => {});
 
-      // Update download status
       setDownloadStatus(prev => ({
         ...prev,
         [episode.id]: {
@@ -101,6 +112,8 @@ export default function DownloadsScreen() {
         fileUri,
         {},
         (downloadProgress) => {
+          if (!downloadProgress.totalBytesExpectedToWrite) return;
+          
           const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
           setDownloadStatus(prev => ({
             ...prev,
@@ -112,11 +125,9 @@ export default function DownloadsScreen() {
         }
       );
 
-      const result = await downloadResumable.downloadAsync();
+      const { uri } = await downloadResumable.downloadAsync();
       
-      if (result) {
-        const { uri } = result;
-        // Save download date
+      if (uri) {
         await FileSystem.writeAsStringAsync(
           fileUri + '.meta',
           JSON.stringify({ downloadDate: new Date().toISOString() })
@@ -150,6 +161,7 @@ export default function DownloadsScreen() {
     if (Platform.OS === 'web') return;
 
     try {
+      setError(null);
       const filename = getFilename(episode.mp3Link);
       const fileUri = FileSystem.documentDirectory + 'downloads/' + filename;
       
@@ -168,6 +180,47 @@ export default function DownloadsScreen() {
       console.error('Error deleting episode:', err);
       setError('Erreur lors de la suppression');
     }
+  }
+
+  async function deleteAllDownloads() {
+    if (Platform.OS === 'web') return;
+
+    try {
+      const downloadDir = FileSystem.documentDirectory + 'downloads/';
+      await FileSystem.deleteAsync(downloadDir);
+      await FileSystem.makeDirectoryAsync(downloadDir, { intermediates: true });
+
+      const newStatus: DownloadStatus = {};
+      episodes.forEach(episode => {
+        newStatus[episode.id] = {
+          progress: 0,
+          downloading: false,
+          downloaded: false
+        };
+      });
+      setDownloadStatus(newStatus);
+    } catch (err) {
+      console.error('Error deleting all downloads:', err);
+      setError('Erreur lors de la suppression des téléchargements');
+    }
+  }
+
+  function confirmDeleteAll() {
+    Alert.alert(
+      'Supprimer tous les téléchargements',
+      'Êtes-vous sûr de vouloir supprimer tous les épisodes téléchargés ?',
+      [
+        {
+          text: 'Annuler',
+          style: 'cancel'
+        },
+        {
+          text: 'Supprimer',
+          onPress: deleteAllDownloads,
+          style: 'destructive'
+        }
+      ]
+    );
   }
 
   async function cleanupOldDownloads() {
@@ -193,7 +246,6 @@ export default function DownloadsScreen() {
         }
       }
 
-      // Update download statuses
       checkDownloadedEpisodes();
     } catch (err) {
       console.error('Error cleaning up downloads:', err);
@@ -207,58 +259,102 @@ export default function DownloadsScreen() {
     });
   }
 
+  function ProgressCircle({ progress }: { progress: number }) {
+    const radius = 12;
+    const circumference = 2 * Math.PI * radius;
+    const strokeDashoffset = circumference * (1 - progress);
+
+    const animatedStyle = useAnimatedStyle(() => ({
+      strokeDashoffset: withTiming(strokeDashoffset, { duration: 300 })
+    }));
+
+    return (
+      <View style={styles.progressCircleContainer}>
+        <Animated.View style={[styles.progressCircle, animatedStyle]}>
+          <svg width={radius * 2 + 4} height={radius * 2 + 4}>
+            <circle
+              cx={radius + 2}
+              cy={radius + 2}
+              r={radius}
+              stroke="#333"
+              strokeWidth="2"
+              fill="none"
+            />
+            <circle
+              cx={radius + 2}
+              cy={radius + 2}
+              r={radius}
+              stroke="#0ea5e9"
+              strokeWidth="2"
+              fill="none"
+              strokeDasharray={circumference}
+              strokeDashoffset={strokeDashoffset}
+              transform={`rotate(-90 ${radius + 2} ${radius + 2})`}
+            />
+          </svg>
+        </Animated.View>
+        <Download size={16} color="#fff" style={styles.progressIcon} />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Téléchargements</Text>
+      <View style={styles.header}>
+        <Text style={styles.title}>Téléchargements</Text>
+        {Platform.OS !== 'web' && (
+          <TouchableOpacity
+            style={styles.deleteAllButton}
+            onPress={confirmDeleteAll}
+          >
+            <Trash size={20} color="#fff" />
+          </TouchableOpacity>
+        )}
+      </View>
       
       {error && (
         <Text style={styles.error}>{error}</Text>
       )}
 
-      {episodes.map((episode, index) => (
-        <View key={episode.id} style={styles.episodeCard}>
-          <View style={styles.episodeInfo}>
-            <Text style={styles.episodeTitle}>{episode.title}</Text>
-            
-            {Platform.OS !== 'web' && downloadStatus[episode.id]?.downloading && (
-              <View style={styles.progressBar}>
-                <View 
-                  style={[
-                    styles.progressFill,
-                    { width: `${downloadStatus[episode.id]?.progress * 100}%` }
-                  ]} 
-                />
-              </View>
-            )}
-          </View>
+      <ScrollView style={styles.scrollView}>
+        {episodes.map((episode, index) => (
+          <View key={episode.id} style={styles.episodeCard}>
+            <View style={styles.episodeInfo}>
+              <Text style={styles.episodeTitle}>{episode.title}</Text>
+            </View>
 
-          <View style={styles.actions}>
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => playEpisode(index)}
-            >
-              <Play size={20} color="#fff" />
-            </TouchableOpacity>
+            <View style={styles.actions}>
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => playEpisode(index)}
+              >
+                <Play size={20} color="#fff" />
+              </TouchableOpacity>
 
-            {Platform.OS !== 'web' && downloadStatus[episode.id]?.downloaded ? (
-              <TouchableOpacity
-                style={[styles.actionButton, styles.deleteButton]}
-                onPress={() => deleteDownload(episode)}
-              >
-                <Trash2 size={20} color="#fff" />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={[styles.actionButton, styles.downloadButton]}
-                onPress={() => downloadEpisode(episode)}
-                disabled={downloadStatus[episode.id]?.downloading}
-              >
-                <Download size={20} color="#fff" />
-              </TouchableOpacity>
-            )}
+              {Platform.OS !== 'web' && downloadStatus[episode.id]?.downloaded ? (
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.deleteButton]}
+                  onPress={() => deleteDownload(episode)}
+                >
+                  <Trash2 size={20} color="#fff" />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.downloadButton]}
+                  onPress={() => downloadEpisode(episode)}
+                  disabled={downloadStatus[episode.id]?.downloading}
+                >
+                  {downloadStatus[episode.id]?.downloading ? (
+                    <ProgressCircle progress={downloadStatus[episode.id]?.progress || 0} />
+                  ) : (
+                    <Download size={20} color="#fff" />
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
-        </View>
-      ))}
+        ))}
+      </ScrollView>
     </View>
   );
 }
@@ -267,16 +363,33 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#121212',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 20,
+    backgroundColor: '#1a1a1a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  deleteAllButton: {
+    padding: 8,
+    backgroundColor: '#ef4444',
+    borderRadius: 8,
+  },
+  scrollView: {
+    flex: 1,
     padding: 20,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 20,
   },
   error: {
     color: '#ef4444',
+    marginHorizontal: 20,
     marginBottom: 10,
   },
   episodeCard: {
@@ -296,18 +409,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginBottom: 5,
   },
-  progressBar: {
-    height: 4,
-    backgroundColor: '#333',
-    borderRadius: 2,
-    overflow: 'hidden',
-    marginTop: 8,
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#0ea5e9',
-    borderRadius: 2,
-  },
   actions: {
     flexDirection: 'row',
     gap: 8,
@@ -322,5 +423,17 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     backgroundColor: '#ef4444',
+  },
+  progressCircleContainer: {
+    width: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  progressCircle: {
+    position: 'absolute',
+  },
+  progressIcon: {
+    position: 'absolute',
   },
 });
