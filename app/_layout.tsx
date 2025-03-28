@@ -1,5 +1,5 @@
 import { FC, useEffect, useState } from 'react';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Slot, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Text, View } from 'react-native';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
@@ -19,71 +19,90 @@ const ErrorFallback = () => (
   </View>
 );
 
-const RootLayout: FC = () => {
-  useFrameworkReady();
+// Découpler la gestion de session de la navigation
+function AuthenticationProvider({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
+  const [authInitialized, setAuthInitialized] = useState(false);
 
+  useEffect(() => {
+    // Ne pas naviguer tant que l'authentification n'est pas initialisée
+    if (!authInitialized) return;
+
+    const inAuthGroup = segments[0] === 'auth';
+    
+    // Vérifier la session de l'utilisateur
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session && inAuthGroup) {
+          // Attendre un peu pour s'assurer que le layout est monté
+          setTimeout(() => router.replace('/(tabs)'), 0);
+        } else if (!session && !inAuthGroup) {
+          // Attendre un peu pour s'assurer que le layout est monté
+          setTimeout(() => router.replace('/auth/login'), 0);
+        }
+        
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Auth session error:', error);
+        setIsLoading(false);
+        // En cas d'erreur, rediriger vers login
+        setTimeout(() => router.replace('/auth/login'), 0);
+      }
+    };
+
+    checkSession();
+  }, [segments, authInitialized]);
+
+  // Initialiser l'authentification une seule fois au montage
   useEffect(() => {
     // Ajouter un timeout pour éviter un blocage indéfini
     const timeoutId = setTimeout(() => {
       if (isLoading) {
-        console.warn('Authentication timeout reached, redirecting to login');
+        console.warn('Authentication timeout reached');
         setIsLoading(false);
-        router.replace('/auth/login');
+        setAuthInitialized(true);
       }
     }, 5000);
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setIsLoading(false);
-      // Only redirect if we're not already on the correct screen
-      const inAuthGroup = segments[0] === 'auth';
-
-      if (session && inAuthGroup) {
-        router.replace('/(tabs)');
-      } else if (!session && !inAuthGroup) {
-        // Clear any existing session data to prevent token errors
-        supabase.auth.signOut().then(() => {
-          router.replace('/auth/login');
-        });
-      }
-    }).catch((error) => {
-      console.error('Auth session error:', error);
-      setIsLoading(false);
-      // If there's any error getting the session, sign out and redirect to login
-      supabase.auth.signOut().then(() => {
-        router.replace('/auth/login');
-      });
-    });
-
+    // Configurer l'écouteur d'état d'authentification
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const inAuthGroup = segments[0] === 'auth';
 
-      if (event === 'SIGNED_OUT') {
-        router.replace('/auth/login');
-      } else if (session && inAuthGroup) {
-        router.replace('/(tabs)');
-      } else if (!session && !inAuthGroup) {
-        router.replace('/auth/login');
+      if (event === 'SIGNED_OUT' && !inAuthGroup) {
+        // Utiliser setTimeout pour éviter la navigation avant le montage
+        setTimeout(() => router.replace('/auth/login'), 0);
+      } else if (event === 'SIGNED_IN' && inAuthGroup) {
+        // Utiliser setTimeout pour éviter la navigation avant le montage
+        setTimeout(() => router.replace('/(tabs)'), 0);
       }
     });
+
+    // Marquer l'initialisation comme terminée
+    setAuthInitialized(true);
 
     return () => {
       clearTimeout(timeoutId);
       subscription.unsubscribe();
     };
-  }, [segments]);
+  }, []);
 
+  return <>{children}</>;
+}
+
+// Layout principal qui définit la structure de base de l'application
+const RootLayout: FC = () => {
+  useFrameworkReady();
+  
   return (
-    <>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="auth" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="+not-found" />
-      </Stack>
+    <AuthenticationProvider>
+      {/* Utiliser Slot au lieu de Stack pour la première navigation */}
+      <Slot />
       <StatusBar style="auto" />
-    </>
+    </AuthenticationProvider>
   );
 };
 
