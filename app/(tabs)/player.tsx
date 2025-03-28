@@ -10,15 +10,24 @@ import { Episode } from '../../types/episode';
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
 
 export default function PlayerScreen() {
-  const { episodeIndex } = useLocalSearchParams<{ episodeIndex: string }>();
-  const [currentIndex, setCurrentIndex] = useState(episodeIndex ? parseInt(episodeIndex) : 0);
+  const { episodeId } = useLocalSearchParams<{ episodeId: string }>();
   const [episodes, setEpisodes] = useState<Episode[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setupAudio();
     fetchEpisodes();
   }, []);
+
+  useEffect(() => {
+    if (episodeId && episodes.length > 0) {
+      const index = episodes.findIndex(ep => ep.id === episodeId);
+      if (index !== -1) {
+        setCurrentIndex(index);
+      }
+    }
+  }, [episodeId, episodes]);
 
   async function setupAudio() {
     await Audio.setAudioModeAsync({
@@ -44,7 +53,7 @@ export default function PlayerScreen() {
         originalMp3Link: episode.original_mp3_link,
         mp3Link: episode.mp3_link,
         duration: episode.duration,
-        publicationDate: episode.publication_date,
+        publicationDate: episode.publication_date
       }));
 
       setEpisodes(formattedEpisodes);
