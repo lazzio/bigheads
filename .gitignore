@@ -42,3 +42,5 @@ worker/.venv
 
 # Service account file
 worker/sa.json
+
+.env.local

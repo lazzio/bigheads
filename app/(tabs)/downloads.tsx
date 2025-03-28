@@ -265,8 +265,11 @@ export default function DownloadsScreen() {
     const strokeDashoffset = circumference * (1 - progress);
 
     const animatedStyle = useAnimatedStyle(() => ({
-      strokeDashoffset: withTiming(strokeDashoffset, { duration: 300 })
+      transform: [{ rotate: '0deg' }] // Use supported property
     }));
+
+    // Calculate stroke-dashoffset for the circle directly in render
+    const dashOffset = progress ? circumference * (1 - progress) : circumference;
 
     return (
       <View style={styles.progressCircleContainer}>
@@ -276,19 +279,11 @@ export default function DownloadsScreen() {
               cx={radius + 2}
               cy={radius + 2}
               r={radius}
-              stroke="#333"
-              strokeWidth="2"
-              fill="none"
-            />
-            <circle
-              cx={radius + 2}
-              cy={radius + 2}
-              r={radius}
               stroke="#0ea5e9"
               strokeWidth="2"
               fill="none"
               strokeDasharray={circumference}
-              strokeDashoffset={strokeDashoffset}
+              strokeDashoffset={dashOffset}
               transform={`rotate(-90 ${radius + 2} ${radius + 2})`}
             />
           </svg>
