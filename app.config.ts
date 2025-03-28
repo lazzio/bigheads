@@ -17,7 +17,7 @@ const config: ExpoConfig = {
   splash: {
     image: "./assets/images/bh_opti.png",
     resizeMode: "cover",
-    backgroundColor: "#F6F6F6"
+    backgroundColor: "#b48d7b"
   },
   
   android: {
