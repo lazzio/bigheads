@@ -1,10 +1,19 @@
-import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Alert } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { storage } from '../../lib/storage';
+// Updated import for Sentry
+import * as Sentry from '@sentry/react-native';
+
+// Clear browser cache for OAuth on component mount
+useEffect(() => {
+  if (Platform.OS !== 'web') {
+    WebBrowser.maybeCompleteAuthSession();
+  }
+}, []);
 
 function GoogleIcon() {
   return (
@@ -37,10 +46,14 @@ export default function LoginScreen() {
   const router = useRouter();
   const redirectUrl = Linking.createURL('/(tabs)');
 
+  // Log every render to help debug
+  console.log('Login screen rendered, redirectUrl:', redirectUrl);
+
   async function handleLogin() {
     try {
       setLoading(true);
       setError(null);
+      console.log('Attempting login with email/password');
 
       const { error } = await supabase.auth.signInWithPassword({
         email,
@@ -48,9 +61,12 @@ export default function LoginScreen() {
       });
 
       if (error) throw error;
-
+      console.log('Login successful, redirecting');
       router.replace('/(tabs)');
     } catch (err) {
+      console.error('Login error:', err);
+      // Updated Sentry API call
+      Sentry.captureException(err);
       setError(err instanceof Error ? err.message : 'Une erreur est survenue');
     } finally {
       setLoading(false);
@@ -59,8 +75,20 @@ export default function LoginScreen() {
 
   async function handleGoogleSignIn() {
     try {
+      // Add Sentry breadcrumb for tracking OAuth flow
+      Sentry.addBreadcrumb({
+        category: 'auth',
+        message: 'Starting Google OAuth flow',
+        level: 'info',
+        data: {
+          platform: Platform.OS,
+          redirectUrl: redirectUrl
+        }
+      });
+
       setLoading(true);
       setError(null);
+      console.log('Starting Google OAuth flow');
 
       // Clear any existing auth data before starting new auth flow
       await storage.removeItem('supabase.auth.token');
@@ -68,6 +96,7 @@ export default function LoginScreen() {
       await storage.removeItem('supabase.auth.user');
 
       if (Platform.OS === 'web') {
+        console.log('Web platform OAuth flow');
         const { error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
@@ -80,6 +109,7 @@ export default function LoginScreen() {
         });
         if (error) throw error;
       } else {
+        console.log('Native platform OAuth flow');
         const { data, error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
@@ -95,28 +125,69 @@ export default function LoginScreen() {
         if (error) throw error;
 
         if (data?.url) {
-          const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+          console.log('Opening auth URL in browser');
+          const result = await WebBrowser.openAuthSessionAsync(
+            data.url, 
+            redirectUrl, 
+            { showInRecents: true }
+          );
 
+          console.log('Auth browser result type:', result.type);
+          
           if (result.type === 'success') {
             const { url } = result;
-            const params = new URLSearchParams(url.split('#')[1]);
-            const access_token = params.get('access_token');
-            const refresh_token = params.get('refresh_token');
+            console.log('OAuth redirect success, processing URL');
+            
+            try {
+              // Try to parse URL and extract tokens
+              const params = new URLSearchParams(url.split('#')[1]);
+              const access_token = params.get('access_token');
+              const refresh_token = params.get('refresh_token');
 
-            if (access_token && refresh_token) {
-              const { error: sessionError } = await supabase.auth.setSession({
-                access_token,
-                refresh_token,
-              });
+              if (access_token && refresh_token) {
+                console.log('Tokens extracted, setting session');
+                const { error: sessionError } = await supabase.auth.setSession({
+                  access_token,
+                  refresh_token,
+                });
 
-              if (sessionError) throw sessionError;
-              router.replace('/(tabs)');
+                if (sessionError) throw sessionError;
+                router.replace('/(tabs)');
+              } else {
+                console.log('No tokens in URL, checking session');
+                // No tokens in URL, but we might still have a session
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session) {
+                  console.log('Session exists after OAuth, redirecting');
+                  router.replace('/(tabs)');
+                } else {
+                  throw new Error('No authentication data found in redirect');
+                }
+              }
+            } catch (parseError) {
+              console.error('Error parsing OAuth redirect:', parseError);
+              // Try a different approach - get the current session
+              const { data: { session } } = await supabase.auth.getSession();
+              if (session) {
+                console.log('Session exists despite parse error, redirecting');
+                router.replace('/(tabs)');
+              } else {
+                throw parseError;
+              }
             }
+          } else if (result.type === 'cancel') {
+            console.log('User canceled OAuth flow');
+            // User canceled, just show a message
+            Alert.alert('Connexion annulée', 'Vous avez annulé la connexion Google.');
           }
         }
       }
     } catch (err) {
+      console.error('Google sign-in error:', err);
+      // Updated Sentry API call
+      Sentry.captureException(err);
       setError(err instanceof Error ? err.message : 'Une erreur est survenue');
+      
       // Clear any partial auth data on error
       await storage.removeItem('supabase.auth.token');
       await storage.removeItem('supabase.auth.refreshToken');
