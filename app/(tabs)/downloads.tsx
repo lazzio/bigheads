@@ -22,11 +22,13 @@ export default function DownloadsScreen() {
   const router = useRouter();
 
   useEffect(() => {
-    fetchEpisodes();
+    if (Platform.OS === 'web' || Platform.OS === 'ios' || Platform.OS === 'android') {
+      fetchEpisodes();
+    }
   }, []);
 
   useEffect(() => {
-    if (episodes.length > 0) {
+    if (episodes.length > 0 && Platform.OS !== 'web') {
       checkDownloadedEpisodes();
     }
   }, [episodes]);
@@ -89,6 +91,11 @@ export default function DownloadsScreen() {
       return;
     }
 
+    if (!FileSystem.documentDirectory) {
+      setError('Le téléchargement n\'est pas disponible sur cette plateforme');
+      return;
+    }
+
     try {
       setError(null);
       const filename = getFilename(episode.mp3Link);
@@ -144,7 +151,11 @@ export default function DownloadsScreen() {
       }
     } catch (err) {
       console.error('Error downloading episode:', err);
-      setError('Erreur lors du téléchargement');
+      if (err.message?.includes('ENOENT')) {
+        setError('Le téléchargement n\'est pas disponible sur cet appareil');
+      } else {
+        setError('Erreur lors du téléchargement');
+      }
       
       setDownloadStatus(prev => ({
         ...prev,
@@ -265,10 +276,9 @@ export default function DownloadsScreen() {
     const strokeDashoffset = circumference * (1 - progress);
 
     const animatedStyle = useAnimatedStyle(() => ({
-      transform: [{ rotate: '0deg' }] // Use supported property
+      transform: [{ rotate: '0deg' }]
     }));
 
-    // Calculate stroke-dashoffset for the circle directly in render
     const dashOffset = progress ? circumference * (1 - progress) : circumference;
 
     return (
