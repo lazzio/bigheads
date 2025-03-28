@@ -1,10 +1,33 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { storage } from '../../lib/storage';
+
+function GoogleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" style={{ marginRight: 24 }}>
+      <path
+        fill="#4285F4"
+        d="M17.64 9.205c0-.639-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"
+      />
+      <path
+        fill="#34A853"
+        d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"
+      />
+      <path
+        fill="#EA4335"
+        d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"
+      />
+    </svg>
+  );
+}
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -38,12 +61,12 @@ export default function LoginScreen() {
     try {
       setLoading(true);
       setError(null);
-  
-      // Clear any existing auth data
+
+      // Clear any existing auth data before starting new auth flow
       await storage.removeItem('supabase.auth.token');
       await storage.removeItem('supabase.auth.refreshToken');
       await storage.removeItem('supabase.auth.user');
-  
+
       if (Platform.OS === 'web') {
         const { error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
@@ -57,12 +80,6 @@ export default function LoginScreen() {
         });
         if (error) throw error;
       } else {
-        // Pour mobile
-        const redirectUrl = Linking.createURL('/(tabs)');
-        
-        // Log pour déboguer - utile pour configurer votre client OAuth2
-        console.log("Redirect URL:", redirectUrl);
-        
         const { data, error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
@@ -74,62 +91,33 @@ export default function LoginScreen() {
             skipBrowserRedirect: true,
           },
         });
-  
+
         if (error) throw error;
-  
+
         if (data?.url) {
-          // Ouvrir le navigateur pour l'authentification
           const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
-  
+
           if (result.type === 'success') {
-            // Extraire les paramètres de l'URL
             const { url } = result;
-            
-            // Gérer correctement l'URL de redirection
-            // L'URL peut contenir soit un fragment (#) soit des paramètres de requête (?)
-            let params;
-            if (url.includes('#')) {
-              params = new URLSearchParams(url.split('#')[1]);
-            } else if (url.includes('?')) {
-              params = new URLSearchParams(url.split('?')[1]);
-            }
-            
-            // Vérifier si nous avons un code d'autorisation (pour flow PKCE)
-            const code = params?.get('code');
-            
-            if (code) {
-              // Pour le flux PKCE, on utilise exchangeCodeForSession
-              const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
-              
+            const params = new URLSearchParams(url.split('#')[1]);
+            const access_token = params.get('access_token');
+            const refresh_token = params.get('refresh_token');
+
+            if (access_token && refresh_token) {
+              const { error: sessionError } = await supabase.auth.setSession({
+                access_token,
+                refresh_token,
+              });
+
               if (sessionError) throw sessionError;
-              
-              if (sessionData?.session) {
-                router.replace('/(tabs)');
-              }
-            } else {
-              // Fallback à l'ancienne méthode (implicite) avec access_token et refresh_token
-              const access_token = params?.get('access_token');
-              const refresh_token = params?.get('refresh_token');
-              
-              if (access_token && refresh_token) {
-                const { error: sessionError } = await supabase.auth.setSession({
-                  access_token,
-                  refresh_token,
-                });
-                
-                if (sessionError) throw sessionError;
-                router.replace('/(tabs)');
-              } else {
-                throw new Error("Tokens non trouvés dans l'URL de redirection");
-              }
+              router.replace('/(tabs)');
             }
           }
         }
       }
     } catch (err) {
-      console.error("Erreur d'authentification:", err);
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue lors de la connexion');
-      // Nettoyer les données d'authentification partielles
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue');
+      // Clear any partial auth data on error
       await storage.removeItem('supabase.auth.token');
       await storage.removeItem('supabase.auth.refreshToken');
       await storage.removeItem('supabase.auth.user');
@@ -182,12 +170,8 @@ export default function LoginScreen() {
         style={styles.googleButton}
         onPress={handleGoogleSignIn}
         disabled={loading}>
-        <Image
-          source={require('../../assets/images/google.svg')}
-          style={styles.googleIcon}
-          resizeMode="contain"
-        />
-        <Text style={styles.googleButtonText}>Continuer avec Google</Text>
+        <GoogleIcon />
+        <Text style={styles.googleButtonText}>Se connecter avec Google</Text>
       </TouchableOpacity>
 
       <Link href="/auth/register" style={styles.link}>
@@ -272,11 +256,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 1,
-  },
-  googleIcon: {
-    width: 18,
-    height: 18,
-    marginRight: 24,
   },
   googleButtonText: {
     color: '#757575',
