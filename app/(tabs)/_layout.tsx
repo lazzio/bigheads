@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Play, ListMusic, Chrome as Home, User, Download } from 'lucide-react-native';
+import { Speaker, ListMusic, House, User, Download } from 'lucide-react-native';
 
 export default function TabLayout() {
   return (
@@ -18,7 +18,7 @@ export default function TabLayout() {
         options={{
           title: 'Accueil',
           tabBarIcon: ({ size, color }) => (
-            <Home size={size} color={color} />
+            <House size={size} color={color} />
           ),
         }}
       />
@@ -27,7 +27,7 @@ export default function TabLayout() {
         options={{
           title: 'Lecture',
           tabBarIcon: ({ size, color }) => (
-            <Play size={size} color={color} />
+            <Speaker size={size} color={color} />
           ),
         }}
       />

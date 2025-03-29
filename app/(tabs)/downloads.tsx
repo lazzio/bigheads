@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -14,14 +14,7 @@ import { Download, Trash2, Play, Trash } from 'lucide-react-native';
 import * as FileSystem from 'expo-file-system';
 import { useRouter } from 'expo-router';
 import { Episode } from '../../types/episode';
-import { Circle } from 'react-native-svg';
-import Svg from 'react-native-svg';
-import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue, 
-  withTiming 
-} from 'react-native-reanimated';
-import * as Sentry from '@sentry/react-native';
+import Svg, { Circle } from 'react-native-svg';
 
 // Types
 interface DownloadStatus {
@@ -39,102 +32,77 @@ const CLEANUP_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const MAX_DOWNLOAD_AGE_DAYS = 7;
 
 export default function DownloadsScreen() {
-  // State
+  // État principal
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [downloadStatus, setDownloadStatus] = useState<DownloadStatus>({});
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
-  // Hooks
+  // Refs pour optimisation
+  const isMounted = useRef(true);
   const router = useRouter();
 
-  // Derived state
-  const hasDownloadedEpisodes = useMemo(() => {
-    return Object.values(downloadStatus).some(status => status.downloaded);
-  }, [downloadStatus]);
-
-  // Initialize
+  // Initialisation et nettoyage
   useEffect(() => {
     if (Platform.OS === 'web') {
       setIsLoading(false);
       return;
     }
-    
-    async function initialize() {
-      try {
-        // Ensure downloads directory exists - ignorer les erreurs
-        try {
-          await ensureDownloadsDirectory();
-        } catch (dirErr) {
-          console.warn('Problème avec le répertoire de téléchargements:', dirErr);
-          // Continuer malgré l'erreur
-        }
-        
-        // Load episodes
-        await fetchEpisodes();
-        
-        // Ne pas afficher d'erreur initiale
-        setError(null);
 
-        // Set up cleanup interval
-        const cleanupInterval = setInterval(() => {
-          cleanupOldDownloads().catch(err => {
-            console.warn('Erreur lors du nettoyage automatique:', err);
-          });
-        }, CLEANUP_INTERVAL_MS);
-        
-        return () => clearInterval(cleanupInterval);
-      } catch (err) {
-        console.error('Erreur critique lors de l\'initialisation:', err);
-        // N'afficher une erreur à l'utilisateur que si c'est critique
-        if (err instanceof Error && err.message.includes('critical')) {
-          setError('Erreur lors du chargement des épisodes');
-        }
-      } finally {
-        // Toujours terminer le chargement
-        setIsLoading(false);
-      }
-    }
-    
-    initialize();
+    // Initialisation
+    setupDownloads();
+
+    // Nettoyage
+    return () => {
+      isMounted.current = false;
+    };
   }, []);
 
-  // Check downloaded episodes when episodes change
+  // Initialiser les téléchargements
+  const setupDownloads = async () => {
+    try {
+      // S'assurer que le répertoire existe
+      await ensureDownloadsDirectory().catch(() => {});
+      
+      // Charger les épisodes
+      await fetchEpisodes();
+      
+      // Mettre en place le nettoyage automatique
+      const cleanupInterval = setInterval(() => {
+        if (isMounted.current) {
+          cleanupOldDownloads().catch(() => {});
+        }
+      }, CLEANUP_INTERVAL_MS);
+      
+      return () => clearInterval(cleanupInterval);
+    } catch (error) {
+      console.error('Error setting up downloads:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Vérifier les téléchargements lorsque les épisodes changent
   useEffect(() => {
     if (episodes.length > 0 && Platform.OS !== 'web') {
-      checkDownloadedEpisodes().catch(err => {
-        // Ignorer les erreurs de vérification des téléchargements pendant l'initialisation
-        console.warn('Erreur ignorée lors de la vérification des téléchargements:', err);
-      });
+      checkDownloadedEpisodes();
     }
   }, [episodes]);
 
-  // File system helpers
+  // Helpers pour le système de fichiers
   const ensureDownloadsDirectory = async () => {
-    if (Platform.OS === 'web') return;
+    if (Platform.OS === 'web') return false;
     
     try {
       const dirInfo = await FileSystem.getInfoAsync(DOWNLOADS_DIR);
       
       if (!dirInfo.exists) {
-        try {
-          await FileSystem.makeDirectoryAsync(DOWNLOADS_DIR, { intermediates: true });
-        } catch (mkdirErr) {
-          console.warn('Erreur lors de la création du répertoire, tentative alternative...', mkdirErr);
-          
-          // Essayer de créer le répertoire parent
-          const parentDir = DOWNLOADS_DIR.split('/').slice(0, -2).join('/') + '/';
-          await FileSystem.makeDirectoryAsync(parentDir, { intermediates: true });
-          
-          // Puis réessayer le répertoire de téléchargements
-          await FileSystem.makeDirectoryAsync(DOWNLOADS_DIR, { intermediates: true });
-        }
+        await FileSystem.makeDirectoryAsync(DOWNLOADS_DIR, { intermediates: true });
       }
       
       return true;
-    } catch (err) {
-      console.error(`Impossible de créer le dossier de téléchargements:`, err);
-      // Ne pas planter l'application, retourner false pour indiquer l'échec
+    } catch (error) {
+      console.error('Error creating downloads directory:', error);
       return false;
     }
   };
@@ -144,14 +112,8 @@ export default function DownloadsScreen() {
     return url.split('/').pop() || `episode-${Date.now()}.mp3`;
   };
 
-  const getFilePath = (episode: Episode): string => {
-    const filename = getFilename(episode?.mp3Link);
-    return DOWNLOADS_DIR + filename;
-  };
-
-  // Data loading functions
+  // Charger les épisodes
   const fetchEpisodes = async () => {
-    setIsLoading(true);
     try {
       const { data, error: apiError } = await supabase
         .from('episodes')
@@ -159,74 +121,66 @@ export default function DownloadsScreen() {
         .order('publication_date', { ascending: false });
 
       if (apiError) throw apiError;
+      if (!isMounted.current) return;
 
       setEpisodes(data as Episode[]);
+      setError(null);
     } catch (err) {
-      handleError(err, 'Erreur lors du chargement des épisodes');
-    } finally {
-      setIsLoading(false);
+      console.error('Error fetching episodes:', err);
+      if (isMounted.current) {
+        setError('Erreur lors du chargement des épisodes');
+      }
     }
   };
 
+  // Vérifier les épisodes téléchargés
   const checkDownloadedEpisodes = async () => {
-    if (Platform.OS === 'web') return;
+    if (Platform.OS === 'web' || !isMounted.current) return;
 
     try {
-      // Essayer de créer le répertoire, mais continuer même en cas d'échec
-      const dirCreated = await ensureDownloadsDirectory();
-      let files: string[] = [];
+      // S'assurer que le répertoire existe
+      await ensureDownloadsDirectory();
       
-      // Ne tenter de lire le répertoire que s'il a été créé avec succès
-      if (dirCreated) {
-        try {
-          files = await FileSystem.readDirectoryAsync(DOWNLOADS_DIR);
-        } catch (readError) {
-          console.warn('Impossible de lire le répertoire de téléchargements:', readError);
-          // Continuer avec une liste vide de fichiers
-        }
-      }
+      // Lire les fichiers dans le répertoire
+      const files = await FileSystem.readDirectoryAsync(DOWNLOADS_DIR)
+        .catch(() => [] as string[]);
       
-      // Initialize status for all episodes
-      const newStatus: DownloadStatus = { ...downloadStatus };
+      // Mettre à jour le statut de chaque épisode
+      const newStatus: DownloadStatus = {};
       
-      // Update status for each episode
       for (const episode of episodes) {
-        // Skip episodes without mp3Link
-        if (!episode?.mp3Link) {
-          console.warn(`Episode ${episode?.id || 'unknown'} does not have an mp3Link`);
-          continue;
-        }
+        if (!episode?.mp3_link) continue;
         
-        const filename = getFilename(episode.mp3Link);
+        const filename = getFilename(episode.mp3_link);
         const isDownloaded = files.includes(filename);
-        const filePath = isDownloaded ? DOWNLOADS_DIR + filename : undefined;
         
         newStatus[episode.id] = {
-          ...newStatus[episode.id],
+          ...downloadStatus[episode.id],
           progress: isDownloaded ? 1 : 0,
-          downloading: newStatus[episode.id]?.downloading || false,
+          downloading: downloadStatus[episode.id]?.downloading || false,
           downloaded: isDownloaded,
-          filePath
+          filePath: isDownloaded ? DOWNLOADS_DIR + filename : undefined
         };
       }
       
-      setDownloadStatus(newStatus);
-    } catch (err) {
-      console.warn('Erreur lors de la vérification des téléchargements:', err);
-      // Ne pas afficher d'erreur à l'utilisateur, juste logger
+      if (isMounted.current) {
+        setDownloadStatus(newStatus);
+      }
+    } catch (error) {
+      console.warn('Error checking downloads:', error);
     }
   };
 
-  // Download management
+  // Télécharger un épisode
   const downloadEpisode = async (episode: Episode) => {
     // Vérifier si l'épisode a un lien mp3 valide
-    if (!episode?.mp3Link) {
-      setError('Lien de téléchargement non disponible pour cet épisode');
+    if (!episode?.mp3_link) {
+      setError('Lien de téléchargement non disponible');
       return;
     }
     
     if (Platform.OS === 'web') {
-      window.open(episode.mp3Link, '_blank');
+      window.open(episode.mp3_link, '_blank');
       return;
     }
 
@@ -234,46 +188,51 @@ export default function DownloadsScreen() {
       setError(null);
       await ensureDownloadsDirectory();
       
-      const filename = getFilename(episode.mp3Link);
+      const filename = getFilename(episode.mp3_link);
       const fileUri = DOWNLOADS_DIR + filename;
 
-      // Update status to downloading
+      // Mettre à jour le statut
       setDownloadStatus(prev => ({
         ...prev,
         [episode.id]: {
+          ...prev[episode.id],
           progress: 0,
           downloading: true,
-          downloaded: false,
-          filePath: fileUri
+          downloaded: false
         }
       }));
 
-      // Create download resumable
+      // Créer le téléchargement
       const downloadResumable = FileSystem.createDownloadResumable(
-        episode.mp3Link,
+        episode.mp3_link,
         fileUri,
         {},
         (downloadProgress) => {
-          if (!downloadProgress.totalBytesExpectedToWrite) return;
+          if (!isMounted.current || !downloadProgress.totalBytesExpectedToWrite) return;
           
           const progress = downloadProgress.totalBytesWritten / 
                           downloadProgress.totalBytesExpectedToWrite;
           
-          setDownloadStatus(prev => ({
-            ...prev,
-            [episode.id]: {
-              ...prev[episode.id],
-              progress: progress
-            }
-          }));
+          // Limiter les mises à jour d'état pour économiser la batterie
+          if (Math.abs(progress - (downloadStatus[episode.id]?.progress || 0)) > 0.05) {
+            setDownloadStatus(prev => ({
+              ...prev,
+              [episode.id]: {
+                ...prev[episode.id],
+                progress
+              }
+            }));
+          }
         }
       );
 
-      // Start download
+      // Démarrer le téléchargement
       const result = await downloadResumable.downloadAsync();
       
+      if (!isMounted.current) return;
+      
       if (result?.uri) {
-        // Save metadata
+        // Enregistrer les métadonnées
         const metadataUri = fileUri + '.meta';
         const metadata = {
           id: episode.id,
@@ -286,7 +245,7 @@ export default function DownloadsScreen() {
           JSON.stringify(metadata)
         );
 
-        // Update status to downloaded
+        // Mettre à jour le statut
         setDownloadStatus(prev => ({
           ...prev,
           [episode.id]: {
@@ -299,106 +258,91 @@ export default function DownloadsScreen() {
       } else {
         throw new Error('Le téléchargement a échoué');
       }
-    } catch (err) {
-      handleDownloadError(err, episode);
+    } catch (error) {
+      console.error('Download error:', error);
+      
+      if (isMounted.current) {
+        setError('Erreur lors du téléchargement');
+        setDownloadStatus(prev => ({
+          ...prev,
+          [episode.id]: {
+            progress: 0,
+            downloading: false,
+            downloaded: false
+          }
+        }));
+      }
     }
   };
 
-  const handleDownloadError = (err: unknown, episode: Episode) => {
-    console.error('Erreur de téléchargement:', err);
-    
-    let errorMessage = 'Erreur lors du téléchargement';
-    
-    if (err instanceof Error) {
-      if (err.message.includes('ENOSPC')) {
-        errorMessage = 'Espace de stockage insuffisant';
-      } else if (err.message.includes('ENOENT')) {
-        errorMessage = 'Impossible d\'accéder au stockage';
-      } else if (err.message.includes('network')) {
-        errorMessage = 'Erreur réseau';
-      }
-    }
-    
-    setError(errorMessage);
-    
-    // Reset download status
-    setDownloadStatus(prev => ({
-      ...prev,
-      [episode.id]: {
-        progress: 0,
-        downloading: false,
-        downloaded: false
-      }
-    }));
-    
-    // Log to Sentry if available
-    if (typeof Sentry !== 'undefined') {
-      Sentry.captureException(err);
-    }
-  };
-
+  // Supprimer un téléchargement
   const deleteDownload = async (episode: Episode) => {
-    if (Platform.OS === 'web') return;
+    if (Platform.OS === 'web' || !episode?.mp3_link) return;
 
     try {
-      setError(null);
-      const filePath = getFilePath(episode);
-      const metadataPath = filePath + '.meta';
+      const filename = getFilename(episode.mp3_link);
+      const filePath = DOWNLOADS_DIR + filename;
+      const metaPath = filePath + '.meta';
       
-      // Delete file and metadata
+      // Supprimer le fichier et les métadonnées
       await Promise.all([
-        FileSystem.deleteAsync(filePath, { idempotent: true }),
-        FileSystem.deleteAsync(metadataPath, { idempotent: true }).catch(() => {})
+        FileSystem.deleteAsync(filePath, { idempotent: true }).catch(() => {}),
+        FileSystem.deleteAsync(metaPath, { idempotent: true }).catch(() => {})
       ]);
 
-      // Update status
-      setDownloadStatus(prev => ({
-        ...prev,
-        [episode.id]: {
-          progress: 0,
-          downloading: false,
-          downloaded: false,
-          filePath: undefined
-        }
-      }));
-    } catch (err) {
-      handleError(err, 'Erreur lors de la suppression');
+      // Mettre à jour le statut
+      if (isMounted.current) {
+        setDownloadStatus(prev => ({
+          ...prev,
+          [episode.id]: {
+            progress: 0,
+            downloading: false,
+            downloaded: false
+          }
+        }));
+      }
+    } catch (error) {
+      console.error('Error deleting download:', error);
+      setError('Erreur lors de la suppression');
     }
   };
 
+  // Supprimer tous les téléchargements
   const deleteAllDownloads = async () => {
     if (Platform.OS === 'web') return;
 
     try {
-      setError(null);
-      
-      // Delete and recreate downloads directory
+      // Supprimer et recréer le répertoire
       await FileSystem.deleteAsync(DOWNLOADS_DIR, { idempotent: true });
       await ensureDownloadsDirectory();
 
-      // Reset all download statuses
-      const newStatus: DownloadStatus = {};
-      episodes.forEach(episode => {
-        newStatus[episode.id] = {
-          progress: 0,
-          downloading: false,
-          downloaded: false
-        };
-      });
-      
-      setDownloadStatus(newStatus);
-    } catch (err) {
-      handleError(err, 'Erreur lors de la suppression des téléchargements');
+      // Réinitialiser tous les statuts
+      if (isMounted.current) {
+        const newStatus: DownloadStatus = {};
+        episodes.forEach(episode => {
+          newStatus[episode.id] = {
+            progress: 0,
+            downloading: false,
+            downloaded: false
+          };
+        });
+        
+        setDownloadStatus(newStatus);
+      }
+    } catch (error) {
+      console.error('Error deleting all downloads:', error);
+      setError('Erreur lors de la suppression des téléchargements');
     }
   };
 
+  // Nettoyer les anciens téléchargements
   const cleanupOldDownloads = async () => {
-    if (Platform.OS === 'web') return;
+    if (Platform.OS === 'web' || !isMounted.current) return;
 
     try {
-      await ensureDownloadsDirectory();
+      const files = await FileSystem.readDirectoryAsync(DOWNLOADS_DIR)
+        .catch(() => [] as string[]);
       
-      const files = await FileSystem.readDirectoryAsync(DOWNLOADS_DIR);
       const metaFiles = files.filter(file => file.endsWith('.meta'));
       const now = new Date();
       
@@ -418,21 +362,23 @@ export default function DownloadsScreen() {
             await FileSystem.deleteAsync(DOWNLOADS_DIR + audioFile, { idempotent: true });
             await FileSystem.deleteAsync(metaPath, { idempotent: true });
           }
-        } catch (metaErr) {
-          console.warn('Erreur lors du traitement du fichier méta:', metaFile, metaErr);
+        } catch (error) {
+          console.warn('Error processing metadata file:', error);
         }
       }
       
-      // Refresh status
+      // Rafraîchir les statuts
       await checkDownloadedEpisodes();
-    } catch (err) {
-      console.error('Erreur lors du nettoyage des téléchargements:', err);
+    } catch (error) {
+      console.error('Error cleaning up old downloads:', error);
     }
   };
 
-  // UI helpers
+  // Helper pour confirmer la suppression de tous les téléchargements
   const confirmDeleteAll = useCallback(() => {
-    if (!hasDownloadedEpisodes) {
+    const hasDownloads = Object.values(downloadStatus).some(status => status.downloaded);
+    
+    if (!hasDownloads) {
       setError('Aucun épisode téléchargé à supprimer');
       return;
     }
@@ -441,109 +387,72 @@ export default function DownloadsScreen() {
       'Supprimer tous les téléchargements',
       'Êtes-vous sûr de vouloir supprimer tous les épisodes téléchargés ?',
       [
-        {
-          text: 'Annuler',
-          style: 'cancel'
-        },
-        {
-          text: 'Supprimer',
-          onPress: deleteAllDownloads,
-          style: 'destructive'
-        }
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Supprimer', onPress: deleteAllDownloads, style: 'destructive' }
       ]
     );
-  }, [hasDownloadedEpisodes]);
+  }, [downloadStatus]);
 
-  const playEpisode = useCallback((episodeIndex: number) => {
+  // Handler pour lancer la lecture d'un épisode
+  const playEpisode = useCallback((index: number) => {
     router.push({
       pathname: '/player',
-      params: { episodeIndex }
+      params: { episodeIndex: index }
     });
   }, [router]);
 
-  const handleError = (err: any, message: string) => {
-    console.error(`${message}:`, err);
-    
-    // Ne pas afficher d'erreurs pour des problèmes mineurs d'initialisation
-    if (message.includes('vérification des téléchargements') || 
-        message.includes('initialisation')) {
-      // Juste logger sans afficher à l'utilisateur
-      console.warn('Erreur silencieuse:', message);
-    } else {
-      setError(message);
-    }
-    
-    // Log to Sentry if available
-    if (typeof Sentry !== 'undefined') {
-      Sentry.captureException(err);
-    }
-  };
-
-  // Components
+  // Composant pour le cercle de progression
   const ProgressCircle = ({ progress }: { progress: number }) => {
-    const radius = 12;
+    const radius = 10;
+    const strokeWidth = 2;
+    const center = radius + strokeWidth;
     const circumference = 2 * Math.PI * radius;
-    const animatedProgress = useSharedValue(0);
+    const strokeDashoffset = circumference * (1 - progress);
     
-    useEffect(() => {
-      animatedProgress.value = withTiming(progress, { duration: 300 });
-    }, [progress]);
-    
-    const animatedStyle = useAnimatedStyle(() => {
-      const strokeDashoffset = circumference * (1 - animatedProgress.value);
-      return {
-        transform: [{ rotate: '-90deg' }],
-        strokeDashoffset,
-      };
-    });
-
     return (
       <View style={styles.progressCircleContainer}>
-        <Svg width={radius * 2 + 4} height={radius * 2 + 4}>
-          {/* Background circle */}
+        <Svg width={center * 2} height={center * 2}>
+          {/* Cercle de fond */}
           <Circle
-            cx={radius + 2}
-            cy={radius + 2}
+            cx={center}
+            cy={center}
             r={radius}
             stroke="#333333"
-            strokeWidth="2"
+            strokeWidth={strokeWidth}
             fill="none"
           />
           
-          {/* Progress circle */}
-          <Animated.View style={animatedStyle}>
-            <Svg width={radius * 2 + 4} height={radius * 2 + 4}>
-              <Circle
-                cx={radius + 2}
-                cy={radius + 2}
-                r={radius}
-                stroke="#0ea5e9"
-                strokeWidth="2"
-                fill="none"
-                strokeDasharray={circumference}
-                strokeLinecap="round"
-              />
-            </Svg>
-          </Animated.View>
+          {/* Cercle de progression */}
+          <Circle
+            cx={center}
+            cy={center}
+            r={radius}
+            stroke="#0ea5e9"
+            strokeWidth={strokeWidth}
+            fill="none"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            transform={`rotate(-90, ${center}, ${center})`}
+          />
         </Svg>
         
-        {/* Center icon or percentage */}
-        <View style={styles.progressIcon}>
-          <Text style={styles.progressText}>
-            {Math.round(progress * 100)}%
-          </Text>
-        </View>
+        {/* Pourcentage */}
+        <Text style={styles.progressText}>
+          {Math.round(progress * 100)}%
+        </Text>
       </View>
     );
   };
 
+  // Message si aucun épisode n'est disponible
   const NoEpisodesMessage = () => (
     <View style={styles.emptyContainer}>
       <Text style={styles.emptyText}>Aucun épisode disponible</Text>
     </View>
   );
 
-  // Render
+  // Affichage pendant le chargement
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -553,11 +462,12 @@ export default function DownloadsScreen() {
     );
   }
 
+  // Affichage principal
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Téléchargements</Text>
-        {Platform.OS !== 'web' && hasDownloadedEpisodes && (
+        {Platform.OS !== 'web' && Object.values(downloadStatus).some(status => status.downloaded) && (
           <TouchableOpacity
             style={styles.deleteAllButton}
             onPress={confirmDeleteAll}
@@ -570,26 +480,30 @@ export default function DownloadsScreen() {
       {error && (
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity onPress={() => setError(null)} style={styles.dismissButton}>
+            <Text style={styles.dismissButtonText}>×</Text>
+          </TouchableOpacity>
         </View>
       )}
 
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={episodes.length === 0 ? styles.scrollViewEmpty : undefined}
-      >
+      <ScrollView style={styles.scrollView}>
         {episodes.length === 0 ? (
           <NoEpisodesMessage />
         ) : (
           episodes.map((episode, index) => (
             <View key={episode.id} style={styles.episodeCard}>
-              <View style={styles.episodeInfo}>
+              <TouchableOpacity 
+                style={styles.episodeInfo}
+                onPress={() => playEpisode(index)}
+                activeOpacity={0.7}
+              >
                 <Text style={styles.episodeTitle}>{episode.title}</Text>
-                {episode.publicationDate && (
+                {episode.publication_date && (
                   <Text style={styles.episodeDate}>
-                    {new Date(episode.publicationDate).toLocaleDateString()}
+                    {new Date(episode.publication_date).toLocaleDateString()}
                   </Text>
                 )}
-              </View>
+              </TouchableOpacity>
 
               <View style={styles.actions}>
                 <TouchableOpacity
@@ -680,11 +594,6 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
   },
-  scrollViewEmpty: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   errorContainer: {
     backgroundColor: 'rgba(239, 68, 68, 0.2)',
     padding: 12,
@@ -693,14 +602,32 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderLeftWidth: 3,
     borderLeftColor: '#ef4444',
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   errorText: {
     color: '#ef4444',
     fontSize: 14,
+    flex: 1,
+  },
+  dismissButton: {
+    padding: 4,
+    borderRadius: 12,
+    backgroundColor: 'rgba(239, 68, 68, 0.5)',
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dismissButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 40,
   },
   emptyText: {
     color: '#888',
@@ -750,21 +677,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#ef4444',
   },
   progressCircleContainer: {
-    width: 28,
-    height: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  progressIcon: {
-    position: 'absolute',
     width: '100%',
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
+    position: 'relative',
   },
   progressText: {
+    position: 'absolute',
     color: '#fff',
     fontSize: 8,
     fontWeight: 'bold',
-  },
+  }
 });

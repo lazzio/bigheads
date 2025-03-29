@@ -98,9 +98,6 @@ jobs:
                   }
                 }
               ],
-              ["@semantic-release/exec", {
-                "prepareCmd": "poetry version \${nextRelease.version}"
-              }],
               "@semantic-release/changelog",
               "@semantic-release/npm",
               [
