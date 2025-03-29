@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -47,6 +47,10 @@ export default function DownloadsScreen() {
   
   // Hooks
   const router = useRouter();
+
+  // Ajouter un ref pour limiter les opérations coûteuses
+  const isMounted = useRef(true);
+  const lastCheckTime = useRef(0);
 
   // Derived state
   const hasDownloadedEpisodes = useMemo(() => {
@@ -97,6 +101,13 @@ export default function DownloadsScreen() {
     }
     
     initialize();
+  }, []);
+
+  // Optimisation du cleanup avec useEffect
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
   }, []);
 
   // Check downloaded episodes when episodes change
@@ -168,8 +179,16 @@ export default function DownloadsScreen() {
     }
   };
 
+  // Optimiser la vérification des téléchargements
   const checkDownloadedEpisodes = async () => {
-    if (Platform.OS === 'web') return;
+    if (Platform.OS === 'web' || !isMounted.current) return;
+
+    // Limiter les vérifications à pas plus d'une fois toutes les 5 secondes
+    const now = Date.now();
+    if (now - lastCheckTime.current < 5000) {
+      return;
+    }
+    lastCheckTime.current = now;
 
     try {
       // Essayer de créer le répertoire, mais continuer même en cas d'échec
@@ -217,7 +236,7 @@ export default function DownloadsScreen() {
     }
   };
 
-  // Download management
+  // Optimiser les téléchargements pour éviter de bloquer le thread principal
   const downloadEpisode = async (episode: Episode) => {
     // Vérifier si l'épisode a un lien mp3 valide
     if (!episode?.mp3Link) {
@@ -254,18 +273,21 @@ export default function DownloadsScreen() {
         fileUri,
         {},
         (downloadProgress) => {
-          if (!downloadProgress.totalBytesExpectedToWrite) return;
+          if (!isMounted.current || !downloadProgress.totalBytesExpectedToWrite) return;
           
           const progress = downloadProgress.totalBytesWritten / 
                           downloadProgress.totalBytesExpectedToWrite;
           
-          setDownloadStatus(prev => ({
-            ...prev,
-            [episode.id]: {
-              ...prev[episode.id],
-              progress: progress
-            }
-          }));
+          // Mettre à jour l'état uniquement si le changement est significatif (>1%)
+          if (Math.abs(progress - (downloadStatus[episode.id]?.progress || 0)) > 0.01) {
+            setDownloadStatus(prev => ({
+              ...prev,
+              [episode.id]: {
+                ...prev[episode.id],
+                progress: progress
+              }
+            }));
+          }
         }
       );
 

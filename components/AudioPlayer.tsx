@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, Pressable } from 'react-native';
 import { Audio } from 'expo-av';
 import { Play, Pause, SkipBack, SkipForward, Moon, Rewind, FastForward, Forward as Forward10 } from 'lucide-react-native';
@@ -8,6 +8,7 @@ import Animated, {
   withSpring, 
   useSharedValue,
   withTiming,
+  runOnJS,
 } from 'react-native-reanimated';
 import { 
   Gesture,
@@ -32,25 +33,60 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
   const [error, setError] = useState<string | null>(null);
   const [isSeeking, setIsSeeking] = useState(false);
   
+  const [progressBarWidth, setProgressBarWidth] = useState(0);
+  const [progressBarPosition, setProgressBarPosition] = useState({ x: 0, y: 0 });
+  const [updateInterval, setUpdateInterval] = useState<NodeJS.Timeout | null>(null);
+  
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const progressBarRef = useRef<View>(null);
   
-  // Animation values
   const knobScale = useSharedValue(0);
   const isPressed = useSharedValue(false);
 
+  const measureProgressBar = useCallback(() => {
+    if (progressBarRef.current) {
+      progressBarRef.current.measure((x, y, width, height, pageX, pageY) => {
+        setProgressBarWidth(width);
+        setProgressBarPosition({ x: pageX, y: pageY });
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    const timerId = setTimeout(measureProgressBar, 200);
+    return () => clearTimeout(timerId);
+  }, [measureProgressBar]);
+
+  const startPositionUpdateInterval = useCallback(() => {
+    if (updateInterval) clearInterval(updateInterval);
+    
+    const interval = setInterval(() => {
+      if (!isSeeking && sound) {
+        sound.getStatusAsync().then(status => {
+          if (status.isLoaded) {
+            setPosition(status.positionMillis);
+          }
+        }).catch(err => console.warn("Error getting status:", err));
+      }
+    }, 500);
+    
+    setUpdateInterval(interval);
+    return interval;
+  }, [sound, isSeeking]);
+
   useEffect(() => {
     return () => {
+      if (updateInterval) clearInterval(updateInterval);
       if (Platform.OS === 'web') {
         if (audioRef.current) {
           audioRef.current.pause();
           audioRef.current.src = '';
         }
       } else if (sound) {
-        sound.unloadAsync();
+        sound.unloadAsync().catch(err => console.warn("Error unloading sound:", err));
       }
     };
-  }, []);
+  }, [sound, updateInterval]);
 
   useEffect(() => {
     if (Platform.OS === 'web') {
@@ -71,28 +107,38 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     .onBegin(() => {
       isPressed.value = true;
       knobScale.value = withSpring(1);
+      runOnJS(measureProgressBar)();
     })
     .onUpdate((e) => {
-      if (!progressBarRef.current) return;
-      progressBarRef.current.measure((x, y, width, height, pageX, pageY) => {
-        const touchX = e.absoluteX - pageX;
-        const percentage = Math.max(0, Math.min(touchX / width, 1));
+      if (progressBarWidth > 0) {
+        const touchX = e.absoluteX - progressBarPosition.x;
+        const percentage = Math.max(0, Math.min(touchX / progressBarWidth, 1));
         const newPosition = percentage * duration;
         
-        setPosition(newPosition);
-        setIsSeeking(true);
+        runOnJS(setPosition)(newPosition);
+        runOnJS(setIsSeeking)(true);
         
         if (Platform.OS === 'web' && audioRef.current) {
-          audioRef.current.currentTime = newPosition / 1000;
+          runOnJS(() => {
+            if (audioRef.current) {
+              audioRef.current.currentTime = newPosition / 1000;
+            }
+          })();
         } else if (sound) {
-          sound.setPositionAsync(newPosition);
+          runOnJS(() => {
+            if (sound) {
+              sound.setPositionAsync(newPosition).catch(err => 
+                console.warn("Error setting position:", err)
+              );
+            }
+          })();
         }
-      });
+      }
     })
     .onFinalize(() => {
       isPressed.value = false;
       knobScale.value = withTiming(0);
-      setIsSeeking(false);
+      runOnJS(setIsSeeking)(false);
     });
 
   function setupWebAudio() {
@@ -172,13 +218,20 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
 
   const onPlaybackStatusUpdate = (status: any) => {
     if (status.isLoaded) {
-      if (!isSeeking) {
+      if (!isSeeking && Math.abs(position - status.positionMillis) > 1000) {
         setPosition(status.positionMillis);
       }
-      setIsPlaying(status.isPlaying);
+      
+      if (isPlaying !== status.isPlaying) {
+        setIsPlaying(status.isPlaying);
+      }
 
       if (status.didJustFinish) {
         setIsPlaying(false);
+        if (updateInterval) {
+          clearInterval(updateInterval);
+          setUpdateInterval(null);
+        }
         onComplete?.();
         if (sleepTimerActive) {
           handleSleepTimer();
@@ -192,15 +245,25 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       if (Platform.OS === 'web' && audioRef.current) {
         if (isPlaying) {
           audioRef.current.pause();
+          if (updateInterval) {
+            clearInterval(updateInterval);
+            setUpdateInterval(null);
+          }
         } else {
           await audioRef.current.play();
+          startPositionUpdateInterval();
         }
         setIsPlaying(!isPlaying);
       } else if (sound) {
         if (isPlaying) {
           await sound.pauseAsync();
+          if (updateInterval) {
+            clearInterval(updateInterval);
+            setUpdateInterval(null);
+          }
         } else {
           await sound.playAsync();
+          startPositionUpdateInterval();
         }
       }
     } catch (err) {
@@ -229,7 +292,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
   };
 
   const handleSkip10Minutes = async () => {
-    await handleSeek(600); // 600 seconds = 10 minutes
+    await handleSeek(600);
   };
 
   const formatTime = (milliseconds: number) => {

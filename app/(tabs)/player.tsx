@@ -1,6 +1,6 @@
-import { View, StyleSheet } from 'react-native';
-import { useEffect, useState } from 'react';
-import { Audio } from 'expo-av';
+import { View, StyleSheet, AppState, Platform } from 'react-native';
+import { useEffect, useState, useRef } from 'react';
+import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { useLocalSearchParams } from 'expo-router';
 import AudioPlayer from '../../components/AudioPlayer';
 import { supabase } from '../../lib/supabase';
@@ -14,10 +14,28 @@ export default function PlayerScreen() {
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const appStateRef = useRef(AppState.currentState);
 
   useEffect(() => {
     setupAudio();
     fetchEpisodes();
+
+    // Gérer les changements d'état de l'application
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (appStateRef.current === 'active' && nextAppState.match(/inactive|background/)) {
+        // App passe en arrière-plan
+        console.log('App is going to background');
+      } else if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
+        // App revient au premier plan
+        console.log('App is coming to foreground');
+        // Rechargez l'audio si nécessaire
+      }
+      appStateRef.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -34,6 +52,10 @@ export default function PlayerScreen() {
       playsInSilentModeIOS: true,
       staysActiveInBackground: true,
       shouldDuckAndroid: true,
+      // Ajout de ces options pour réduire la consommation de batterie
+      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+      playThroughEarpieceAndroid: false, // Utiliser le haut-parleur par défaut
     });
   }
 
@@ -50,10 +72,10 @@ export default function PlayerScreen() {
         id: episode.id,
         title: episode.title,
         description: episode.description,
-        originalMp3Link: episode.original_mp3_link,
-        mp3Link: episode.mp3_link,
+        originalMp3Link: episode.originalMp3Link,
+        mp3Link: episode.mp3Link,
         duration: episode.duration,
-        publicationDate: episode.publication_date
+        publicationDate: episode.publicationDate
       }));
 
       setEpisodes(formattedEpisodes);
