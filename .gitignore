@@ -14,6 +14,7 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
+*.apk
 
 # metro
 .metro-health-check*
@@ -42,3 +43,5 @@ worker/.venv
 
 # Service account file
 worker/sa.json
+
+.env.local

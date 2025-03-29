@@ -9,7 +9,6 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 from urllib.parse import urlparse
 from google.cloud import storage
-from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 
@@ -275,7 +274,7 @@ class PodcastFetcher:
             local_path = os.path.join(DOWNLOAD_DIR, filename)
             
             # Check if already downloaded
-            if Path.exists(local_path):
+            if os.path.exists(local_path):
                 logger.info(f"File already exists: {filename}")
                 return filename
                             

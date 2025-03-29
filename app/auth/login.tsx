@@ -1,10 +1,39 @@
-import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Alert } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { storage } from '../../lib/storage';
+import * as Sentry from '@sentry/react-native';
+import Constants from 'expo-constants';
+
+// Import SVG components
+import Svg, { Path } from 'react-native-svg';
+
+// Fixed GoogleIcon implementation using react-native-svg
+function GoogleIcon() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 18 18" style={{ marginRight: 24 }}>
+      <Path
+        fill="#4285F4"
+        d="M17.64 9.205c0-.639-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"
+      />
+      <Path
+        fill="#34A853"
+        d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z"
+      />
+      <Path
+        fill="#FBBC05"
+        d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"
+      />
+      <Path
+        fill="#EA4335"
+        d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"
+      />
+    </Svg>
+  );
+}
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -12,12 +41,45 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const redirectUrl = Linking.createURL('/(tabs)');
+  
+  // Création de l'URL de redirection correcte avec le schéma de l'app
+  // Utiliser une URL complète avec le schéma de l'application
+  const appScheme = typeof Constants.expoConfig?.scheme === 'string' 
+  ? Constants.expoConfig.scheme 
+  : 'xyz.myops.bigheads';
+  const redirectUrl = Linking.createURL('/(tabs)', {
+    // S'assurer que c'est un schéma deeplink et non une URL web
+    scheme: appScheme
+  });
+
+  // Nettoyage du cache des sessions OAuth précédentes
+  useEffect(() => {
+    if (Platform.OS !== 'web') {
+      WebBrowser.maybeCompleteAuthSession();
+    }
+    
+    // Vérifions s'il y a déjà une session active au chargement
+    const checkExistingSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      console.log('Checking existing session on load:', data.session ? 'Session exists' : 'No session');
+      
+      if (data.session) {
+        // Si une session existe déjà, rediriger vers l'app
+        router.replace('/(tabs)');
+      }
+    };
+    
+    checkExistingSession();
+  }, [router]);
+
+  // Journal pour le débogage
+  console.log('Login screen rendered, redirectUrl:', redirectUrl);
 
   async function handleLogin() {
     try {
       setLoading(true);
       setError(null);
+      console.log('Attempting login with email/password');
 
       const { error } = await supabase.auth.signInWithPassword({
         email,
@@ -25,9 +87,12 @@ export default function LoginScreen() {
       });
 
       if (error) throw error;
-
+      console.log('Login successful, redirecting');
       router.replace('/(tabs)');
     } catch (err) {
+      console.error('Login error:', err);
+      // Capture d'exception pour Sentry
+      Sentry.captureException(err);
       setError(err instanceof Error ? err.message : 'Une erreur est survenue');
     } finally {
       setLoading(false);
@@ -36,15 +101,28 @@ export default function LoginScreen() {
 
   async function handleGoogleSignIn() {
     try {
+      // Ajout d'un breadcrumb pour Sentry
+      Sentry.addBreadcrumb({
+        category: 'auth',
+        message: 'Starting Google OAuth flow',
+        level: 'info',
+        data: {
+          platform: Platform.OS,
+          redirectUrl: redirectUrl
+        }
+      });
+
       setLoading(true);
       setError(null);
-  
-      // Clear any existing auth data
+      console.log('Starting Google OAuth flow');
+
+      // Nettoyage des anciens tokens avant de commencer
       await storage.removeItem('supabase.auth.token');
       await storage.removeItem('supabase.auth.refreshToken');
       await storage.removeItem('supabase.auth.user');
-  
+
       if (Platform.OS === 'web') {
+        console.log('Web platform OAuth flow');
         const { error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
@@ -57,12 +135,7 @@ export default function LoginScreen() {
         });
         if (error) throw error;
       } else {
-        // Pour mobile
-        const redirectUrl = Linking.createURL('/(tabs)');
-        
-        // Log pour déboguer - utile pour configurer votre client OAuth2
-        console.log("Redirect URL:", redirectUrl);
-        
+        console.log('Native platform OAuth flow');
         const { data, error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
@@ -74,62 +147,114 @@ export default function LoginScreen() {
             skipBrowserRedirect: true,
           },
         });
-  
+
         if (error) throw error;
-  
+
         if (data?.url) {
-          // Ouvrir le navigateur pour l'authentification
-          const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
-  
-          if (result.type === 'success') {
-            // Extraire les paramètres de l'URL
-            const { url } = result;
-            
-            // Gérer correctement l'URL de redirection
-            // L'URL peut contenir soit un fragment (#) soit des paramètres de requête (?)
-            let params;
-            if (url.includes('#')) {
-              params = new URLSearchParams(url.split('#')[1]);
-            } else if (url.includes('?')) {
-              params = new URLSearchParams(url.split('?')[1]);
+          console.log('Opening auth URL in browser:', data.url);
+          
+          // Utiliser openAuthSessionAsync avec les bons paramètres
+          const result = await WebBrowser.openAuthSessionAsync(
+            data.url, 
+            redirectUrl,
+            { 
+              showInRecents: true,
+              preferEphemeralSession: false
             }
+          );
+
+          console.log('Auth browser result type:', result.type);
+          
+          if (result.type === 'success') {
+            const { url } = result;
+            console.log('OAuth redirect success, processing URL:', url);
             
-            // Vérifier si nous avons un code d'autorisation (pour flow PKCE)
-            const code = params?.get('code');
-            
-            if (code) {
-              // Pour le flux PKCE, on utilise exchangeCodeForSession
-              const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
-              
-              if (sessionError) throw sessionError;
-              
-              if (sessionData?.session) {
-                router.replace('/(tabs)');
-              }
-            } else {
-              // Fallback à l'ancienne méthode (implicite) avec access_token et refresh_token
-              const access_token = params?.get('access_token');
-              const refresh_token = params?.get('refresh_token');
-              
-              if (access_token && refresh_token) {
-                const { error: sessionError } = await supabase.auth.setSession({
-                  access_token,
-                  refresh_token,
-                });
+            try {
+              // Essayer de traiter l'URL de redirection et d'extraire les tokens
+              if (url.includes('access_token') || url.includes('code=')) {
+                console.log('URL contains auth params, extracting...');
                 
-                if (sessionError) throw sessionError;
+                // Essayer d'extraire les paramètres de l'URL
+                let params: URLSearchParams;
+                if (url.includes('#')) {
+                  // Format fragment
+                  params = new URLSearchParams(url.split('#')[1]);
+                } else {
+                  // Format query
+                  params = new URLSearchParams(url.split('?')[1]);
+                }
+                
+                const access_token = params.get('access_token');
+                const refresh_token = params.get('refresh_token');
+                const code = params.get('code');
+                
+                console.log('Parsed tokens:', {
+                  access_token: access_token ? 'present' : 'missing',
+                  refresh_token: refresh_token ? 'present' : 'missing',
+                  code: code ? 'present' : 'missing'
+                });
+
+                if (access_token && refresh_token) {
+                  console.log('Tokens extracted, setting session');
+                  const { error: sessionError } = await supabase.auth.setSession({
+                    access_token,
+                    refresh_token,
+                  });
+
+                  if (sessionError) throw sessionError;
+                  router.replace('/(tabs)');
+                } else if (code) {
+                  console.log('Auth code found, exchanging for session');
+                  const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+                  
+                  if (exchangeError) throw exchangeError;
+                  router.replace('/(tabs)');
+                } else {
+                  console.log('No tokens in URL, checking session');
+                  const { data: { session } } = await supabase.auth.getSession();
+                  if (session) {
+                    console.log('Session exists after OAuth, redirecting');
+                    router.replace('/(tabs)');
+                  } else {
+                    throw new Error('Aucune donnée d\'authentification trouvée dans la redirection');
+                  }
+                }
+              } else {
+                console.log('No auth params in URL, checking session directly');
+                // Vérifier directement si une session existe
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session) {
+                  console.log('Session exists, redirecting');
+                  router.replace('/(tabs)');
+                } else {
+                  throw new Error('Aucune session trouvée après l\'authentification');
+                }
+              }
+            } catch (parseError) {
+              console.error('Error parsing OAuth redirect:', parseError);
+              // Essayer une approche différente - obtenir la session actuelle
+              const { data: { session } } = await supabase.auth.getSession();
+              if (session) {
+                console.log('Session exists despite parse error, redirecting');
                 router.replace('/(tabs)');
               } else {
-                throw new Error("Tokens non trouvés dans l'URL de redirection");
+                throw parseError;
               }
             }
+          } else if (result.type === 'cancel') {
+            console.log('User canceled OAuth flow');
+            // L'utilisateur a annulé, afficher un message
+            Alert.alert('Connexion annulée', 'Vous avez annulé la connexion Google.');
           }
         }
       }
     } catch (err) {
-      console.error("Erreur d'authentification:", err);
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue lors de la connexion');
-      // Nettoyer les données d'authentification partielles
+      console.error('Google sign-in error:', err);
+      // Capture d'exception pour Sentry
+      Sentry.captureException(err);
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue lors de la connexion Google');
+      
+      // Effacer les données d'auth partielles en cas d'erreur
       await storage.removeItem('supabase.auth.token');
       await storage.removeItem('supabase.auth.refreshToken');
       await storage.removeItem('supabase.auth.user');
@@ -182,12 +307,8 @@ export default function LoginScreen() {
         style={styles.googleButton}
         onPress={handleGoogleSignIn}
         disabled={loading}>
-        <Image
-          source={require('../../assets/images/google.svg')}
-          style={styles.googleIcon}
-          resizeMode="contain"
-        />
-        <Text style={styles.googleButtonText}>Continuer avec Google</Text>
+        <GoogleIcon />
+        <Text style={styles.googleButtonText}>Se connecter avec Google</Text>
       </TouchableOpacity>
 
       <Link href="/auth/register" style={styles.link}>
@@ -272,11 +393,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 1,
-  },
-  googleIcon: {
-    width: 18,
-    height: 18,
-    marginRight: 24,
   },
   googleButtonText: {
     color: '#757575',

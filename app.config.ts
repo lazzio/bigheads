@@ -11,13 +11,13 @@ const config: ExpoConfig = {
   orientation: "portrait",
   userInterfaceStyle: "light",
   scheme: "xyz.myops.bigheads",
-  backgroundColor: "#F6F6F6",
+  backgroundColor: "#121212", // Changed from #F6F6F6 to match app theme
   icon: "./assets/images/bh_opti.png",
 
   splash: {
     image: "./assets/images/bh_opti.png",
     resizeMode: "cover",
-    backgroundColor: "#F6F6F6"
+    backgroundColor: "#b48d7b"
   },
   
   android: {
@@ -37,6 +37,14 @@ const config: ExpoConfig = {
           buildToolsVersion: "35.0.0",
           kotlinVersion: "1.9.25",
         }
+      }
+    ],
+    [
+      "@sentry/react-native/expo",
+      {
+        "organization": "myops",
+        "project": "bigheads-app",
+        "url": "https://sentry.io/"
       }
     ]
   ],

@@ -34,10 +34,10 @@ export default function EpisodesScreen() {
         id: episode.id,
         title: episode.title,
         description: episode.description,
-        originalMp3Link: episode.originalMp3Link,
-        mp3Link: episode.mp3Link,
+        originalMp3Link: episode.original_mp3_link,
+        mp3Link: episode.mp3_link,
         duration: episode.duration,
-        publicationDate: episode.publicationDate,
+        publicationDate: episode.publication_date
       }));
 
       setEpisodes(formattedEpisodes);
@@ -85,13 +85,14 @@ export default function EpisodesScreen() {
       <FlatList
         data={episodes}
         keyExtractor={(item) => item.id}
-        renderItem={({ item, index }) => (
+        renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.episodeItem}
             onPress={() => {
+              // Pass the episode ID instead of index
               router.push({
                 pathname: '/player',
-                params: { episodeIndex: index }
+                params: { episodeId: item.id }
               });
             }}
           >
