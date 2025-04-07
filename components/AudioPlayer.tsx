@@ -1,11 +1,11 @@
-import React, { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, BackHandler, Alert, PanResponder, GestureResponderEvent } from 'react-native';
-import { Audio } from 'expo-av';
 import { Play, Pause, SkipBack, SkipForward, Moon, Rewind, FastForward, Forward } from 'lucide-react-native';
 import { Episode } from '../types/episode';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Application from 'expo-application';
 import * as IntentLauncher from 'expo-intent-launcher';
+import { audioManager, formatTime } from '../utils/OptimizedAudioService';
 
 interface AudioPlayerProps {
   episode: Episode;
@@ -16,7 +16,6 @@ interface AudioPlayerProps {
 
 export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }: AudioPlayerProps) {
   // État principal
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -24,41 +23,72 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
   const [error, setError] = useState<string | null>(null);
   const [sleepTimerActive, setSleepTimerActive] = useState(false);
   const [isSeeking, setIsSeeking] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
 
   // Références
-  const soundRef = useRef<Audio.Sound | null>(null);
-  const positionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const progressBarRef = useRef<View>(null);
   const progressWidth = useRef(0);
   const progressPosition = useRef({ x: 0, y: 0 });
 
   // Configurer audio au montage, nettoyer au démontage
   useEffect(() => {
-    setupAudio();
+    let isMounted = true;
     
-    return () => {
-      if (positionTimerRef.current) {
-        clearInterval(positionTimerRef.current);
-      }
-      
-      if (soundRef.current) {
-        soundRef.current.unloadAsync().catch(err => 
-          console.warn("Error unloading sound:", err)
-        );
-        soundRef.current = null;
+    const setup = async () => {
+      try {
+        await audioManager.setupAudio();
+        
+        // Ajouter un écouteur pour les mises à jour d'état
+        const unsubscribe = audioManager.addListener((data) => {
+          if (!isMounted) return;
+          
+          if (data.type === 'loaded') {
+            setDuration(data.duration);
+            setIsLoading(false);
+            setError(null);
+          } else if (data.type === 'status') {
+            if (!isSeeking) {
+              setPosition(data.position);
+            }
+            setIsPlaying(data.isPlaying);
+            setIsBuffering(data.isBuffering);
+          } else if (data.type === 'error') {
+            setError(data.error);
+            setIsLoading(false);
+          } else if (data.type === 'finished') {
+            if (onComplete) {
+              onComplete();
+            }
+            
+            if (sleepTimerActive) {
+              handleSleepTimerEnd();
+            }
+          }
+        });
+        
+        return () => {
+          unsubscribe();
+        };
+      } catch (err) {
+        console.error("Error in audio setup:", err);
+        if (isMounted) {
+          setError(`Erreur de configuration audio: ${err instanceof Error ? err.message : 'erreur inconnue'}`);
+          setIsLoading(false);
+        }
       }
     };
-  }, []);
+    
+    setup();
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [onComplete, sleepTimerActive]);
 
   // Charger le nouvel épisode quand il change
   useEffect(() => {
     if (episode?.mp3Link) {
-      if (soundRef.current) {
-        soundRef.current.unloadAsync().catch(() => {});
-        soundRef.current = null;
-      }
-      
-      loadAudio(episode.mp3Link);
+      loadEpisode();
     }
   }, [episode]);
 
@@ -70,6 +100,22 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       }, 300);
     }
   }, [isLoading]);
+
+  // Charger l'épisode
+  async function loadEpisode() {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      await audioManager.loadEpisode(episode);
+      
+      // L'état sera mis à jour via l'écouteur
+    } catch (err) {
+      console.error("Error loading episode:", err);
+      setError(`Impossible de charger l'audio: ${err instanceof Error ? err.message : 'erreur inconnue'}`);
+      setIsLoading(false);
+    }
+  }
 
   // Gestionnaire de glissement pour le curseur de progression
   const panResponder = PanResponder.create({
@@ -90,7 +136,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       setPosition(newPosition);
     },
     onPanResponderRelease: async (e: GestureResponderEvent) => {
-      if (progressWidth.current <= 0 || !soundRef.current) {
+      if (progressWidth.current <= 0) {
         setIsSeeking(false);
         return;
       }
@@ -102,7 +148,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
         const newPosition = percentage * duration;
         
         // Appliquer la nouvelle position à l'audio
-        await soundRef.current.setPositionAsync(newPosition);
+        await audioManager.seekTo(newPosition);
         setPosition(newPosition);
       } catch (err) {
         console.error("Error while seeking:", err);
@@ -125,113 +171,13 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   };
 
-  // Configurer le mode audio
-  async function setupAudio() {
-    try {
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        staysActiveInBackground: true,
-        interruptionModeIOS: 1, // DO_NOT_MIX
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        interruptionModeAndroid: 1, // DO_NOT_MIX
-        playThroughEarpieceAndroid: false
-      });
-    } catch (err) {
-      console.warn("Failed to set audio mode:", err);
-    }
-  }
-
-  // Charger l'audio
-  async function loadAudio(audioUrl: string) {
-    try {
-      setIsLoading(true);
-      setError(null);
-      setPosition(0);
-      setDuration(0);
-      
-      const url = audioUrl.trim();
-      if (!url) {
-        throw new Error("URL audio invalide");
-      }
-      
-      console.log(`Loading audio: ${url.substring(0, 50)}...`);
-      
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: url },
-        { 
-          progressUpdateIntervalMillis: 500,
-          positionMillis: 0,
-          shouldPlay: false
-        },
-        onPlaybackStatusUpdate
-      );
-      
-      soundRef.current = newSound;
-      setSound(newSound);
-      
-      const status = await newSound.getStatusAsync();
-      if (status.isLoaded) {
-        setDuration(status.durationMillis || 0);
-      }
-      
-      setIsLoading(false);
-    } catch (err) {
-      console.error("Error loading audio:", err);
-      setError(`Impossible de charger l'audio: ${err instanceof Error ? err.message : 'erreur inconnue'}`);
-      setIsLoading(false);
-    }
-  }
-
-  // Handler pour les mises à jour de statut de lecture
-  function onPlaybackStatusUpdate(status: any) {
-    if (!status.isLoaded) {
-      if (status.error) {
-        console.error(`Playback error: ${status.error}`);
-        setError(`Erreur de lecture: ${status.error}`);
-      }
-      return;
-    }
-    
-    // Ne pas mettre à jour la position pendant la recherche manuelle
-    if (!isSeeking) {
-      setPosition(status.positionMillis);
-    }
-    
-    setIsPlaying(status.isPlaying);
-    
-    if (status.didJustFinish) {
-      setIsPlaying(false);
-      onComplete?.();
-      
-      if (sleepTimerActive) {
-        handleSleepTimerEnd();
-      }
-    }
-  }
-
   // Gérer le bouton play/pause
   async function handlePlayPause() {
     try {
-      if (!soundRef.current) {
-        console.warn("No sound loaded");
-        return;
-      }
-      
-      const status = await soundRef.current.getStatusAsync();
-      
-      if (!status.isLoaded) {
-        console.warn("Sound not loaded");
-        if (episode?.mp3Link) {
-          loadAudio(episode.mp3Link);
-        }
-        return;
-      }
-      
-      if (status.isPlaying) {
-        await soundRef.current.pauseAsync();
+      if (isPlaying) {
+        await audioManager.pause();
       } else {
-        await soundRef.current.playAsync();
+        await audioManager.play();
       }
     } catch (err) {
       console.error("Error toggling playback:", err);
@@ -242,14 +188,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
   // Avancer ou reculer
   async function handleSeek(seconds: number) {
     try {
-      if (!soundRef.current) return;
-      
-      const status = await soundRef.current.getStatusAsync();
-      if (!status.isLoaded) return;
-      
-      const newPosition = Math.max(0, Math.min(position + seconds * 1000, duration));
-      await soundRef.current.setPositionAsync(newPosition);
-      setPosition(newPosition);
+      await audioManager.seekRelative(seconds);
     } catch (err) {
       console.error("Error seeking:", err);
     }
@@ -274,10 +213,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
   // Fonction pour gérer la fin du minuteur de sommeil
   async function handleSleepTimerEnd() {
     try {
-      if (soundRef.current) {
-        await soundRef.current.stopAsync().catch(() => {});
-      }
-      
+      await audioManager.stop();
       setSleepTimerActive(false);
       console.log("Sleep timer completed - closing app now");
       
@@ -309,14 +245,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   }
 
-  // Formatage du temps (mm:ss)
-  function formatTime(milliseconds: number) {
-    const totalSeconds = Math.floor(milliseconds / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  }
-
   // Calculer la progression en pourcentage
   const progress = duration > 0 ? (position / duration) * 100 : 0;
 
@@ -337,7 +265,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity 
           style={styles.retryButton} 
-          onPress={() => episode?.mp3Link && loadAudio(episode.mp3Link)}
+          onPress={loadEpisode}
         >
           <Text style={styles.retryText}>Réessayer</Text>
         </TouchableOpacity>
@@ -429,6 +357,14 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
           </Text>
         </TouchableOpacity>
       </View>
+      
+      {/* Indicateur de mise en mémoire tampon */}
+      {isBuffering && (
+        <View style={styles.bufferingContainer}>
+          <ActivityIndicator size="small" color="#0ea5e9" />
+          <Text style={styles.bufferingText}>Mise en mémoire tampon...</Text>
+        </View>
+      )}
     </GestureHandlerRootView>
   );
 }
@@ -617,5 +553,20 @@ const styles = StyleSheet.create({
   },
   sleepTextActive: {
     color: '#fff',
+  },
+  bufferingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    position: 'absolute',
+    bottom: 10,
+  },
+  bufferingText: {
+    color: '#fff',
+    fontSize: 12,
+    marginLeft: 6,
   }
 });

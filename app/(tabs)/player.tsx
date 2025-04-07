@@ -1,12 +1,11 @@
 import { View, Text, StyleSheet, AppState, Platform, BackHandler } from 'react-native';
 import { useEffect, useState, useRef } from 'react';
-import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AudioPlayer from '../../components/AudioPlayer';
 import { supabase } from '../../lib/supabase';
 import { Database } from '../../types/supabase';
 import { Episode } from '../../types/episode';
-import { setupOptimalAudioMode } from '../../utils/audioUtils';
+import { audioManager } from '../../utils/OptimizedAudioService';
 
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
 
@@ -20,7 +19,16 @@ export default function PlayerScreen() {
   const router = useRouter();
 
   useEffect(() => {
-    setupAudio();
+    // Initialiser le service audio
+    const initAudio = async () => {
+      try {
+        await audioManager.setupAudio();
+      } catch (err) {
+        console.error("Error setting up audio:", err);
+      }
+    };
+
+    initAudio();
     fetchEpisodes();
 
     // Gérer les changements d'état de l'application
@@ -43,29 +51,25 @@ export default function PlayerScreen() {
     });
 
     return () => {
+      // Nettoyage au démontage
       subscription.remove();
       backHandler.remove();
+      
+      // Option: arrêter l'audio lorsqu'on quitte l'écran
+      // audioManager.pause().catch(err => console.error("Error pausing audio on unmount:", err));
     };
   }, [router]);
 
+  // Lorsque les épisodes sont chargés, définir l'épisode courant
   useEffect(() => {
     if (episodeId && episodes.length > 0) {
       const index = episodes.findIndex(ep => ep.id === episodeId);
       if (index !== -1) {
         setCurrentIndex(index);
+        setLoading(false);
       }
     }
   }, [episodeId, episodes]);
-
-  async function setupAudio() {
-    try {
-      console.log("Setting up audio mode in PlayerScreen");
-      // Utiliser la fonction utilitaire pour configurer l'audio de manière cohérente
-      await setupOptimalAudioMode();
-    } catch (err) {
-      console.error("Error setting audio mode:", err);
-    }
-  }
 
   async function fetchEpisodes() {
     try {
@@ -113,32 +117,43 @@ export default function PlayerScreen() {
     } catch (err) {
       console.error('Error fetching episodes:', err);
       setError('Erreur lors du chargement des épisodes');
-    } finally {
       setLoading(false);
     }
   }
 
   async function markEpisodeAsWatched(episodeId: string) {
     try {
+      const userResponse = await supabase.auth.getUser();
+      const userId = userResponse.data.user?.id;
+      
+      if (!userId) {
+        console.warn("Utilisateur non connecté, impossible de marquer l'épisode comme vu");
+        return;
+      }
+      
       const { error } = await supabase
         .from('watched_episodes')
         .upsert({ 
           episode_id: episodeId,
-          user_id: (await supabase.auth.getUser()).data.user?.id
+          user_id: userId
         });
 
       if (error) throw error;
+      
+      console.log("Épisode marqué comme vu:", episodeId);
     } catch (err) {
       console.error('Error marking episode as watched:', err);
     }
   }
 
   const handleNext = () => {
-    setCurrentIndex((prev) => (prev + 1) % episodes.length);
+    const nextIndex = (currentIndex + 1) % episodes.length;
+    setCurrentIndex(nextIndex);
   };
 
   const handlePrevious = () => {
-    setCurrentIndex((prev) => (prev - 1 + episodes.length) % episodes.length);
+    const prevIndex = (currentIndex - 1 + episodes.length) % episodes.length;
+    setCurrentIndex(prevIndex);
   };
 
   // Affichage d'état de chargement
