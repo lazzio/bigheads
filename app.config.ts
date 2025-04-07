@@ -13,6 +13,9 @@ const config: ExpoConfig = {
   scheme: "xyz.myops.bigheads",
   backgroundColor: "#121212", // Changed from #F6F6F6 to match app theme
   icon: "./assets/images/bh_opti.png",
+  updates: {
+      "fallbackToCacheTimeout": 0
+    },
 
   splash: {
     image: "./assets/images/bh_opti.png",
@@ -20,21 +23,38 @@ const config: ExpoConfig = {
     backgroundColor: "#b48d7b"
   },
   
+  ios: {
+    "supportsTablet": true,
+    "infoPlist": {
+      "UIBackgroundModes": ["audio"]
+    }
+  },
+
   android: {
-    softwareKeyboardLayoutMode: "pan",
     package: "xyz.myops.bigheads",
-    permissions: ['FOREGROUND_SERVICE'],
+    permissions: [
+      "FOREGROUND_SERVICE",
+      "WAKE_LOCK",
+      "POST_NOTIFICATIONS"
+    ],
     foregroundService: {
       enabled: true,
       notificationTitle: 'Lecture en cours',
       notificationBody: 'Écoute de votre podcast',
-      notificationColor: '#b48d7b'
+      notificationColor: '#b48d7b',
+      startInForeground: true
     }
   },
   platforms: ["android"],
   plugins: [
     "expo-router",
-    "expo-av",
+    [
+      "expo-av",
+      {
+        "microphonePermission": false
+      },
+    ],
+    "expo-notifications",
     [
       "expo-build-properties",
       {
@@ -42,6 +62,8 @@ const config: ExpoConfig = {
           compileSdkVersion: 35,
           targetSdkVersion: 35,
           buildToolsVersion: "35.0.0",
+          enableProguardInReleaseBuilds: true,
+          enableDexGuardInReleaseBuilds: true,
           kotlinVersion: "1.9.25",
         }
       }

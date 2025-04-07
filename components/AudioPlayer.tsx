@@ -1,11 +1,13 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, BackHandler, Alert, PanResponder, GestureResponderEvent } from 'react-native';
-import { Audio } from 'expo-av';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, BackHandler, Alert, PanResponder, GestureResponderEvent, AppState } from 'react-native';
+import { Audio, AVPlaybackStatus } from 'expo-av';
 import { Play, Pause, SkipBack, SkipForward, Moon, Rewind, FastForward, Forward } from 'lucide-react-native';
 import { Episode } from '../types/episode';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Application from 'expo-application';
 import * as IntentLauncher from 'expo-intent-launcher';
+import { updatePlaybackNotification, removePlaybackNotification, setupNotificationChannel } from '../utils/notificationPlayer';
+import * as Notifications from 'expo-notifications';
 
 interface AudioPlayerProps {
   episode: Episode;
@@ -15,7 +17,6 @@ interface AudioPlayerProps {
 }
 
 export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }: AudioPlayerProps) {
-  // État principal
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [position, setPosition] = useState(0);
@@ -25,18 +26,39 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
   const [sleepTimerActive, setSleepTimerActive] = useState(false);
   const [isSeeking, setIsSeeking] = useState(false);
 
-  // Références
   const soundRef = useRef<Audio.Sound | null>(null);
   const positionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const progressBarRef = useRef<View>(null);
   const progressWidth = useRef(0);
   const progressPosition = useRef({ x: 0, y: 0 });
+  const appStateRef = useRef(AppState.currentState);
+  const lastNotificationUpdate = useRef(0);
 
-  // Configurer audio au montage, nettoyer au démontage
   useEffect(() => {
     setupAudio();
+    setupNotificationChannel();
+    
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      appStateRef.current = nextAppState;
+    });
+
+    const notificationSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+      const actionId = response.actionIdentifier;
+      switch (actionId) {
+        case 'PLAY_PAUSE':
+          handlePlayPause();
+          break;
+        case 'NEXT':
+          onNext?.();
+          break;
+      }
+    });
     
     return () => {
+      subscription.remove();
+      notificationSubscription.remove();
+      removePlaybackNotification();
+      
       if (positionTimerRef.current) {
         clearInterval(positionTimerRef.current);
       }
@@ -50,19 +72,16 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     };
   }, []);
 
-  // Charger le nouvel épisode quand il change
   useEffect(() => {
     if (episode?.mp3Link) {
       if (soundRef.current) {
         soundRef.current.unloadAsync().catch(() => {});
         soundRef.current = null;
       }
-      
       loadAudio(episode.mp3Link);
     }
   }, [episode]);
 
-  // Mesurer la barre de progression après le rendu
   useEffect(() => {
     if (!isLoading) {
       setTimeout(() => {
@@ -71,7 +90,47 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   }, [isLoading]);
 
-  // Gestionnaire de glissement pour le curseur de progression
+  // Mise à jour de la notification uniquement lors des changements d'état importants
+  useEffect(() => {
+    if (episode && !isLoading && Platform.OS === 'android') {
+      const now = Date.now();
+      // Limiter les mises à jour à une fois par seconde maximum
+      if (now - lastNotificationUpdate.current >= 1000) {
+        updatePlaybackNotification(
+          episode,
+          {
+            isPlaying,
+            positionMillis: position,
+            durationMillis: duration
+          }
+        );
+        lastNotificationUpdate.current = now;
+      }
+    }
+  }, [isPlaying, episode, isLoading]);
+
+  async function setupAudio() {
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        staysActiveInBackground: true,
+        interruptionModeIOS: 1,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        interruptionModeAndroid: 1,
+        playThroughEarpieceAndroid: false
+      });
+    } catch (err) {
+      console.warn("Failed to set audio mode:", err);
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      removePlaybackNotification();
+    };
+  }, []);
+
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
@@ -81,12 +140,10 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     onPanResponderMove: (e: GestureResponderEvent) => {
       if (progressWidth.current <= 0) return;
       
-      // Calculer la nouvelle position basée sur le toucher
       const touchX = e.nativeEvent.pageX - progressPosition.current.x;
       const percentage = Math.max(0, Math.min(touchX / progressWidth.current, 1));
       const newPosition = percentage * duration;
       
-      // Mettre à jour uniquement la position visuelle pendant le glissement
       setPosition(newPosition);
     },
     onPanResponderRelease: async (e: GestureResponderEvent) => {
@@ -96,12 +153,10 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       }
       
       try {
-        // Calculer la position finale
         const touchX = e.nativeEvent.pageX - progressPosition.current.x;
         const percentage = Math.max(0, Math.min(touchX / progressWidth.current, 1));
         const newPosition = percentage * duration;
         
-        // Appliquer la nouvelle position à l'audio
         await soundRef.current.setPositionAsync(newPosition);
         setPosition(newPosition);
       } catch (err) {
@@ -115,7 +170,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   });
 
-  // Mesurer les dimensions de la barre de progression
   const measureProgressBar = () => {
     if (progressBarRef.current) {
       progressBarRef.current.measure((x, y, width, height, pageX, pageY) => {
@@ -125,24 +179,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   };
 
-  // Configurer le mode audio
-  async function setupAudio() {
-    try {
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        staysActiveInBackground: true,
-        interruptionModeIOS: 1, // DO_NOT_MIX
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        interruptionModeAndroid: 1, // DO_NOT_MIX
-        playThroughEarpieceAndroid: false
-      });
-    } catch (err) {
-      console.warn("Failed to set audio mode:", err);
-    }
-  }
-
-  // Charger l'audio
   async function loadAudio(audioUrl: string) {
     try {
       setIsLoading(true);
@@ -160,7 +196,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       const { sound: newSound } = await Audio.Sound.createAsync(
         { uri: url },
         { 
-          progressUpdateIntervalMillis: 500,
+          progressUpdateIntervalMillis: 1000,
           positionMillis: 0,
           shouldPlay: false
         },
@@ -183,8 +219,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   }
 
-  // Handler pour les mises à jour de statut de lecture
-  function onPlaybackStatusUpdate(status: any) {
+  function onPlaybackStatusUpdate(status: AVPlaybackStatus) {
     if (!status.isLoaded) {
       if (status.error) {
         console.error(`Playback error: ${status.error}`);
@@ -193,7 +228,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       return;
     }
     
-    // Ne pas mettre à jour la position pendant la recherche manuelle
     if (!isSeeking) {
       setPosition(status.positionMillis);
     }
@@ -210,7 +244,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   }
 
-  // Gérer le bouton play/pause
   async function handlePlayPause() {
     try {
       if (!soundRef.current) {
@@ -239,7 +272,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   }
 
-  // Avancer ou reculer
   async function handleSeek(seconds: number) {
     try {
       if (!soundRef.current) return;
@@ -255,7 +287,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   }
 
-  // Fonction pour sauter 10 minutes (600 secondes)
   async function handleSkip10Minutes() {
     try {
       await handleSeek(600);
@@ -265,13 +296,11 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   }
 
-  // Fonction pour activer/désactiver le minuteur de sommeil
   function toggleSleepTimer() {
     setSleepTimerActive(prevState => !prevState);
     console.log(`Sleep timer ${!sleepTimerActive ? 'activated' : 'deactivated'}`);
   }
 
-  // Fonction pour gérer la fin du minuteur de sommeil
   async function handleSleepTimerEnd() {
     try {
       if (soundRef.current) {
@@ -309,7 +338,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   }
 
-  // Formatage du temps (mm:ss)
   function formatTime(milliseconds: number) {
     const totalSeconds = Math.floor(milliseconds / 1000);
     const minutes = Math.floor(totalSeconds / 60);
@@ -317,10 +345,8 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   }
 
-  // Calculer la progression en pourcentage
   const progress = duration > 0 ? (position / duration) * 100 : 0;
 
-  // Affichage pendant le chargement
   if (isLoading) {
     return (
       <View style={styles.container}>
@@ -330,7 +356,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     );
   }
 
-  // Affichage en cas d'erreur
   if (error) {
     return (
       <View style={styles.container}>
@@ -353,13 +378,11 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      {/* Titre et description */}
       <Text style={styles.title}>{episode.title}</Text>
       <Text style={styles.description} numberOfLines={2} ellipsizeMode="tail">
         {episode.description}
       </Text>
       
-      {/* Barre de progression avec curseur */}
       <View style={styles.progressContainer}>
         <View 
           ref={progressBarRef}
@@ -377,14 +400,12 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
           />
         </View>
         
-        {/* Affichage du temps */}
         <View style={styles.timeContainer}>
           <Text style={styles.timeText}>{formatTime(position)}</Text>
           <Text style={styles.timeText}>-{formatTime(Math.max(0, duration - position))}</Text>
         </View>
       </View>
 
-      {/* Contrôles de lecture */}
       <View style={styles.controls}>
         <TouchableOpacity onPress={onPrevious} style={styles.button}>
           <SkipBack size={24} color="#fff" />
@@ -412,13 +433,11 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       </View>
 
       <View style={styles.additionalControls}>
-        {/* Bouton "Passer les auditeurs" */}
         <TouchableOpacity onPress={handleSkip10Minutes} style={styles.skipButton}>
           <Forward size={20} color="#fff" />
           <Text style={styles.skipText}>Passer les auditeurs</Text>
         </TouchableOpacity>
 
-        {/* Bouton minuteur de sommeil */}
         <TouchableOpacity 
           onPress={toggleSleepTimer} 
           style={[styles.sleepButton, sleepTimerActive && styles.sleepButtonActive]}
@@ -474,9 +493,9 @@ const styles = StyleSheet.create({
   },
   progressBarContainer: {
     width: '100%',
-    height: 20, // Plus grand pour faciliter le toucher
+    height: 20,
     justifyContent: 'center',
-    backgroundColor: 'transparent', // Transparent pour capter les touches sur une plus grande surface
+    backgroundColor: 'transparent',
   },
   progressBackground: {
     position: 'absolute',
