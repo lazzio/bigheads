@@ -49,6 +49,10 @@ export async function setupOptimalAudioMode(): Promise<void> {
   try {
     // Création de la configuration avec les paramètres de base uniquement
     // Corriger le type en utilisant un type standard au lieu de AudioMode
+    if (Platform.OS === 'android') {
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+
     const audioConfig: {[key: string]: any} = {
       staysActiveInBackground: true,
       playsInSilentModeIOS: true,
@@ -72,6 +76,7 @@ export async function setupOptimalAudioMode(): Promise<void> {
     console.log('Audio mode set successfully with config:', audioConfig);
   } catch (error) {
     console.error('Error setting audio mode:', error);
+    throw error; // Propager l'erreur pour la gérer dans le composant
   }
 }
 
