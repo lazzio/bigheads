@@ -1,197 +1,104 @@
-import { Platform } from 'react-native';
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
+import * as Notifications from 'expo-notifications';
 
-/**
- * Vérifie si une URL audio est valide
- */
-export function isValidAudioUrl(url: string | undefined): boolean {
-  if (!url) return false;
-  
-  // URL basique
-  const trimmedUrl = url.trim();
-  if (trimmedUrl === '') return false;
-  
-  // Vérifier le format de l'URL
+// Configuration optimale du mode audio
+export async function setupOptimalAudioMode() {
   try {
-    // Ajouter http:// si nécessaire pour l'analyse
-    const urlToCheck = trimmedUrl.startsWith('http')
-      ? trimmedUrl
-      : `https://${trimmedUrl}`;
-      
-    new URL(urlToCheck);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Normaliser une URL audio
- */
-export function normalizeAudioUrl(url: string | undefined): string {
-  if (!url) return '';
-  
-  const trimmedUrl = url.trim();
-  if (trimmedUrl === '') return '';
-  
-  // Ajouter le protocole si nécessaire
-  if (!trimmedUrl.startsWith('http')) {
-    return `https://${trimmedUrl}`;
-  }
-  
-  return trimmedUrl;
-}
-
-/**
- * Configure le mode audio pour une meilleure compatibilité
- */
-export async function setupOptimalAudioMode(): Promise<void> {
-  try {
-    // Création de la configuration avec les paramètres de base uniquement
-    // Corriger le type en utilisant un type standard au lieu de AudioMode
-    if (Platform.OS === 'android') {
-      await new Promise(resolve => setTimeout(resolve, 300));
-    }
-
-    const audioConfig: {[key: string]: any} = {
+    await Audio.setAudioModeAsync({
       staysActiveInBackground: true,
-      playsInSilentModeIOS: true,
+      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
       shouldDuckAndroid: true,
-    };
-    
-    // Uniquement sur iOS, ajouter le mode d'interruption
-    if (Platform.OS === 'ios') {
-      audioConfig.interruptionModeIOS = InterruptionModeIOS.DoNotMix;
-    }
-    
-    // Uniquement sur Android, ajouter le mode d'interruption
-    if (Platform.OS === 'android') {
-      audioConfig.interruptionModeAndroid = InterruptionModeAndroid.DoNotMix;
-      audioConfig.playThroughEarpieceAndroid = false;
-    }
-    
-    // Appliquer la configuration
-    await Audio.setAudioModeAsync(audioConfig);
-    
-    console.log('Audio mode set successfully with config:', audioConfig);
-  } catch (error) {
-    console.error('Error setting audio mode:', error);
-    throw error; // Propager l'erreur pour la gérer dans le composant
+      playThroughEarpieceAndroid: false,
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+    });
+  } catch (err) {
+    console.error('Error setting audio mode:', err);
+    throw err;
   }
 }
 
-/**
- * Formatter le temps en millisecondes en format mm:ss
- */
-export function formatTime(milliseconds: number): string {
-  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
-
-/**
- * Nettoyer les ressources audio
- */
-export async function cleanupAudioResources(sound: Audio.Sound | null): Promise<void> {
-  if (sound) {
-    try {
-      await sound.stopAsync().catch(() => {});
-      await sound.unloadAsync();
-    } catch (error) {
-      console.warn('Error cleaning up audio resources:', error);
-    }
-  }
-}
-
-/**
- * Débogage des status de lecture audio
- */
-export function debugPlaybackStatus(status: any): void {
-  if (!__DEV__) return;
-  
-  console.log('Audio Status:', {
-    isLoaded: status.isLoaded,
-    isPlaying: status.isPlaying,
-    position: status.positionMillis,
-    duration: status.durationMillis,
-    isBuffering: status.isBuffering,
-    error: status.error,
-  });
-}
-
-/**
- * Vérifie si un son est correctement chargé
- */
-export async function isSoundLoaded(sound: Audio.Sound | null): Promise<boolean> {
-  if (!sound) return false;
-  
-  try {
-    const status = await sound.getStatusAsync();
-    return status.isLoaded === true;
-  } catch (error) {
-    console.error("Error checking if sound is loaded:", error);
-    return false;
-  }
-}
-
-/**
- * Charge un fichier audio avec plus de fiabilité et de timeout
- */
+// Chargement audio avec retry et timeout
 export async function loadSoundWithRetry(
-  uri: string, 
-  retries = 2,
-  timeoutMs = 10000
+  uri: string,
+  maxRetries = 3,
+  timeout = 15000
 ): Promise<Audio.Sound | null> {
-  let attempt = 0;
+  let attempts = 0;
   
-  while (attempt <= retries) {
+  while (attempts < maxRetries) {
     try {
-      console.log(`Loading sound attempt ${attempt + 1}/${retries + 1} for URI: ${uri.substring(0, 50)}...`);
-      
-      // Création d'un nouvel objet son à chaque tentative
       const sound = new Audio.Sound();
       
-      // Configuration d'un timeout pour éviter les blocages
+      // Promise avec timeout
       const loadPromise = sound.loadAsync(
         { uri },
         { shouldPlay: false, progressUpdateIntervalMillis: 500 }
       );
       
-      // Ajouter une protection par timeout
-      const timeoutPromise = new Promise<null>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error(`Timeout de ${timeoutMs}ms dépassé lors du chargement audio`));
-        }, timeoutMs);
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Loading timeout')), timeout);
       });
       
-      // Utiliser la première promesse qui se résout
-      const result = await Promise.race([loadPromise, timeoutPromise]);
+      await Promise.race([loadPromise, timeoutPromise]);
       
-      if (result === null) {
-        // Le timeout a gagné
-        throw new Error('Timeout lors du chargement audio');
-      }
-      
-      // Vérifier que le son est correctement chargé
       const status = await sound.getStatusAsync();
-      
       if (status.isLoaded) {
-        console.log('Son chargé avec succès après', attempt + 1, 'tentative(s)');
         return sound;
-      } else {
-        throw new Error('Le son a été chargé mais son état n\'est pas valide');
       }
-    } catch (error) {
-      console.warn(`Tentative ${attempt + 1} échouée:`, error);
-      attempt++;
       
-      // Attendre un peu plus longtemps entre chaque tentative
-      if (attempt <= retries) {
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+      throw new Error('Sound not properly loaded');
+    } catch (err) {
+      attempts++;
+      if (attempts === maxRetries) {
+        console.error('Max retries reached for loading sound:', err);
+        return null;
       }
+      
+      // Attente exponentielle entre les tentatives
+      await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempts) * 1000));
     }
   }
   
   return null;
+}
+
+// Mise à jour de la notification de lecture
+export async function updatePlaybackNotification(
+  isPlaying: boolean,
+  episodeTitle: string,
+  episodeId: string
+) {
+  try {
+    if (isPlaying) {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'Lecture en cours',
+          body: episodeTitle,
+          data: { episodeId },
+        },
+        trigger: null,
+      });
+    } else {
+      await Notifications.dismissAllNotificationsAsync();
+    }
+  } catch (err) {
+    console.warn('Error updating notification:', err);
+  }
+}
+
+// Nettoyage des ressources audio
+export async function cleanupAudioResources(sound: Audio.Sound | null) {
+  if (!sound) return;
+  
+  try {
+    const status = await sound.getStatusAsync();
+    if (status.isLoaded) {
+      await sound.stopAsync();
+      await sound.unloadAsync();
+    }
+  } catch (err) {
+    console.warn('Error cleaning up audio:', err);
+  }
 }

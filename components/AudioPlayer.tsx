@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, BackHandler, Alert, PanResponder, GestureResponderEvent } from 'react-native';
-import { Audio } from 'expo-av';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, BackHandler, Alert, PanResponder, GestureResponderEvent, AppState } from 'react-native';
+import { Audio, AVPlaybackStatus } from 'expo-av';
 import { Play, Pause, SkipBack, SkipForward, Moon, Rewind, FastForward, Forward } from 'lucide-react-native';
 import { Episode } from '../types/episode';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import * as Application from 'expo-application';
 import * as IntentLauncher from 'expo-intent-launcher';
+import { updatePlaybackNotification, removePlaybackNotification, setupNotificationChannel } from '../utils/notificationPlayer';
+import * as Notifications from 'expo-notifications';
 
 interface AudioPlayerProps {
   episode: Episode;
@@ -15,7 +16,6 @@ interface AudioPlayerProps {
 }
 
 export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }: AudioPlayerProps) {
-  // État principal
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [position, setPosition] = useState(0);
@@ -25,18 +25,39 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
   const [sleepTimerActive, setSleepTimerActive] = useState(false);
   const [isSeeking, setIsSeeking] = useState(false);
 
-  // Références
   const soundRef = useRef<Audio.Sound | null>(null);
   const positionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const progressBarRef = useRef<View>(null);
   const progressWidth = useRef(0);
   const progressPosition = useRef({ x: 0, y: 0 });
+  const appStateRef = useRef(AppState.currentState);
 
-  // Configurer audio au montage, nettoyer au démontage
+  // Configurer audio au montage
   useEffect(() => {
     setupAudio();
+    setupNotificationChannel();
+    
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      appStateRef.current = nextAppState;
+    });
+
+    const notificationSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+      const actionId = response.actionIdentifier;
+      switch (actionId) {
+        case 'PLAY_PAUSE':
+          handlePlayPause();
+          break;
+        case 'NEXT':
+          onNext?.();
+          break;
+      }
+    });
     
     return () => {
+      subscription.remove();
+      notificationSubscription.remove();
+      removePlaybackNotification();
+      
       if (positionTimerRef.current) {
         clearInterval(positionTimerRef.current);
       }
@@ -53,92 +74,39 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
   // Charger le nouvel épisode quand il change
   useEffect(() => {
     if (episode?.mp3Link) {
-      if (soundRef.current) {
-        soundRef.current.unloadAsync().catch(() => {});
-        soundRef.current = null;
-      }
-      
       loadAudio(episode.mp3Link);
     }
   }, [episode]);
 
-  // Mesurer la barre de progression après le rendu
+  // Mettre à jour la notification uniquement lors des changements d'état de lecture
   useEffect(() => {
-    if (!isLoading) {
-      setTimeout(() => {
-        measureProgressBar();
-      }, 300);
+    if (episode && !isLoading) {
+      updatePlaybackNotification(
+        episode,
+        {
+          isPlaying,
+          positionMillis: position,
+          durationMillis: duration
+        }
+      );
     }
-  }, [isLoading]);
-
-  // Gestionnaire de glissement pour le curseur de progression
-  const panResponder = PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: () => true,
-    onPanResponderGrant: () => {
-      setIsSeeking(true);
-    },
-    onPanResponderMove: (e: GestureResponderEvent) => {
-      if (progressWidth.current <= 0) return;
-      
-      // Calculer la nouvelle position basée sur le toucher
-      const touchX = e.nativeEvent.pageX - progressPosition.current.x;
-      const percentage = Math.max(0, Math.min(touchX / progressWidth.current, 1));
-      const newPosition = percentage * duration;
-      
-      // Mettre à jour uniquement la position visuelle pendant le glissement
-      setPosition(newPosition);
-    },
-    onPanResponderRelease: async (e: GestureResponderEvent) => {
-      if (progressWidth.current <= 0 || !soundRef.current) {
-        setIsSeeking(false);
-        return;
-      }
-      
-      try {
-        // Calculer la position finale
-        const touchX = e.nativeEvent.pageX - progressPosition.current.x;
-        const percentage = Math.max(0, Math.min(touchX / progressWidth.current, 1));
-        const newPosition = percentage * duration;
-        
-        // Appliquer la nouvelle position à l'audio
-        await soundRef.current.setPositionAsync(newPosition);
-        setPosition(newPosition);
-      } catch (err) {
-        console.error("Error while seeking:", err);
-      } finally {
-        setIsSeeking(false);
-      }
-    },
-    onPanResponderTerminate: () => {
-      setIsSeeking(false);
-    }
-  });
-
-  // Mesurer les dimensions de la barre de progression
-  const measureProgressBar = () => {
-    if (progressBarRef.current) {
-      progressBarRef.current.measure((x, y, width, height, pageX, pageY) => {
-        progressWidth.current = width;
-        progressPosition.current = { x: pageX, y: pageY };
-      });
-    }
-  };
+  }, [isPlaying]);
 
   // Configurer le mode audio
   async function setupAudio() {
     try {
       await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
         staysActiveInBackground: true,
-        interruptionModeIOS: 1, // DO_NOT_MIX
-        playsInSilentModeIOS: true,
+        interruptionModeAndroid: 1,
         shouldDuckAndroid: true,
-        interruptionModeAndroid: 1, // DO_NOT_MIX
-        playThroughEarpieceAndroid: false
+        playThroughEarpieceAndroid: false,
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        interruptionModeIOS: 1,
       });
     } catch (err) {
-      console.warn("Failed to set audio mode:", err);
+      console.error("Error setting audio mode:", err);
+      setError("Erreur lors de l'initialisation audio");
     }
   }
 
@@ -147,20 +115,19 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     try {
       setIsLoading(true);
       setError(null);
-      setPosition(0);
-      setDuration(0);
       
-      const url = audioUrl.trim();
-      if (!url) {
-        throw new Error("URL audio invalide");
+      // Nettoyer l'ancien son s'il existe
+      if (soundRef.current) {
+        await soundRef.current.unloadAsync();
+        soundRef.current = null;
       }
       
-      console.log(`Loading audio: ${url.substring(0, 50)}...`);
+      console.log("Loading audio:", audioUrl);
       
       const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: url },
+        { uri: audioUrl },
         { 
-          progressUpdateIntervalMillis: 500,
+          progressUpdateIntervalMillis: 1000, // Augmenté à 1000ms pour un meilleur buffering
           positionMillis: 0,
           shouldPlay: false
         },
@@ -173,18 +140,17 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       const status = await newSound.getStatusAsync();
       if (status.isLoaded) {
         setDuration(status.durationMillis || 0);
+        setIsLoading(false);
       }
-      
-      setIsLoading(false);
     } catch (err) {
       console.error("Error loading audio:", err);
-      setError(`Impossible de charger l'audio: ${err instanceof Error ? err.message : 'erreur inconnue'}`);
+      setError("Impossible de charger l'audio");
       setIsLoading(false);
     }
   }
 
   // Handler pour les mises à jour de statut de lecture
-  function onPlaybackStatusUpdate(status: any) {
+  function onPlaybackStatusUpdate(status: AVPlaybackStatus) {
     if (!status.isLoaded) {
       if (status.error) {
         console.error(`Playback error: ${status.error}`);
@@ -193,7 +159,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       return;
     }
     
-    // Ne pas mettre à jour la position pendant la recherche manuelle
     if (!isSeeking) {
       setPosition(status.positionMillis);
     }
@@ -213,20 +178,10 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
   // Gérer le bouton play/pause
   async function handlePlayPause() {
     try {
-      if (!soundRef.current) {
-        console.warn("No sound loaded");
-        return;
-      }
+      if (!soundRef.current) return;
       
       const status = await soundRef.current.getStatusAsync();
-      
-      if (!status.isLoaded) {
-        console.warn("Sound not loaded");
-        if (episode?.mp3Link) {
-          loadAudio(episode.mp3Link);
-        }
-        return;
-      }
+      if (!status.isLoaded) return;
       
       if (status.isPlaying) {
         await soundRef.current.pauseAsync();
@@ -235,7 +190,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       }
     } catch (err) {
       console.error("Error toggling playback:", err);
-      setError(`Erreur de lecture: ${err instanceof Error ? err.message : 'erreur inconnue'}`);
+      setError("Erreur lors de la lecture");
     }
   }
 
@@ -255,31 +210,24 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   }
 
-  // Fonction pour sauter 10 minutes (600 secondes)
+  // Fonction pour sauter 10 minutes
   async function handleSkip10Minutes() {
-    try {
-      await handleSeek(600);
-      console.log("Skipped 10 minutes forward");
-    } catch (err) {
-      console.error("Error skipping 10 minutes:", err);
-    }
+    await handleSeek(600);
   }
 
   // Fonction pour activer/désactiver le minuteur de sommeil
   function toggleSleepTimer() {
-    setSleepTimerActive(prevState => !prevState);
-    console.log(`Sleep timer ${!sleepTimerActive ? 'activated' : 'deactivated'}`);
+    setSleepTimerActive(prev => !prev);
   }
 
   // Fonction pour gérer la fin du minuteur de sommeil
   async function handleSleepTimerEnd() {
     try {
       if (soundRef.current) {
-        await soundRef.current.stopAsync().catch(() => {});
+        await soundRef.current.stopAsync();
       }
       
       setSleepTimerActive(false);
-      console.log("Sleep timer completed - closing app now");
       
       Alert.alert(
         "Minuteur de sommeil terminé",
@@ -291,23 +239,53 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
         if (Platform.OS === 'android') {
           BackHandler.exitApp();
         } else if (Platform.OS === 'ios') {
-          try {
-            IntentLauncher.startActivityAsync('com.apple.springboard');
-          } catch (e) {
-            console.log("Couldn't launch home screen, trying alternative method");
-            
-            Application.getIosApplicationReleaseTypeAsync().then(() => {
-              setTimeout(() => {
-                global.process.exit(0);
-              }, 1000);
-            });
-          }
+          IntentLauncher.startActivityAsync('com.apple.springboard');
         }
       }, 5000);
     } catch (err) {
-      console.error("Error in sleep timer end handling:", err);
+      console.error("Error in sleep timer end:", err);
     }
   }
+
+  // Gestionnaire de glissement pour le curseur de progression
+  const panResponder = PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderGrant: () => {
+      setIsSeeking(true);
+    },
+    onPanResponderMove: (e: GestureResponderEvent) => {
+      if (progressWidth.current <= 0) return;
+      
+      const touchX = e.nativeEvent.pageX - progressPosition.current.x;
+      const percentage = Math.max(0, Math.min(touchX / progressWidth.current, 1));
+      const newPosition = percentage * duration;
+      
+      setPosition(newPosition);
+    },
+    onPanResponderRelease: async (e: GestureResponderEvent) => {
+      if (progressWidth.current <= 0 || !soundRef.current) {
+        setIsSeeking(false);
+        return;
+      }
+      
+      try {
+        const touchX = e.nativeEvent.pageX - progressPosition.current.x;
+        const percentage = Math.max(0, Math.min(touchX / progressWidth.current, 1));
+        const newPosition = percentage * duration;
+        
+        await soundRef.current.setPositionAsync(newPosition);
+        setPosition(newPosition);
+      } catch (err) {
+        console.error("Error while seeking:", err);
+      } finally {
+        setIsSeeking(false);
+      }
+    },
+    onPanResponderTerminate: () => {
+      setIsSeeking(false);
+    }
+  });
 
   // Formatage du temps (mm:ss)
   function formatTime(milliseconds: number) {
@@ -341,25 +319,17 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
         >
           <Text style={styles.retryText}>Réessayer</Text>
         </TouchableOpacity>
-        
-        <View style={styles.debugContainer}>
-          <Text style={styles.debugUrl} numberOfLines={3} ellipsizeMode="middle">
-            URL: {episode?.mp3Link || "Non définie"}
-          </Text>
-        </View>
       </View>
     );
   }
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      {/* Titre et description */}
       <Text style={styles.title}>{episode.title}</Text>
       <Text style={styles.description} numberOfLines={2} ellipsizeMode="tail">
         {episode.description}
       </Text>
       
-      {/* Barre de progression avec curseur */}
       <View style={styles.progressContainer}>
         <View 
           ref={progressBarRef}
@@ -377,14 +347,12 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
           />
         </View>
         
-        {/* Affichage du temps */}
         <View style={styles.timeContainer}>
           <Text style={styles.timeText}>{formatTime(position)}</Text>
           <Text style={styles.timeText}>-{formatTime(Math.max(0, duration - position))}</Text>
         </View>
       </View>
 
-      {/* Contrôles de lecture */}
       <View style={styles.controls}>
         <TouchableOpacity onPress={onPrevious} style={styles.button}>
           <SkipBack size={24} color="#fff" />
@@ -412,13 +380,11 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       </View>
 
       <View style={styles.additionalControls}>
-        {/* Bouton "Passer les auditeurs" */}
         <TouchableOpacity onPress={handleSkip10Minutes} style={styles.skipButton}>
           <Forward size={20} color="#fff" />
           <Text style={styles.skipText}>Passer les auditeurs</Text>
         </TouchableOpacity>
 
-        {/* Bouton minuteur de sommeil */}
         <TouchableOpacity 
           onPress={toggleSleepTimer} 
           style={[styles.sleepButton, sleepTimerActive && styles.sleepButtonActive]}
@@ -474,9 +440,9 @@ const styles = StyleSheet.create({
   },
   progressBarContainer: {
     width: '100%',
-    height: 20, // Plus grand pour faciliter le toucher
+    height: 20,
     justifyContent: 'center',
-    backgroundColor: 'transparent', // Transparent pour capter les touches sur une plus grande surface
+    backgroundColor: 'transparent',
   },
   progressBackground: {
     position: 'absolute',
@@ -565,18 +531,6 @@ const styles = StyleSheet.create({
   retryText: {
     color: '#fff',
     fontSize: 14,
-  },
-  debugContainer: {
-    marginTop: 10,
-    padding: 8,
-    backgroundColor: '#333',
-    borderRadius: 4,
-    width: '100%',
-  },
-  debugUrl: {
-    color: '#888',
-    fontSize: 12,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   additionalControls: {
     flexDirection: 'column',
