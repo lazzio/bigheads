@@ -1,3 +1,9 @@
+## [1.1.0](https://github.com/lazzio/bigheads/-/compare/v1.0.0...v1.1.0) (2025-04-07)
+
+### Features
+
+* optimize player ([#21](https://github.com/lazzio/bigheads/-/issues/21)) ([c2a9c0f](https://github.com/lazzio/bigheads/-/commit/c2a9c0faceb9d2504613c54492371b3fef384ec5))
+
 ## 1.0.0 (2025-03-29)
 
 ### Features
