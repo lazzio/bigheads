@@ -23,6 +23,13 @@ const config: ExpoConfig = {
   android: {
     softwareKeyboardLayoutMode: "pan",
     package: "xyz.myops.bigheads",
+    permissions: ['FOREGROUND_SERVICE'],
+    foregroundService: {
+      enabled: true,
+      notificationTitle: 'Lecture en cours',
+      notificationBody: 'Écoute de votre podcast',
+      notificationColor: '#b48d7b'
+    }
   },
   platforms: ["android"],
   plugins: [
