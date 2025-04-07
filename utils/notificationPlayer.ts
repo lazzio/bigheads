@@ -1,15 +1,13 @@
 import { Platform } from 'react-native';
-import { Audio } from 'expo-av';
 import * as Notifications from 'expo-notifications';
 import { Episode } from '../types/episode';
 
-// Configuration des notifications
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: false,
     shouldPlaySound: false,
     shouldSetBadge: false,
-    presentationOptions: ['banner'],
+    shouldPresent: true,
   }),
 });
 
@@ -19,13 +17,20 @@ interface PlaybackStatus {
   durationMillis: number;
 }
 
+let currentNotificationId: string | null = null;
+
 export async function updatePlaybackNotification(
   episode: Episode,
   status: PlaybackStatus,
 ) {
-  if (Platform.OS === 'web') return;
+  if (Platform.OS !== 'android') return;
 
   try {
+    // Si une notification existe déjà, la supprimer
+    if (currentNotificationId) {
+      await Notifications.dismissNotificationAsync(currentNotificationId);
+    }
+
     const notification = {
       title: episode.title,
       body: episode.description,
@@ -35,18 +40,22 @@ export async function updatePlaybackNotification(
         ongoing: true,
         actions: [
           {
-            title: status.isPlaying ? '⏸️ Pause' : '▶️ Play',
+            title: status.isPlaying ? '⏸️' : '▶️',
             identifier: 'PLAY_PAUSE'
           },
           {
-            title: '⏭️ Suivant',
+            title: '⏭️',
             identifier: 'NEXT'
           }
         ],
+        progress: {
+          max: status.durationMillis,
+          current: status.positionMillis,
+          indeterminate: false
+        },
         smallIcon: 'ic_notification',
         largeIcon: 'ic_notification',
         color: '#b48d7b',
-        autoCancel: false,
         sticky: true,
         category: 'transport',
         importance: Notifications.AndroidImportance.LOW,
@@ -54,21 +63,25 @@ export async function updatePlaybackNotification(
       }
     };
 
-    // Ne mettre à jour la notification que lors des changements d'état (play/pause)
-    await Notifications.scheduleNotificationAsync({
+    const result = await Notifications.scheduleNotificationAsync({
       content: notification,
       trigger: null
     });
+
+    currentNotificationId = result;
   } catch (error) {
     console.error('Error updating notification:', error);
   }
 }
 
 export async function removePlaybackNotification() {
-  if (Platform.OS === 'web') return;
+  if (Platform.OS !== 'android') return;
   
   try {
-    await Notifications.dismissAllNotificationsAsync();
+    if (currentNotificationId) {
+      await Notifications.dismissNotificationAsync(currentNotificationId);
+      currentNotificationId = null;
+    }
   } catch (error) {
     console.error('Error removing notification:', error);
   }
@@ -85,7 +98,7 @@ export async function setupNotificationChannel() {
       showBadge: false,
       enableLights: false,
       enableVibrate: false,
-      bypassDnd: false,
+      bypassDnd: true,
     });
   }
 }

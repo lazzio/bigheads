@@ -4,6 +4,7 @@ import { Audio, AVPlaybackStatus } from 'expo-av';
 import { Play, Pause, SkipBack, SkipForward, Moon, Rewind, FastForward, Forward } from 'lucide-react-native';
 import { Episode } from '../types/episode';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import * as Application from 'expo-application';
 import * as IntentLauncher from 'expo-intent-launcher';
 import { updatePlaybackNotification, removePlaybackNotification, setupNotificationChannel } from '../utils/notificationPlayer';
 import * as Notifications from 'expo-notifications';
@@ -31,8 +32,8 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
   const progressWidth = useRef(0);
   const progressPosition = useRef({ x: 0, y: 0 });
   const appStateRef = useRef(AppState.currentState);
+  const lastNotificationUpdate = useRef(0);
 
-  // Configurer audio au montage
   useEffect(() => {
     setupAudio();
     setupNotificationChannel();
@@ -71,183 +72,65 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     };
   }, []);
 
-  // Charger le nouvel épisode quand il change
   useEffect(() => {
     if (episode?.mp3Link) {
+      if (soundRef.current) {
+        soundRef.current.unloadAsync().catch(() => {});
+        soundRef.current = null;
+      }
       loadAudio(episode.mp3Link);
     }
   }, [episode]);
 
-  // Mettre à jour la notification uniquement lors des changements d'état de lecture
   useEffect(() => {
-    if (episode && !isLoading) {
-      updatePlaybackNotification(
-        episode,
-        {
-          isPlaying,
-          positionMillis: position,
-          durationMillis: duration
-        }
-      );
+    if (!isLoading) {
+      setTimeout(() => {
+        measureProgressBar();
+      }, 300);
     }
-  }, [isPlaying]);
+  }, [isLoading]);
 
-  // Configurer le mode audio
+  // Mise à jour de la notification uniquement lors des changements d'état importants
+  useEffect(() => {
+    if (episode && !isLoading && Platform.OS === 'android') {
+      const now = Date.now();
+      // Limiter les mises à jour à une fois par seconde maximum
+      if (now - lastNotificationUpdate.current >= 1000) {
+        updatePlaybackNotification(
+          episode,
+          {
+            isPlaying,
+            positionMillis: position,
+            durationMillis: duration
+          }
+        );
+        lastNotificationUpdate.current = now;
+      }
+    }
+  }, [isPlaying, episode, isLoading]);
+
   async function setupAudio() {
     try {
       await Audio.setAudioModeAsync({
-        staysActiveInBackground: true,
-        interruptionModeAndroid: 1,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
         allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
         interruptionModeIOS: 1,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        interruptionModeAndroid: 1,
+        playThroughEarpieceAndroid: false
       });
     } catch (err) {
-      console.error("Error setting audio mode:", err);
-      setError("Erreur lors de l'initialisation audio");
+      console.warn("Failed to set audio mode:", err);
     }
   }
 
-  // Charger l'audio
-  async function loadAudio(audioUrl: string) {
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      // Nettoyer l'ancien son s'il existe
-      if (soundRef.current) {
-        await soundRef.current.unloadAsync();
-        soundRef.current = null;
-      }
-      
-      console.log("Loading audio:", audioUrl);
-      
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: audioUrl },
-        { 
-          progressUpdateIntervalMillis: 1000, // Augmenté à 1000ms pour un meilleur buffering
-          positionMillis: 0,
-          shouldPlay: false
-        },
-        onPlaybackStatusUpdate
-      );
-      
-      soundRef.current = newSound;
-      setSound(newSound);
-      
-      const status = await newSound.getStatusAsync();
-      if (status.isLoaded) {
-        setDuration(status.durationMillis || 0);
-        setIsLoading(false);
-      }
-    } catch (err) {
-      console.error("Error loading audio:", err);
-      setError("Impossible de charger l'audio");
-      setIsLoading(false);
-    }
-  }
+  useEffect(() => {
+    return () => {
+      removePlaybackNotification();
+    };
+  }, []);
 
-  // Handler pour les mises à jour de statut de lecture
-  function onPlaybackStatusUpdate(status: AVPlaybackStatus) {
-    if (!status.isLoaded) {
-      if (status.error) {
-        console.error(`Playback error: ${status.error}`);
-        setError(`Erreur de lecture: ${status.error}`);
-      }
-      return;
-    }
-    
-    if (!isSeeking) {
-      setPosition(status.positionMillis);
-    }
-    
-    setIsPlaying(status.isPlaying);
-    
-    if (status.didJustFinish) {
-      setIsPlaying(false);
-      onComplete?.();
-      
-      if (sleepTimerActive) {
-        handleSleepTimerEnd();
-      }
-    }
-  }
-
-  // Gérer le bouton play/pause
-  async function handlePlayPause() {
-    try {
-      if (!soundRef.current) return;
-      
-      const status = await soundRef.current.getStatusAsync();
-      if (!status.isLoaded) return;
-      
-      if (status.isPlaying) {
-        await soundRef.current.pauseAsync();
-      } else {
-        await soundRef.current.playAsync();
-      }
-    } catch (err) {
-      console.error("Error toggling playback:", err);
-      setError("Erreur lors de la lecture");
-    }
-  }
-
-  // Avancer ou reculer
-  async function handleSeek(seconds: number) {
-    try {
-      if (!soundRef.current) return;
-      
-      const status = await soundRef.current.getStatusAsync();
-      if (!status.isLoaded) return;
-      
-      const newPosition = Math.max(0, Math.min(position + seconds * 1000, duration));
-      await soundRef.current.setPositionAsync(newPosition);
-      setPosition(newPosition);
-    } catch (err) {
-      console.error("Error seeking:", err);
-    }
-  }
-
-  // Fonction pour sauter 10 minutes
-  async function handleSkip10Minutes() {
-    await handleSeek(600);
-  }
-
-  // Fonction pour activer/désactiver le minuteur de sommeil
-  function toggleSleepTimer() {
-    setSleepTimerActive(prev => !prev);
-  }
-
-  // Fonction pour gérer la fin du minuteur de sommeil
-  async function handleSleepTimerEnd() {
-    try {
-      if (soundRef.current) {
-        await soundRef.current.stopAsync();
-      }
-      
-      setSleepTimerActive(false);
-      
-      Alert.alert(
-        "Minuteur de sommeil terminé",
-        "L'application va se fermer dans 5 secondes...",
-        [{ text: "OK" }]
-      );
-      
-      setTimeout(() => {
-        if (Platform.OS === 'android') {
-          BackHandler.exitApp();
-        } else if (Platform.OS === 'ios') {
-          IntentLauncher.startActivityAsync('com.apple.springboard');
-        }
-      }, 5000);
-    } catch (err) {
-      console.error("Error in sleep timer end:", err);
-    }
-  }
-
-  // Gestionnaire de glissement pour le curseur de progression
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
@@ -287,7 +170,174 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   });
 
-  // Formatage du temps (mm:ss)
+  const measureProgressBar = () => {
+    if (progressBarRef.current) {
+      progressBarRef.current.measure((x, y, width, height, pageX, pageY) => {
+        progressWidth.current = width;
+        progressPosition.current = { x: pageX, y: pageY };
+      });
+    }
+  };
+
+  async function loadAudio(audioUrl: string) {
+    try {
+      setIsLoading(true);
+      setError(null);
+      setPosition(0);
+      setDuration(0);
+      
+      const url = audioUrl.trim();
+      if (!url) {
+        throw new Error("URL audio invalide");
+      }
+      
+      console.log(`Loading audio: ${url.substring(0, 50)}...`);
+      
+      const { sound: newSound } = await Audio.Sound.createAsync(
+        { uri: url },
+        { 
+          progressUpdateIntervalMillis: 1000,
+          positionMillis: 0,
+          shouldPlay: false
+        },
+        onPlaybackStatusUpdate
+      );
+      
+      soundRef.current = newSound;
+      setSound(newSound);
+      
+      const status = await newSound.getStatusAsync();
+      if (status.isLoaded) {
+        setDuration(status.durationMillis || 0);
+      }
+      
+      setIsLoading(false);
+    } catch (err) {
+      console.error("Error loading audio:", err);
+      setError(`Impossible de charger l'audio: ${err instanceof Error ? err.message : 'erreur inconnue'}`);
+      setIsLoading(false);
+    }
+  }
+
+  function onPlaybackStatusUpdate(status: AVPlaybackStatus) {
+    if (!status.isLoaded) {
+      if (status.error) {
+        console.error(`Playback error: ${status.error}`);
+        setError(`Erreur de lecture: ${status.error}`);
+      }
+      return;
+    }
+    
+    if (!isSeeking) {
+      setPosition(status.positionMillis);
+    }
+    
+    setIsPlaying(status.isPlaying);
+    
+    if (status.didJustFinish) {
+      setIsPlaying(false);
+      onComplete?.();
+      
+      if (sleepTimerActive) {
+        handleSleepTimerEnd();
+      }
+    }
+  }
+
+  async function handlePlayPause() {
+    try {
+      if (!soundRef.current) {
+        console.warn("No sound loaded");
+        return;
+      }
+      
+      const status = await soundRef.current.getStatusAsync();
+      
+      if (!status.isLoaded) {
+        console.warn("Sound not loaded");
+        if (episode?.mp3Link) {
+          loadAudio(episode.mp3Link);
+        }
+        return;
+      }
+      
+      if (status.isPlaying) {
+        await soundRef.current.pauseAsync();
+      } else {
+        await soundRef.current.playAsync();
+      }
+    } catch (err) {
+      console.error("Error toggling playback:", err);
+      setError(`Erreur de lecture: ${err instanceof Error ? err.message : 'erreur inconnue'}`);
+    }
+  }
+
+  async function handleSeek(seconds: number) {
+    try {
+      if (!soundRef.current) return;
+      
+      const status = await soundRef.current.getStatusAsync();
+      if (!status.isLoaded) return;
+      
+      const newPosition = Math.max(0, Math.min(position + seconds * 1000, duration));
+      await soundRef.current.setPositionAsync(newPosition);
+      setPosition(newPosition);
+    } catch (err) {
+      console.error("Error seeking:", err);
+    }
+  }
+
+  async function handleSkip10Minutes() {
+    try {
+      await handleSeek(600);
+      console.log("Skipped 10 minutes forward");
+    } catch (err) {
+      console.error("Error skipping 10 minutes:", err);
+    }
+  }
+
+  function toggleSleepTimer() {
+    setSleepTimerActive(prevState => !prevState);
+    console.log(`Sleep timer ${!sleepTimerActive ? 'activated' : 'deactivated'}`);
+  }
+
+  async function handleSleepTimerEnd() {
+    try {
+      if (soundRef.current) {
+        await soundRef.current.stopAsync().catch(() => {});
+      }
+      
+      setSleepTimerActive(false);
+      console.log("Sleep timer completed - closing app now");
+      
+      Alert.alert(
+        "Minuteur de sommeil terminé",
+        "L'application va se fermer dans 5 secondes...",
+        [{ text: "OK" }]
+      );
+      
+      setTimeout(() => {
+        if (Platform.OS === 'android') {
+          BackHandler.exitApp();
+        } else if (Platform.OS === 'ios') {
+          try {
+            IntentLauncher.startActivityAsync('com.apple.springboard');
+          } catch (e) {
+            console.log("Couldn't launch home screen, trying alternative method");
+            
+            Application.getIosApplicationReleaseTypeAsync().then(() => {
+              setTimeout(() => {
+                global.process.exit(0);
+              }, 1000);
+            });
+          }
+        }
+      }, 5000);
+    } catch (err) {
+      console.error("Error in sleep timer end handling:", err);
+    }
+  }
+
   function formatTime(milliseconds: number) {
     const totalSeconds = Math.floor(milliseconds / 1000);
     const minutes = Math.floor(totalSeconds / 60);
@@ -295,10 +345,8 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   }
 
-  // Calculer la progression en pourcentage
   const progress = duration > 0 ? (position / duration) * 100 : 0;
 
-  // Affichage pendant le chargement
   if (isLoading) {
     return (
       <View style={styles.container}>
@@ -308,7 +356,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     );
   }
 
-  // Affichage en cas d'erreur
   if (error) {
     return (
       <View style={styles.container}>
@@ -319,6 +366,12 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
         >
           <Text style={styles.retryText}>Réessayer</Text>
         </TouchableOpacity>
+        
+        <View style={styles.debugContainer}>
+          <Text style={styles.debugUrl} numberOfLines={3} ellipsizeMode="middle">
+            URL: {episode?.mp3Link || "Non définie"}
+          </Text>
+        </View>
       </View>
     );
   }
@@ -531,6 +584,18 @@ const styles = StyleSheet.create({
   retryText: {
     color: '#fff',
     fontSize: 14,
+  },
+  debugContainer: {
+    marginTop: 10,
+    padding: 8,
+    backgroundColor: '#333',
+    borderRadius: 4,
+    width: '100%',
+  },
+  debugUrl: {
+    color: '#888',
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   additionalControls: {
     flexDirection: 'column',
