@@ -8,6 +8,7 @@ import * as Sentry from '@sentry/react-native';
 import { isRunningInExpoGo } from 'expo';
 import Constants from 'expo-constants';
 import { makeRedirectUri } from 'expo-auth-session';
+import { initEpisodeNotificationService, setupNotificationListener } from '../utils/EpisodeNotificationService';
 
 // Définition des routes typées pour la navigation
 type AppRoute = '/(tabs)' | '/auth/login';
@@ -273,6 +274,7 @@ export default function RootLayout() {
   // Important state flags
   const [isAppReady, setIsAppReady] = useState(false);
   const appMounted = useRef(false);
+  const router = useRouter();
   
   // Initialize the app
   useEffect(() => {
@@ -294,6 +296,23 @@ export default function RootLayout() {
         // Wait a bit to avoid race conditions
         await new Promise(resolve => setTimeout(resolve, 300));
         
+        // Initialiser le service de notification d'épisodes
+        try {
+          // Initialiser le service de notification
+          await initEpisodeNotificationService();
+          
+          // Configurer le gestionnaire pour les clics sur les notifications
+          setupNotificationListener((episodeId) => {
+            // Naviguer vers l'écran du lecteur lorsqu'un utilisateur clique sur une notification
+            router.push(`/player?episodeId=${episodeId}`);
+          });
+          
+          console.log('Episode notification service initialized');
+        } catch (notificationError) {
+          console.error('Error initializing episode notification service:', notificationError);
+          Sentry.captureException(notificationError);
+        }
+
         // Hide splash screen if it was shown
         try {
           await SplashScreen.hideAsync();
