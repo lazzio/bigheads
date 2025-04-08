@@ -1,3 +1,9 @@
+## [1.2.1](https://github.com/lazzio/bigheads/-/compare/v1.2.0...v1.2.1) (2025-04-08)
+
+### Bug Fixes
+
+* make play offline work ([#25](https://github.com/lazzio/bigheads/-/issues/25)) ([6297c36](https://github.com/lazzio/bigheads/-/commit/6297c3638b2ef887fa01607e392ceca13e110683))
+
 ## [1.2.0](https://github.com/lazzio/bigheads/-/compare/v1.1.0...v1.2.0) (2025-04-08)
 
 ### Features
