@@ -334,13 +334,6 @@ export default function PlayerScreen() {
     );
   }
 
-  // Adaptez le chemin de l'audio pour les épisodes hors ligne
-  const episodeWithPath = {
-    ...currentEpisode,
-    // Si nous avons un chemin hors ligne, l'utiliser en priorité
-    mp3Link: currentEpisode.offline_path || currentEpisode.mp3Link
-  };
-
   return (
     <View style={styles.container}>
       {isOffline && (
@@ -349,7 +342,7 @@ export default function PlayerScreen() {
         </View>
       )}
       <AudioPlayer
-        episode={episodeWithPath}
+        episode={currentEpisode}
         onNext={handleNext}
         onPrevious={handlePrevious}
         onComplete={() => markEpisodeAsWatched(currentEpisode.id)}
