@@ -6,19 +6,29 @@ import { supabase } from '../../lib/supabase';
 import { Database } from '../../types/supabase';
 import { Episode } from '../../types/episode';
 import { audioManager } from '../../utils/OptimizedAudioService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
+import NetInfo from '@react-native-community/netinfo';
 
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
 
+// Constante pour la clé de cache
+const EPISODES_CACHE_KEY = 'cached_episodes';
+
 export default function PlayerScreen() {
-  const { episodeId } = useLocalSearchParams<{ episodeId: string }>();
+  const { episodeId, offlinePath } = useLocalSearchParams<{ episodeId: string, offlinePath: string }>();
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [isOffline, setIsOffline] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const appStateRef = useRef(AppState.currentState);
   const router = useRouter();
 
   useEffect(() => {
+    // Vérifier l'état de la connexion
+    checkNetworkStatus();
+
     // Initialiser le service audio
     const initAudio = async () => {
       try {
@@ -39,6 +49,7 @@ export default function PlayerScreen() {
       } else if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
         // App revient au premier plan
         console.log('App is coming to foreground');
+        checkNetworkStatus();
       }
       appStateRef.current = nextAppState;
     });
@@ -54,25 +65,128 @@ export default function PlayerScreen() {
       // Nettoyage au démontage
       subscription.remove();
       backHandler.remove();
-      
-      // Option: arrêter l'audio lorsqu'on quitte l'écran
-      // audioManager.pause().catch(err => console.error("Error pausing audio on unmount:", err));
     };
   }, [router]);
 
+  // Vérifier le statut du réseau
+  const checkNetworkStatus = async () => {
+    try {
+      const state = await NetInfo.fetch();
+      setIsOffline(!state.isConnected);
+    } catch (error) {
+      console.warn('Error checking network status:', error);
+      // En cas d'erreur, supposer que nous sommes en ligne
+      setIsOffline(false);
+    }
+  };
+
+  // Charger les épisodes depuis le cache
+  const loadCachedEpisodes = async (): Promise<Episode[]> => {
+    try {
+      const cachedData = await AsyncStorage.getItem(EPISODES_CACHE_KEY);
+      if (cachedData) {
+        const episodes = JSON.parse(cachedData);
+        console.log(`Loaded ${episodes.length} episodes from cache for player`);
+        return episodes;
+      }
+    } catch (error) {
+      console.error('Error loading cached episodes:', error);
+    }
+    return [];
+  };
+
+  // Récupérer les détails d'un épisode hors ligne depuis son fichier méta
+  const getOfflineEpisodeDetails = async (filePath: string): Promise<Episode | null> => {
+    try {
+      const metaPath = filePath + '.meta';
+      const fileExists = await FileSystem.getInfoAsync(metaPath);
+      
+      if (fileExists.exists) {
+        const metaContent = await FileSystem.readAsStringAsync(metaPath);
+        const metadata = JSON.parse(metaContent);
+        
+        return {
+          id: metadata.id,
+          title: metadata.title || 'Épisode téléchargé',
+          description: metadata.description || '',
+          mp3Link: filePath, // Utiliser le chemin local
+          publicationDate: metadata.downloadDate || new Date().toISOString(),
+          duration: metadata.duration || '0:00',
+          offline_path: filePath
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting offline episode details:', error);
+      return null;
+    }
+  };
+
   // Lorsque les épisodes sont chargés, définir l'épisode courant
   useEffect(() => {
-    if (episodeId && episodes.length > 0) {
-      const index = episodes.findIndex(ep => ep.id === episodeId);
-      if (index !== -1) {
-        setCurrentIndex(index);
-        setLoading(false);
+    const setCurrentEpisode = async () => {
+      // Si nous avons un chemin hors ligne spécifié
+      if (offlinePath && episodes.length === 0) {
+        try {
+          const offlineEpisode = await getOfflineEpisodeDetails(offlinePath);
+          if (offlineEpisode) {
+            setEpisodes([offlineEpisode]);
+            setCurrentIndex(0);
+            setLoading(false);
+            return;
+          }
+        } catch (error) {
+          console.error("Error loading offline episode:", error);
+        }
       }
-    }
-  }, [episodeId, episodes]);
+      
+      // Sinon, chercher l'épisode par ID
+      if (episodeId && episodes.length > 0) {
+        const index = episodes.findIndex(ep => ep.id === episodeId);
+        if (index !== -1) {
+          setCurrentIndex(index);
+          setLoading(false);
+        }
+      }
+    };
+    
+    setCurrentEpisode();
+  }, [episodeId, offlinePath, episodes]);
 
   async function fetchEpisodes() {
     try {
+      setLoading(true);
+      
+      // Vérifier l'état du réseau
+      const networkState = await NetInfo.fetch();
+      const isConnected = networkState.isConnected;
+      setIsOffline(!isConnected);
+      
+      // Si nous avons un chemin hors ligne spécifié, charger directement cet épisode
+      if (offlinePath) {
+        const offlineEpisode = await getOfflineEpisodeDetails(offlinePath);
+        if (offlineEpisode) {
+          setEpisodes([offlineEpisode]);
+          setCurrentIndex(0);
+          setLoading(false);
+          return;
+        }
+      }
+      
+      // Si nous sommes hors ligne, essayer de charger depuis le cache
+      if (!isConnected) {
+        const cachedEpisodes = await loadCachedEpisodes();
+        if (cachedEpisodes.length > 0) {
+          setEpisodes(cachedEpisodes);
+          setError(null);
+        } else {
+          setError('Aucun épisode disponible en mode hors ligne');
+        }
+        setLoading(false);
+        return;
+      }
+      
+      // Si nous sommes en ligne, charger depuis Supabase
       const { data, error: apiError } = await supabase
         .from('episodes')
         .select('*')
@@ -103,26 +217,43 @@ export default function PlayerScreen() {
         return episode;
       });
       
-      // Vérification des épisodes
-      if (validEpisodes.length > 0) {
-        const firstEpisode = validEpisodes[0];
-        console.log("Premier épisode:", {
-          id: firstEpisode.id,
-          title: firstEpisode.title,
-          mp3Link: firstEpisode.mp3Link ? (firstEpisode.mp3Link.substring(0, 50) + '...') : 'manquant'
-        });
-      }
-
+      // Sauvegarder dans le cache
+      await AsyncStorage.setItem(EPISODES_CACHE_KEY, JSON.stringify(validEpisodes));
+      
       setEpisodes(validEpisodes);
+      setError(null);
     } catch (err) {
       console.error('Error fetching episodes:', err);
-      setError('Erreur lors du chargement des épisodes');
+      
+      // En cas d'erreur, essayer de charger depuis le cache
+      const cachedEpisodes = await loadCachedEpisodes();
+      if (cachedEpisodes.length > 0) {
+        setEpisodes(cachedEpisodes);
+        setError('Affichage des données en cache - Connexion limitée');
+      } else {
+        setError('Erreur lors du chargement des épisodes');
+      }
+    } finally {
       setLoading(false);
     }
   }
 
   async function markEpisodeAsWatched(episodeId: string) {
     try {
+      // Vérifier si nous sommes en ligne
+      if (isOffline) {
+        // Stocker localement pour synchroniser plus tard
+        const watchedEpisodes = await AsyncStorage.getItem('offline_watched_episodes') || '[]';
+        const watchedList = JSON.parse(watchedEpisodes);
+        
+        if (!watchedList.includes(episodeId)) {
+          watchedList.push(episodeId);
+          await AsyncStorage.setItem('offline_watched_episodes', JSON.stringify(watchedList));
+        }
+        return;
+      }
+
+      // Si en ligne, marquer normalement
       const userResponse = await supabase.auth.getUser();
       const userId = userResponse.data.user?.id;
       
@@ -135,10 +266,14 @@ export default function PlayerScreen() {
         .from('watched_episodes')
         .upsert({ 
           episode_id: episodeId,
-          user_id: userId
+          user_id: userId,
+          watched_at: new Date().toISOString()
         });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Erreur lors de l'insertion:", error);
+        throw error;
+      }
       
       console.log("Épisode marqué comme vu:", episodeId);
     } catch (err) {
@@ -179,29 +314,45 @@ export default function PlayerScreen() {
     return (
       <View style={[styles.container, {alignItems: 'center', justifyContent: 'center'}]}>
         <Text style={{color: 'white'}}>Aucun épisode disponible</Text>
+        {isOffline && (
+          <Text style={{color: '#888', marginTop: 8}}>Mode hors ligne - Connexion Internet requise</Text>
+        )}
       </View>
     );
   }
 
   // Vérifier si l'épisode courant est valide
-  if (!episodes[currentIndex] || !episodes[currentIndex].mp3Link) {
+  const currentEpisode = episodes[currentIndex];
+  if (!currentEpisode || (!currentEpisode.mp3Link && !currentEpisode.offline_path)) {
     return (
       <View style={[styles.container, {alignItems: 'center', justifyContent: 'center'}]}>
         <Text style={{color: 'white'}}>Problème avec l'épisode actuel</Text>
         <Text style={{color: '#999', marginTop: 10}}>
-          {!episodes[currentIndex] ? "Épisode introuvable" : "Lien audio manquant"}
+          {!currentEpisode ? "Épisode introuvable" : "Lien audio manquant"}
         </Text>
       </View>
     );
   }
 
+  // Adaptez le chemin de l'audio pour les épisodes hors ligne
+  const episodeWithPath = {
+    ...currentEpisode,
+    // Si nous avons un chemin hors ligne, l'utiliser en priorité
+    mp3Link: currentEpisode.offline_path || currentEpisode.mp3Link
+  };
+
   return (
     <View style={styles.container}>
+      {isOffline && (
+        <View style={styles.offlineBanner}>
+          <Text style={styles.offlineBannerText}>Mode hors ligne</Text>
+        </View>
+      )}
       <AudioPlayer
-        episode={episodes[currentIndex]}
+        episode={episodeWithPath}
         onNext={handleNext}
         onPrevious={handlePrevious}
-        onComplete={() => markEpisodeAsWatched(episodes[currentIndex].id)}
+        onComplete={() => markEpisodeAsWatched(currentEpisode.id)}
       />
     </View>
   );
@@ -214,4 +365,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 20,
   },
+  offlineBanner: {
+    backgroundColor: '#333',
+    padding: 8,
+    alignItems: 'center',
+    marginBottom: 16,
+    borderRadius: 8,
+  },
+  offlineBannerText: {
+    color: '#fff',
+    fontSize: 14,
+  }
 });

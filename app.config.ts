@@ -25,7 +25,10 @@ const config: ExpoConfig = {
     package: "xyz.myops.bigheads",
     permissions: [
       'FOREGROUND_SERVICE',
-      'WAKE_LOCK'
+      'WAKE_LOCK',
+      'RECEIVE_BOOT_COMPLETED',
+      'SCHEDULE_EXACT_ALARM',
+      'POST_NOTIFICATIONS'
     ],
     foregroundService: {
       enabled: true,
@@ -63,6 +66,7 @@ const config: ExpoConfig = {
         "url": "https://sentry.io/"
       }
     ],
+    "expo-notifications",
     "expo-background-fetch",
     "expo-task-manager"
   ],
