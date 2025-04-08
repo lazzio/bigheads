@@ -191,47 +191,87 @@ class AudioManager {
         this.sound = null;
       }
 
-      // S'assurer que l'URL est valide
-      const uri = episode.mp3Link;
-      if (!uri) {
+      // Prioriser le chemin hors ligne s'il existe
+      const audioSource = episode.offline_path || episode.mp3Link;
+      
+      if (!audioSource) {
         throw new Error("URL d'épisode invalide ou manquante");
       }
 
-      const normalizedUri = uri.startsWith('http') ? uri : `https://${uri}`;
-      console.log(`Loading episode: ${episode.title} - ${normalizedUri.substring(0, 50)}...`);
+      console.log(`Loading episode: ${episode.title}`);
+      console.log(`Audio source: ${audioSource.substring(0, 50)}...`);
+      console.log(`Source type: ${episode.offline_path ? 'Fichier local' : 'URL distante'}`);
 
       this.currentEpisode = episode;
       
-      // Configuration optimisée pour le streaming de longue durée
+      // Déterminer la source audio
+      let source: { uri: string };
+      
+      if (episode.offline_path) {
+        // Utiliser le chemin local directement
+        source = { uri: episode.offline_path };
+        console.log('Utilisation du fichier local');
+      } else {
+        // Normaliser l'URL pour les sources distantes
+        const normalizedUri = episode.mp3Link.startsWith('http') 
+          ? episode.mp3Link 
+          : `https://${episode.mp3Link}`;
+          
+        source = { uri: normalizedUri };
+        console.log('Utilisation de l\'URL distante');
+      }
+      
+      // Configuration optimisée pour le type de source
+      const playbackConfig: {
+        shouldPlay: boolean;
+        progressUpdateIntervalMillis: number;
+        positionMillis: number;
+        androidImplementation?: string;
+      } = {
+        shouldPlay: false,
+        progressUpdateIntervalMillis: 1000,
+        positionMillis: 0,
+      };
+      
+      // Ajouter des configurations spécifiques pour Android si c'est une source distante
+      if (Platform.OS === 'android' && !episode.offline_path) {
+        playbackConfig.androidImplementation = 'MediaPlayer';
+      }
+      
+      // Créer l'objet audio
       const { sound } = await Audio.Sound.createAsync(
-        { uri: normalizedUri },
-        {
-          shouldPlay: false,
-          progressUpdateIntervalMillis: 1000,
-          positionMillis: 0,
-          // Télécharger d'abord un segment plus grand pour une lecture plus stable
-          androidImplementation: 'MediaPlayer',
-        },
+        source,
+        playbackConfig,
         this.onPlaybackStatusUpdate.bind(this)
       );
 
       this.sound = sound;
       
-      // Précharger une partie plus grande pour une meilleure expérience
-      if (Platform.OS === 'android') {
+      // Pour les fichiers locaux, on peut obtenir directement le statut
+      // Pour les sources distantes sur Android, attendre un peu pour le préchargement
+      if (episode.offline_path || Platform.OS !== 'android') {
+        const status = await sound.getStatusAsync();
+        if (status.isLoaded) {
+          this.duration = status.durationMillis || 0;
+        }
+      } else {
+        // Pour les sources distantes sur Android
         await new Promise(resolve => setTimeout(resolve, 500));
-        await sound.getStatusAsync(); // Force le préchargement
-      }
-      
-      const status = await sound.getStatusAsync();
-      if (status.isLoaded) {
-        this.duration = status.durationMillis || 0;
+        try {
+          const status = await sound.getStatusAsync();
+          if (status.isLoaded) {
+            this.duration = status.durationMillis || 0;
+          }
+        } catch (err) {
+          console.warn('Error getting initial status:', err);
+        }
       }
       
       this.notifyListeners({
         type: 'loaded',
         episode,
-        duration: this.duration
+        duration: this.duration,
+        isLocalFile: !!episode.offline_path
       });
       
     } catch (error) {

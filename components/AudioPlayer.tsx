@@ -109,7 +109,19 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       setIsLoading(true);
       setError(null);
       
-      await audioManager.loadEpisode(episode);
+      console.log('Loading episode in AudioPlayer:', 
+        episode?.title, 
+        'Offline path:', episode?.offline_path?.substring(0, 50),
+        'MP3 Link:', episode?.mp3Link?.substring(0, 50)
+      );
+      
+      // Créer une copie de l'épisode avec priorité au chemin hors ligne
+      const episodeToLoad = {
+        ...episode,
+        mp3Link: episode.offline_path || episode.mp3Link
+      };
+      
+      await audioManager.loadEpisode(episodeToLoad);
       
       // L'état sera mis à jour via l'écouteur
     } catch (err) {
@@ -275,6 +287,14 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
         <View style={styles.debugContainer}>
           <Text style={styles.debugUrl} numberOfLines={3} ellipsizeMode="middle">
             URL: {episode?.mp3Link || "Non définie"}
+          </Text>
+          {episode?.offline_path && (
+            <Text style={styles.debugUrl} numberOfLines={3} ellipsizeMode="middle">
+              Offline: {episode.offline_path}
+            </Text>
+          )}
+          <Text style={styles.debugUrl}>
+            Source: {episode?.offline_path ? "Fichier local" : "URL distante"}
           </Text>
         </View>
       </View>
