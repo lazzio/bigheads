@@ -1,7 +1,7 @@
 import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Play, CircleCheck as CheckCircle2 } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Database } from '../../types/supabase';
 import { Episode } from '../../types/episode';
@@ -15,6 +15,13 @@ export default function EpisodesScreen() {
   const [watchedEpisodes, setWatchedEpisodes] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Utiliser useFocusEffect pour rafraîchir la liste des épisodes vus à chaque fois que l'écran est affiché
+  useFocusEffect(
+    useCallback(() => {
+      fetchWatchedEpisodes();
+    }, [])
+  );
 
   useEffect(() => {
     fetchEpisodes();
@@ -35,9 +42,13 @@ export default function EpisodesScreen() {
         title: episode.title,
         description: episode.description,
         originalMp3Link: episode.original_mp3_link,
+        original_mp3_link: episode.original_mp3_link,
         mp3Link: episode.mp3_link,
+        mp3_link: episode.mp3_link,
+        offline_path: episode.offline_path,
         duration: episode.duration,
-        publicationDate: episode.publication_date
+        publicationDate: episode.publication_date,
+        publication_date: episode.publication_date
       }));
 
       setEpisodes(formattedEpisodes);
@@ -50,13 +61,24 @@ export default function EpisodesScreen() {
 
   async function fetchWatchedEpisodes() {
     try {
+      // Vérifier si l'utilisateur est connecté
+      const userResponse = await supabase.auth.getUser();
+      const userId = userResponse.data.user?.id;
+      
+      if (!userId) {
+        console.log('User not logged in, skipping watched episodes fetch');
+        return;
+      }
+
       const { data, error } = await supabase
         .from('watched_episodes')
-        .select('episode_id');
+        .select('episode_id')
+        .eq('user_id', userId);
 
       if (error) throw error;
 
       const watchedIds = new Set((data as WatchedEpisode[]).map(we => we.episode_id));
+      console.log(`Fetched ${watchedIds.size} watched episodes`);
       setWatchedEpisodes(watchedIds);
     } catch (err) {
       console.error('Error fetching watched episodes:', err);
@@ -126,6 +148,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
     marginBottom: 20,
+    marginTop: 20,
   },
   episodeItem: {
     flexDirection: 'row',

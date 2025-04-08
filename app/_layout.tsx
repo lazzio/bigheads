@@ -8,6 +8,9 @@ import * as Sentry from '@sentry/react-native';
 import { isRunningInExpoGo } from 'expo';
 import Constants from 'expo-constants';
 import { makeRedirectUri } from 'expo-auth-session';
+import { initEpisodeNotificationService, setupNotificationListener } from '../utils/EpisodeNotificationService';
+import NetInfo from '@react-native-community/netinfo';
+import { syncOfflineWatchedEpisodes } from '../utils/WatchedEpisodeSyncService';
 
 // Définition des routes typées pour la navigation
 type AppRoute = '/(tabs)' | '/auth/login';
@@ -273,6 +276,7 @@ export default function RootLayout() {
   // Important state flags
   const [isAppReady, setIsAppReady] = useState(false);
   const appMounted = useRef(false);
+  const router = useRouter();
   
   // Initialize the app
   useEffect(() => {
@@ -294,6 +298,33 @@ export default function RootLayout() {
         // Wait a bit to avoid race conditions
         await new Promise(resolve => setTimeout(resolve, 300));
         
+        // Initialiser le service de notification d'épisodes
+        try {
+          // Initialiser le service de notification
+          await initEpisodeNotificationService();
+          
+          // Configurer le gestionnaire pour les clics sur les notifications
+          setupNotificationListener((episodeId) => {
+            // Naviguer vers l'écran du lecteur lorsqu'un utilisateur clique sur une notification
+            router.push(`/player?episodeId=${episodeId}`);
+          });
+          
+          console.log('Episode notification service initialized');
+        } catch (notificationError) {
+          console.error('Error initializing episode notification service:', notificationError);
+          Sentry.captureException(notificationError);
+        }
+
+        // Configure network change listener to sync offline data when back online
+        const unsubscribeNetInfo = NetInfo.addEventListener(state => {
+          if (state.isConnected) {
+            // When online, try to sync offline watched episodes
+            syncOfflineWatchedEpisodes().catch(err => 
+              console.error('Failed to sync offline watched episodes:', err)
+            );
+          }
+        });
+
         // Hide splash screen if it was shown
         try {
           await SplashScreen.hideAsync();
@@ -314,6 +345,8 @@ export default function RootLayout() {
     
     return () => {
       appMounted.current = false;
+      // Make sure to unsubscribe when component unmounts if you add this
+      // unsubscribeNetInfo?.();
     };
   }, []);
   

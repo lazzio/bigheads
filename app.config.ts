@@ -23,18 +23,30 @@ const config: ExpoConfig = {
   android: {
     softwareKeyboardLayoutMode: "pan",
     package: "xyz.myops.bigheads",
-    permissions: ['FOREGROUND_SERVICE'],
+    permissions: [
+      'FOREGROUND_SERVICE',
+      'WAKE_LOCK',
+      'RECEIVE_BOOT_COMPLETED',
+      'SCHEDULE_EXACT_ALARM',
+      'POST_NOTIFICATIONS'
+    ],
     foregroundService: {
       enabled: true,
       notificationTitle: 'Lecture en cours',
       notificationBody: 'Écoute de votre podcast',
-      notificationColor: '#b48d7b'
+      notificationColor: '#b48d7b',
     }
   },
-  platforms: ["android"],
+  platforms: ["android", "ios"],
   plugins: [
     "expo-router",
-    "expo-av",
+    [
+      "expo-av",
+      {
+        excludeFromRecentsWhenTaskRoot: false,
+        microphonePermission: "Autoriser l'application à accéder au microphone"
+      }
+    ],
     [
       "expo-build-properties",
       {
@@ -53,7 +65,10 @@ const config: ExpoConfig = {
         "project": "bigheads-app",
         "url": "https://sentry.io/"
       }
-    ]
+    ],
+    "expo-notifications",
+    "expo-background-fetch",
+    "expo-task-manager"
   ],
   extra: {
     "router": {
