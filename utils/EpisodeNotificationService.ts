@@ -4,10 +4,10 @@ import * as TaskManager from 'expo-task-manager';
 import { supabase } from '../lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Identifiant unique pour la tâche de vérification des épisodes
+// Unique identifier for the episode checking task
 const CHECK_NEW_EPISODES_TASK = 'xyz.myops.bigheads.check-new-episodes';
 
-// Configurer les notifications
+// Configure notifications
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -16,45 +16,45 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// Fonctions de gestion du temps (Paris)
+// Time management functions (Paris)
 /**
- * Convertit une heure UTC en heure Paris avec prise en compte du changement d'heure été/hiver
+ * Converts a UTC time to Paris time accounting for daylight saving time
  */
 function convertToParisTime(utcDate: Date): Date {
-  // Créer une date avec l'heure de Paris
+  // Create a date with Paris time
   const parisDate = new Date(utcDate.toLocaleString('en-US', { timeZone: 'Europe/Paris' }));
   return parisDate;
 }
 
 /**
- * Convertit une heure Paris en UTC pour la programmation
+ * Converts Paris time to UTC for scheduling
  */
 function getNextParisTime(hour: number, minute: number): Date {
-  // Date actuelle en UTC
+  // Current date in UTC
   const now = new Date();
   
-  // Conversion en heure de Paris
+  // Convert to Paris time
   const parisNow = convertToParisTime(now);
   
-  // Créer l'heure cible à Paris pour aujourd'hui
+  // Create the target time in Paris for today
   const targetParisTime = new Date(parisNow);
   targetParisTime.setHours(hour, minute, 0, 0);
   
-  // Si l'heure cible est déjà passée, ajouter un jour
+  // If target time has already passed, add one day
   if (parisNow > targetParisTime) {
     targetParisTime.setDate(targetParisTime.getDate() + 1);
   }
   
-  // Calculer la différence en millisecondes entre maintenant et l'heure cible
+  // Calculate the difference in milliseconds between now and the target time
   const parisTimeDiffMs = targetParisTime.getTime() - parisNow.getTime();
   
-  // Ajouter cette différence à la date UTC actuelle
+  // Add this difference to the current UTC date
   const targetUtcTime = new Date(now.getTime() + parisTimeDiffMs);
   
   return targetUtcTime;
 }
 
-// Définir la tâche de vérification des épisodes
+// Define the episode checking task
 TaskManager.defineTask(CHECK_NEW_EPISODES_TASK, async () => {
   try {
     const result = await checkForNewEpisodes();
@@ -62,24 +62,24 @@ TaskManager.defineTask(CHECK_NEW_EPISODES_TASK, async () => {
       ? BackgroundFetch.BackgroundFetchResult.NewData
       : BackgroundFetch.BackgroundFetchResult.NoData;
   } catch (error) {
-    console.error('Erreur lors de la vérification des nouveaux épisodes:', error);
+    console.error('Error checking for new episodes:', error);
     return BackgroundFetch.BackgroundFetchResult.Failed;
   }
 });
 
-// Fonction pour vérifier les nouveaux épisodes
+// Function to check for new episodes
 async function checkForNewEpisodes(): Promise<boolean> {
   try {
-    // Obtenir la date du jour en heure de Paris au format YYYY-MM-DD
+    // Get the current date in Paris time in YYYY-MM-DD format
     const parisToday = convertToParisTime(new Date());
     const formattedDate = parisToday.toISOString().split('T')[0]; // YYYY-MM-DD
     
-    // Récupérer le dernier épisode vérifié depuis le stockage
+    // Retrieve the last checked episode ID from storage
     const lastCheckedEpisodeId = await AsyncStorage.getItem('lastCheckedEpisodeId');
     
-    console.log(`Vérification des nouveaux épisodes pour la date ${formattedDate} (heure de Paris)`);
+    console.log(`Checking for new episodes for date ${formattedDate} (Paris time)`);
     
-    // Vérifier s'il y a un nouvel épisode avec la date de publication d'aujourd'hui
+    // Check if there's a new episode with today's publication date
     const { data, error } = await supabase
       .from('episodes')
       .select('id, title, description')
@@ -88,109 +88,109 @@ async function checkForNewEpisodes(): Promise<boolean> {
       .limit(1);
     
     if (error) {
-      console.error('Erreur lors de la requête à Supabase:', error);
+      console.error('Error in Supabase request:', error);
       return false;
     }
     
-    // S'il y a un nouvel épisode et qu'il est différent du dernier vérifié
+    // If there's a new episode and it's different from the last checked one
     if (data && data.length > 0 && data[0].id !== lastCheckedEpisodeId) {
       const newEpisode = data[0];
       
-      // Enregistrer le nouvel épisode comme dernier vérifié
+      // Save the new episode as last checked
       await AsyncStorage.setItem('lastCheckedEpisodeId', newEpisode.id);
       
-      // Envoyer une notification
+      // Send a notification
       await sendNewEpisodeNotification(newEpisode);
       
-      console.log('Nouvel épisode détecté et notification envoyée:', newEpisode.title);
+      console.log('New episode detected and notification sent:', newEpisode.title);
       return true;
     }
     
-    // Vérifier l'heure actuelle à Paris pour la re-programmation potentielle
+    // Check current time in Paris for potential rescheduling
     const parisCurrentHour = parisToday.getHours();
     const parisCurrentMinutes = parisToday.getMinutes();
     
     if ((parisCurrentHour === 17 && parisCurrentMinutes >= 30) || parisCurrentHour > 17) {
-      // Nous sommes après 17h30 heure de Paris, programmer une nouvelle vérification dans 1 heure
+      // We're past 5:30 PM Paris time, schedule a new check in 1 hour
       scheduleNextCheck(60);
     }
     
     return false;
   } catch (error) {
-    console.error('Erreur lors de la vérification des nouveaux épisodes:', error);
+    console.error('Error checking for new episodes:', error);
     return false;
   }
 }
 
-// Envoyer une notification pour un nouvel épisode
+// Send notification for a new episode
 async function sendNewEpisodeNotification(episode: { id: string, title: string, description: string }): Promise<void> {
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: 'Nouvel épisode disponible !',
+      title: 'New episode available!',
       body: episode.title,
       data: { episodeId: episode.id },
     },
-    trigger: null, // Envoyer immédiatement
+    trigger: null, // Send immediately
   });
 }
 
-// Programmer la prochaine vérification (en minutes)
+// Schedule the next check (in minutes)
 function scheduleNextCheck(minutes: number): void {
-  // Créer un rappel pour vérifier à nouveau plus tard
+  // Create a reminder to check again later
   setTimeout(() => {
     BackgroundFetch.registerTaskAsync(CHECK_NEW_EPISODES_TASK, {
-      minimumInterval: 60 * minutes, // Convertir en secondes
+      minimumInterval: 60 * minutes, // Convert to seconds
       stopOnTerminate: false,
       startOnBoot: true,
-    }).catch(err => console.error('Erreur lors de la programmation de la prochaine vérification:', err));
-  }, 1000); // Attendre 1 seconde pour éviter tout conflit
+    }).catch(err => console.error('Error scheduling next check:', err));
+  }, 1000); // Wait 1 second to avoid any conflicts
 }
 
-// Configure la vérification initiale à 17h30 heure de Paris
+// Configure initial check at 5:30 PM Paris time
 function configureInitialCheck(): void {
-  // Obtenir la prochaine occurrence de 17h30 heure de Paris en UTC
+  // Get the next occurrence of 5:30 PM Paris time in UTC
   const nextCheckTimeUtc = getNextParisTime(17, 30);
   
-  // Temps d'attente en millisecondes
+  // Wait time in milliseconds
   const timeUntilCheck = nextCheckTimeUtc.getTime() - Date.now();
   
   console.log(`Next check scheduled for: ${nextCheckTimeUtc.toISOString()} (in ${Math.round(timeUntilCheck/1000/60)} minutes)`);
   
-  // Programmer la vérification
+  // Schedule the check
   setTimeout(() => {
     checkForNewEpisodes().catch(err => 
-      console.error('Erreur lors de la vérification initiale:', err)
+      console.error('Error during initial check:', err)
     );
   }, timeUntilCheck);
 }
 
-// Initialiser le service de notification
+// Initialize the notification service
 export async function initEpisodeNotificationService(): Promise<void> {
   try {
-    // Demander les permissions de notification
+    // Request notification permissions
     const { status } = await Notifications.requestPermissionsAsync();
     if (status !== 'granted') {
-      console.warn('Les permissions de notification n\'ont pas été accordées');
+      console.warn('Notification permissions were not granted');
       return;
     }
     
-    // Enregistrer la tâche de vérification périodique
+    // Register the periodic checking task
     await BackgroundFetch.registerTaskAsync(CHECK_NEW_EPISODES_TASK, {
-      minimumInterval: 60 * 60, // Vérifier toutes les heures (en secondes)
+      minimumInterval: 60 * 60, // Check every hour (in seconds)
       stopOnTerminate: false,
       startOnBoot: true,
     });
     
-    // Configurer la première vérification
+    // Configure the first check
     configureInitialCheck();
     
-    console.log('Service de notification d\'épisodes initialisé avec succès');
+    console.log('Episode notification service successfully initialized');
   } catch (error) {
-    console.error('Erreur lors de l\'initialisation du service de notification:', error);
+    console.error('Error initializing notification service:', error);
   }
 }
 
-// Configurer un gestionnaire pour les notifications reçues
+// Set up a handler for received notifications
 export function setupNotificationListener(onNotificationReceived: (episodeId: string) => void): () => void {
   const subscription = Notifications.addNotificationResponseReceivedListener(response => {
     const episodeId = response.notification.request.content.data?.episodeId;
@@ -202,16 +202,16 @@ export function setupNotificationListener(onNotificationReceived: (episodeId: st
   return () => subscription.remove();
 }
 
-// Fonction de test pour les notifications
+// Test function for notifications
 export async function testNotification(): Promise<void> {
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: 'Test de notification',
-      body: 'Ceci est un test de notification pour Les Intégrales BigHeads',
+      title: 'Notification test',
+      body: 'This is a notification test for BigHeads Integrals',
       data: { test: true },
     },
     trigger: null,
   });
   
-  console.log('Notification de test envoyée');
+  console.log('Test notification sent');
 }

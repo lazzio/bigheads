@@ -31,62 +31,62 @@ interface DownloadStatus {
 // Constants
 const DOWNLOADS_DIR = FileSystem.documentDirectory + 'downloads/';
 const EPISODES_CACHE_KEY = 'cached_episodes';
-const CLEANUP_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const CLEANUP_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 const MAX_DOWNLOAD_AGE_DAYS = 7;
 
 export default function DownloadsScreen() {
-  // État principal
+  // Main state management
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [downloadStatus, setDownloadStatus] = useState<DownloadStatus>({});
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isOffline, setIsOffline] = useState(false);
   
-  // Refs pour optimisation
+  // References for optimization
   const isMounted = useRef(true);
   const router = useRouter();
 
-  // Initialisation et nettoyage
+  // Initialization and cleanup
   useEffect(() => {
     if (Platform.OS === 'web') {
       setIsLoading(false);
       return;
     }
 
-    // Vérifier la connectivité
+    // Check connectivity
     checkNetworkStatus();
 
-    // Initialisation
+    // Initialize downloads
     setupDownloads();
 
-    // Nettoyage
+    // Cleanup function for component unmount
     return () => {
       isMounted.current = false;
     };
   }, []);
 
-  // Vérifier le statut du réseau
+  // Check network status
   const checkNetworkStatus = async () => {
     try {
       const state = await NetInfo.fetch();
       setIsOffline(!state.isConnected);
     } catch (error) {
       console.warn('Error checking network status:', error);
-      // En cas d'erreur, supposer que nous sommes en ligne pour tenter de charger les données
+      // In case of error, assume we are online to attempt loading data
       setIsOffline(false);
     }
   };
 
-  // Initialiser les téléchargements
+  // Initialize downloads
   const setupDownloads = async () => {
     try {
-      // S'assurer que le répertoire existe
+      // Ensure download directory exists
       await ensureDownloadsDirectory().catch(() => {});
       
-      // Charger les épisodes (d'abord depuis le cache, puis depuis l'API si en ligne)
+      // Load episodes (first from cache, then from API if online)
       await loadEpisodesWithCache();
       
-      // Mettre en place le nettoyage automatique
+      // Set up automatic cleanup for old downloads
       const cleanupInterval = setInterval(() => {
         if (isMounted.current) {
           cleanupOldDownloads().catch(() => {});
@@ -101,17 +101,17 @@ export default function DownloadsScreen() {
     }
   };
 
-  // Charger les épisodes avec gestion du cache
+  // Load episodes with cache management
   const loadEpisodesWithCache = async () => {
     try {
-      // Essayer de charger depuis le cache d'abord
+      // Try to load from cache first
       const cachedEpisodes = await loadCachedEpisodes();
       
       if (cachedEpisodes.length > 0) {
-        // Mettre à jour l'état avec les données du cache
+        // Update state with cached data
         setEpisodes(cachedEpisodes);
         
-        // Si nous sommes en ligne, essayer de rafraîchir les données
+        // If we're online, try to refresh data
         const networkState = await NetInfo.fetch();
         if (networkState.isConnected) {
           await fetchEpisodes();
@@ -119,17 +119,17 @@ export default function DownloadsScreen() {
           setIsOffline(true);
         }
       } else {
-        // Aucun cache disponible, essayer de charger depuis l'API
+        // No cache available, try to load from API
         await fetchEpisodes();
       }
     } catch (error) {
       console.error('Error loading episodes with cache:', error);
-      // En cas d'erreur, essayer de charger depuis l'API
+      // In case of error, try loading from API
       await fetchEpisodes();
     }
   };
 
-  // Charger les épisodes depuis le cache
+  // Load episodes from cache
   const loadCachedEpisodes = async (): Promise<Episode[]> => {
     try {
       const cachedData = await AsyncStorage.getItem(EPISODES_CACHE_KEY);
@@ -144,7 +144,7 @@ export default function DownloadsScreen() {
     return [];
   };
 
-  // Sauvegarder les épisodes dans le cache
+  // Save episodes to cache for offline use
   const saveEpisodesToCache = async (episodes: Episode[]) => {
     try {
       await AsyncStorage.setItem(EPISODES_CACHE_KEY, JSON.stringify(episodes));
@@ -154,14 +154,14 @@ export default function DownloadsScreen() {
     }
   };
 
-  // Vérifier les téléchargements lorsque les épisodes changent
+  // Check downloads when episodes change
   useEffect(() => {
     if (episodes.length > 0 && Platform.OS !== 'web') {
       checkDownloadedEpisodes();
     }
   }, [episodes]);
 
-  // Helpers pour le système de fichiers
+  // File system helpers
   const ensureDownloadsDirectory = async () => {
     if (Platform.OS === 'web') return false;
     
@@ -179,7 +179,7 @@ export default function DownloadsScreen() {
     }
   };
 
-  // Lire les métadonnées des épisodes téléchargés
+  // Read metadata for downloaded episodes
   const loadDownloadedEpisodesMetadata = async () => {
     if (Platform.OS === 'web') return [];
     
@@ -196,7 +196,7 @@ export default function DownloadsScreen() {
           const metaContent = await FileSystem.readAsStringAsync(metaPath);
           const metadata = JSON.parse(metaContent);
           
-          // Vérifier si le fichier audio correspondant existe
+          // Check if the corresponding audio file exists
           const audioFile = metaFile.replace('.meta', '');
           const audioPath = DOWNLOADS_DIR + audioFile;
           const audioExists = await FileSystem.getInfoAsync(audioPath);
@@ -219,15 +219,15 @@ export default function DownloadsScreen() {
     }
   };
 
-  // Récupérer les épisodes téléchargés (pour le mode hors ligne)
+  // Retrieve downloaded episodes (for offline mode)
   const getDownloadedEpisodes = async () => {
     if (Platform.OS === 'web') return [];
     
     const metadata = await loadDownloadedEpisodesMetadata();
     
-    // Fusionner avec les épisodes existants ou créer des objets Episode minimaux
+    // Merge with existing episodes or create minimal Episode objects
     if (episodes.length > 0) {
-      // Si nous avons des épisodes en mémoire, enrichir avec les métadonnées
+      // If we have episodes in memory, enrich with metadata
       return episodes.filter(episode => 
         metadata.some(meta => meta.id === episode.id)
       ).map(episode => {
@@ -238,10 +238,10 @@ export default function DownloadsScreen() {
         };
       });
     } else {
-      // Créer des objets Episode minimalistes à partir des métadonnées
+      // Create minimal Episode objects from metadata
       return metadata.map(meta => ({
         id: meta.id,
-        title: meta.title || 'Épisode téléchargé',
+        title: meta.title || 'Downloaded Episode',
         description: meta.description || '',
         mp3Link: '',
         mp3_link: '',
@@ -253,25 +253,26 @@ export default function DownloadsScreen() {
     }
   };
 
+  // Generate filename from URL
   const getFilename = (url: string | undefined): string => {
     if (!url) return `episode-${Date.now()}.mp3`;
     return url.split('/').pop() || `episode-${Date.now()}.mp3`;
   };
 
-  // Charger les épisodes depuis l'API
+  // Load episodes from API
   const fetchEpisodes = async () => {
     try {
       const networkState = await NetInfo.fetch();
       
       if (!networkState.isConnected) {
         setIsOffline(true);
-        // En mode hors ligne, charger uniquement les épisodes téléchargés
+        // In offline mode, load only downloaded episodes
         const offlineEpisodes = await getDownloadedEpisodes();
         if (offlineEpisodes.length > 0) {
           setEpisodes(offlineEpisodes);
           setError(null);
         } else {
-          setError('Aucun épisode disponible en mode hors ligne');
+          setError('No episodes available in offline mode');
         }
         return;
       }
@@ -299,45 +300,45 @@ export default function DownloadsScreen() {
       }));
       setEpisodes(normalizedEpisodes);
       
-      // Sauvegarder les épisodes dans le cache pour une utilisation hors ligne
+      // Save episodes to cache for offline use
       await saveEpisodesToCache(episodesData);
       
       setError(null);
     } catch (err) {
       console.error('Error fetching episodes:', err);
       if (isMounted.current) {
-        // En cas d'erreur, essayer de charger depuis le cache
+        // In case of error, try to load from cache
         const cachedEpisodes = await loadCachedEpisodes();
         if (cachedEpisodes.length > 0) {
           setEpisodes(cachedEpisodes);
-          setError('Mode hors ligne - Affichage des données en cache');
+          setError('Offline mode - Displaying cached data');
         } else {
-          // Si aucun cache n'est disponible, essayer de charger les épisodes téléchargés
+          // If no cache is available, try to load downloaded episodes
           const offlineEpisodes = await getDownloadedEpisodes();
           if (offlineEpisodes.length > 0) {
             setEpisodes(offlineEpisodes);
-            setError('Mode hors ligne - Affichage des épisodes téléchargés');
+            setError('Offline mode - Displaying downloaded episodes');
           } else {
-            setError('Erreur lors du chargement des épisodes et aucune donnée en cache');
+            setError('Error loading episodes and no cached data available');
           }
         }
       }
     }
   };
 
-  // Vérifier les épisodes téléchargés
+  // Check downloaded episodes
   const checkDownloadedEpisodes = async () => {
     if (Platform.OS === 'web' || !isMounted.current) return;
 
     try {
-      // S'assurer que le répertoire existe
+      // Ensure directory exists
       await ensureDownloadsDirectory();
       
-      // Lire les fichiers dans le répertoire
+      // Read files in directory
       const files = await FileSystem.readDirectoryAsync(DOWNLOADS_DIR)
         .catch(() => [] as string[]);
       
-      // Mettre à jour le statut de chaque épisode
+      // Update status for each episode
       const newStatus: DownloadStatus = {};
       
       for (const episode of episodes) {
@@ -347,12 +348,12 @@ export default function DownloadsScreen() {
         let filePath: string | undefined;
         
         if (episode.offline_path) {
-          // Si nous avons déjà un chemin hors ligne, vérifier s'il existe
+          // If we already have an offline path, check if it exists
           const fileInfo = await FileSystem.getInfoAsync(episode.offline_path);
           isDownloaded = fileInfo.exists;
           filePath = isDownloaded ? episode.offline_path : undefined;
         } else if (episode.mp3_link) {
-          // Sinon, vérifier par nom de fichier
+          // Otherwise, check by filename
           const filename = getFilename(episode.mp3_link);
           isDownloaded = files.includes(filename);
           filePath = isDownloaded ? DOWNLOADS_DIR + filename : undefined;
@@ -375,11 +376,11 @@ export default function DownloadsScreen() {
     }
   };
 
-  // Télécharger un épisode
+  // Download an episode
   const downloadEpisode = async (episode: Episode) => {
-    // Vérifier si l'épisode a un lien mp3 valide
+    // Check if the episode has a valid mp3 link
     if (!episode?.mp3_link) {
-      setError('Lien de téléchargement non disponible');
+      setError('Download link not available');
       return;
     }
     
@@ -395,7 +396,7 @@ export default function DownloadsScreen() {
       const filename = getFilename(episode.mp3_link);
       const fileUri = DOWNLOADS_DIR + filename;
 
-      // Mettre à jour le statut
+      // Update status
       setDownloadStatus(prev => ({
         ...prev,
         [episode.id]: {
@@ -406,7 +407,7 @@ export default function DownloadsScreen() {
         }
       }));
 
-      // Créer le téléchargement
+      // Create the download
       const downloadResumable = FileSystem.createDownloadResumable(
         episode.mp3_link,
         fileUri,
@@ -417,7 +418,7 @@ export default function DownloadsScreen() {
           const progress = downloadProgress.totalBytesWritten / 
                           downloadProgress.totalBytesExpectedToWrite;
           
-          // Limiter les mises à jour d'état pour économiser la batterie
+          // Limit state updates to save battery
           if (Math.abs(progress - (downloadStatus[episode.id]?.progress || 0)) > 0.05) {
             setDownloadStatus(prev => ({
               ...prev,
@@ -430,13 +431,13 @@ export default function DownloadsScreen() {
         }
       );
 
-      // Démarrer le téléchargement
+      // Start the download
       const result = await downloadResumable.downloadAsync();
       
       if (!isMounted.current) return;
       
       if (result?.uri) {
-        // Enregistrer les métadonnées
+        // Save metadata
         const metadataUri = fileUri + '.meta';
         const metadata = {
           id: episode.id,
@@ -450,7 +451,7 @@ export default function DownloadsScreen() {
           JSON.stringify(metadata)
         );
 
-        // Mettre à jour le statut
+        // Update status
         setDownloadStatus(prev => ({
           ...prev,
           [episode.id]: {
@@ -461,13 +462,13 @@ export default function DownloadsScreen() {
           }
         }));
       } else {
-        throw new Error('Le téléchargement a échoué');
+        throw new Error('Download failed');
       }
     } catch (error) {
       console.error('Download error:', error);
       
       if (isMounted.current) {
-        setError('Erreur lors du téléchargement');
+        setError('Error during download');
         setDownloadStatus(prev => ({
           ...prev,
           [episode.id]: {
@@ -480,7 +481,7 @@ export default function DownloadsScreen() {
     }
   };
 
-  // Supprimer un téléchargement
+  // Delete a download
   const deleteDownload = async (episode: Episode) => {
     if (Platform.OS === 'web') return;
 
@@ -489,25 +490,25 @@ export default function DownloadsScreen() {
       let metaPath: string | undefined;
       
       if (episode.offline_path) {
-        // Si nous avons un chemin hors ligne direct
+        // If we have a direct offline path
         filePath = episode.offline_path;
         metaPath = episode.offline_path + '.meta';
       } else if (episode.mp3_link) {
-        // Sinon, construire le chemin à partir de l'URL
+        // Otherwise, build path from URL
         const filename = getFilename(episode.mp3_link);
         filePath = DOWNLOADS_DIR + filename;
         metaPath = filePath + '.meta';
       } else {
-        throw new Error('Impossible de déterminer le fichier à supprimer');
+        throw new Error('Unable to determine file to delete');
       }
       
-      // Supprimer le fichier et les métadonnées
+      // Delete the file and metadata
       await Promise.all([
         FileSystem.deleteAsync(filePath, { idempotent: true }).catch(() => {}),
         metaPath ? FileSystem.deleteAsync(metaPath, { idempotent: true }).catch(() => {}) : Promise.resolve()
       ]);
 
-      // Mettre à jour le statut
+      // Update status
       if (isMounted.current) {
         setDownloadStatus(prev => ({
           ...prev,
@@ -520,20 +521,20 @@ export default function DownloadsScreen() {
       }
     } catch (error) {
       console.error('Error deleting download:', error);
-      setError('Erreur lors de la suppression');
+      setError('Error while deleting');
     }
   };
 
-  // Supprimer tous les téléchargements
+  // Delete all downloads
   const deleteAllDownloads = async () => {
     if (Platform.OS === 'web') return;
 
     try {
-      // Supprimer et recréer le répertoire
+      // Delete and recreate the directory
       await FileSystem.deleteAsync(DOWNLOADS_DIR, { idempotent: true });
       await ensureDownloadsDirectory();
 
-      // Réinitialiser tous les statuts
+      // Reset all statuses
       if (isMounted.current) {
         const newStatus: DownloadStatus = {};
         episodes.forEach(episode => {
@@ -548,11 +549,11 @@ export default function DownloadsScreen() {
       }
     } catch (error) {
       console.error('Error deleting all downloads:', error);
-      setError('Erreur lors de la suppression des téléchargements');
+      setError('Error while deleting downloads');
     }
   };
 
-  // Nettoyer les anciens téléchargements
+  // Clean up old downloads
   const cleanupOldDownloads = async () => {
     if (Platform.OS === 'web' || !isMounted.current) return;
 
@@ -584,38 +585,38 @@ export default function DownloadsScreen() {
         }
       }
       
-      // Rafraîchir les statuts
+      // Refresh statuses
       await checkDownloadedEpisodes();
     } catch (error) {
       console.error('Error cleaning up old downloads:', error);
     }
   };
 
-  // Helper pour confirmer la suppression de tous les téléchargements
+  // Helper to confirm deletion of all downloads
   const confirmDeleteAll = useCallback(() => {
     const hasDownloads = Object.values(downloadStatus).some(status => status.downloaded);
     
     if (!hasDownloads) {
-      setError('Aucun épisode téléchargé à supprimer');
+      setError('No downloaded episodes to delete');
       return;
     }
     
     Alert.alert(
-      'Supprimer tous les téléchargements',
-      'Êtes-vous sûr de vouloir supprimer tous les épisodes téléchargés ?',
+      'Delete all downloads',
+      'Are you sure you want to delete all downloaded episodes?',
       [
-        { text: 'Annuler', style: 'cancel' },
-        { text: 'Supprimer', onPress: deleteAllDownloads, style: 'destructive' }
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', onPress: deleteAllDownloads, style: 'destructive' }
       ]
     );
   }, [downloadStatus]);
 
-  // Handler pour lancer la lecture d'un épisode
+  // Handler to play an episode
   const playEpisode = useCallback((episode: Episode, index: number) => {
     if (downloadStatus[episode.id]?.downloaded) {
       const filePath = downloadStatus[episode.id]?.filePath;
       
-      // Pour un épisode téléchargé, passer le chemin local
+      // For a downloaded episode, pass the local path
       router.push({
         pathname: '/player',
         params: { 
@@ -624,7 +625,7 @@ export default function DownloadsScreen() {
         }
       });
     } else {
-      // Pour un épisode en ligne, utiliser l'index
+      // For an online episode, use the index
       router.push({
         pathname: '/player',
         params: { episodeId: episode.id }
@@ -632,7 +633,7 @@ export default function DownloadsScreen() {
     }
   }, [router, downloadStatus]);
 
-  // Rafraîchir les données (force le rechargement complet)
+  // Refresh data (forces complete reload)
   const refreshData = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -646,7 +647,7 @@ export default function DownloadsScreen() {
     }
   }, []);
 
-  // Composant pour le cercle de progression
+  // Progress circle component
   const ProgressCircle = ({ progress }: { progress: number }) => {
     const radius = 10;
     const strokeWidth = 2;
@@ -657,7 +658,7 @@ export default function DownloadsScreen() {
     return (
       <View style={styles.progressCircleContainer}>
         <Svg width={center * 2} height={center * 2}>
-          {/* Cercle de fond */}
+          {/* Background circle */}
           <Circle
             cx={center}
             cy={center}
@@ -667,7 +668,7 @@ export default function DownloadsScreen() {
             fill="none"
           />
           
-          {/* Cercle de progression */}
+          {/* Progress circle */}
           <Circle
             cx={center}
             cy={center}
@@ -682,7 +683,7 @@ export default function DownloadsScreen() {
           />
         </Svg>
         
-        {/* Pourcentage */}
+        {/* Percentage */}
         <Text style={styles.progressText}>
           {Math.round(progress * 100)}%
         </Text>
@@ -690,48 +691,48 @@ export default function DownloadsScreen() {
     );
   };
 
-  // Message si aucun épisode n'est disponible
+  // Message if no episodes are available
   const NoEpisodesMessage = () => (
     <View style={styles.emptyContainer}>
-      <Text style={styles.emptyText}>Aucun épisode disponible</Text>
+      <Text style={styles.emptyText}>No episodes available</Text>
       {isOffline && (
         <View style={styles.offlineMessageContainer}>
           <WifiOff size={20} color="#888" />
-          <Text style={styles.offlineText}>Mode hors ligne</Text>
+          <Text style={styles.offlineText}>Offline mode</Text>
         </View>
       )}
       <TouchableOpacity 
         style={styles.refreshButton}
         onPress={refreshData}
       >
-        <Text style={styles.refreshButtonText}>Actualiser</Text>
+        <Text style={styles.refreshButtonText}>Refresh</Text>
       </TouchableOpacity>
     </View>
   );
 
-  // Indicateur de mode hors ligne
+  // Offline mode indicator
   const OfflineIndicator = () => (
     <View style={styles.offlineIndicator}>
       <WifiOff size={16} color="#fff" />
-      <Text style={styles.offlineIndicatorText}>Mode hors ligne</Text>
+      <Text style={styles.offlineIndicatorText}>Offline mode</Text>
     </View>
   );
 
-  // Affichage pendant le chargement
+  // Display during loading
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#0ea5e9" />
-        <Text style={styles.loadingText}>Chargement des épisodes...</Text>
+        <Text style={styles.loadingText}>Loading episodes...</Text>
       </View>
     );
   }
 
-  // Affichage principal
+  // Main display
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Téléchargements</Text>
+        <Text style={styles.title}>Downloads</Text>
         <View style={styles.headerActions}>
           {isOffline && <OfflineIndicator />}
           {Platform.OS !== 'web' && Object.values(downloadStatus).some(status => status.downloaded) && (
@@ -772,7 +773,7 @@ export default function DownloadsScreen() {
                   </Text>
                 )}
                 {downloadStatus[episode.id]?.downloaded && (
-                  <Text style={styles.downloadedIndicator}>Téléchargé</Text>
+                  <Text style={styles.downloadedIndicator}>Downloaded</Text>
                 )}
               </TouchableOpacity>
 
@@ -829,7 +830,7 @@ export default function DownloadsScreen() {
         style={styles.floatingRefreshButton}
         onPress={refreshData}
       >
-        <Text style={styles.refreshButtonText}>Actualiser</Text>
+        <Text style={styles.refreshButtonText}>Refresh</Text>
       </TouchableOpacity>
     </View>
   );
@@ -856,6 +857,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 20,
+    marginTop: 20,
     backgroundColor: '#1a1a1a',
     borderBottomWidth: 1,
     borderBottomColor: '#333',

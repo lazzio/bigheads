@@ -126,6 +126,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
     marginBottom: 20,
+    marginTop: 20,
   },
   episodeItem: {
     flexDirection: 'row',
