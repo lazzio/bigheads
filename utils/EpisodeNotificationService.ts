@@ -99,6 +99,9 @@ async function checkForNewEpisodes(): Promise<boolean> {
       // Save the new episode as last checked
       await AsyncStorage.setItem('lastCheckedEpisodeId', newEpisode.id);
       
+      // Reset the retry counter since we found an episode
+      await AsyncStorage.setItem('episodeCheckRetryCount', '0');
+      
       // Send a notification
       await sendNewEpisodeNotification(newEpisode);
       
@@ -110,7 +113,25 @@ async function checkForNewEpisodes(): Promise<boolean> {
     const parisCurrentHour = parisToday.getHours();
     const parisCurrentMinutes = parisToday.getMinutes();
     
-    if ((parisCurrentHour === 17 && parisCurrentMinutes >= 30) || parisCurrentHour > 17) {
+    // If we're around 17:30, implement the retry logic
+    if (parisCurrentHour === 17 && parisCurrentMinutes >= 25) {
+      // Get the current retry count
+      const retryCountStr = await AsyncStorage.getItem('episodeCheckRetryCount') || '0';
+      const retryCount = parseInt(retryCountStr, 10);
+      
+      if (retryCount < 2) {
+        // If we haven't reached our retry limit, schedule a check in 30 minutes
+        console.log(`No episode found. Scheduling retry ${retryCount + 1} in 30 minutes`);
+        await AsyncStorage.setItem('episodeCheckRetryCount', (retryCount + 1).toString());
+        scheduleNextCheck(30); // Check again in 30 minutes
+      } else {
+        // Reset the counter after the last retry
+        await AsyncStorage.setItem('episodeCheckRetryCount', '0');
+        console.log('No episode found after 2 retries. Scheduling next regular check.');
+        // After 2 retries, go back to regular hourly schedule
+        scheduleNextCheck(60);
+      }
+    } else if ((parisCurrentHour === 17 && parisCurrentMinutes >= 30) || parisCurrentHour > 17) {
       // We're past 5:30 PM Paris time, schedule a new check in 1 hour
       scheduleNextCheck(60);
     }
