@@ -266,10 +266,14 @@ export default function PlayerScreen() {
         .from('watched_episodes')
         .upsert({ 
           episode_id: episodeId,
-          user_id: userId
+          user_id: userId,
+          watched_at: new Date().toISOString()
         });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Erreur lors de l'insertion:", error);
+        throw error;
+      }
       
       console.log("Épisode marqué comme vu:", episodeId);
     } catch (err) {

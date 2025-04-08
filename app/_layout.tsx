@@ -9,6 +9,8 @@ import { isRunningInExpoGo } from 'expo';
 import Constants from 'expo-constants';
 import { makeRedirectUri } from 'expo-auth-session';
 import { initEpisodeNotificationService, setupNotificationListener } from '../utils/EpisodeNotificationService';
+import NetInfo from '@react-native-community/netinfo';
+import { syncOfflineWatchedEpisodes } from '../utils/WatchedEpisodeSyncService';
 
 // Définition des routes typées pour la navigation
 type AppRoute = '/(tabs)' | '/auth/login';
@@ -313,6 +315,16 @@ export default function RootLayout() {
           Sentry.captureException(notificationError);
         }
 
+        // Configure network change listener to sync offline data when back online
+        const unsubscribeNetInfo = NetInfo.addEventListener(state => {
+          if (state.isConnected) {
+            // When online, try to sync offline watched episodes
+            syncOfflineWatchedEpisodes().catch(err => 
+              console.error('Failed to sync offline watched episodes:', err)
+            );
+          }
+        });
+
         // Hide splash screen if it was shown
         try {
           await SplashScreen.hideAsync();
@@ -333,6 +345,8 @@ export default function RootLayout() {
     
     return () => {
       appMounted.current = false;
+      // Make sure to unsubscribe when component unmounts if you add this
+      // unsubscribeNetInfo?.();
     };
   }, []);
   

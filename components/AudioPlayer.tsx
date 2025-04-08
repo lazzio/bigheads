@@ -56,6 +56,8 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
             setError(data.error);
             setIsLoading(false);
           } else if (data.type === 'finished') {
+            console.log('Audio playback finished, calling onComplete');
+            
             if (onComplete) {
               onComplete();
             }
