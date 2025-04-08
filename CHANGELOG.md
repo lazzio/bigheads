@@ -1,3 +1,18 @@
+## [1.2.0](https://github.com/lazzio/bigheads/-/compare/v1.1.0...v1.2.0) (2025-04-08)
+
+### Features
+
+* improve player background on android ([9a476c3](https://github.com/lazzio/bigheads/-/commit/9a476c30cf200073ef6f795b5dee3e8c159bee3b))
+* improve player background on android ([#23](https://github.com/lazzio/bigheads/-/issues/23)) ([5d21ac1](https://github.com/lazzio/bigheads/-/commit/5d21ac1ca1aa31917b703ad697145184cf8b5d0b))
+* notification of new episode ([6b28809](https://github.com/lazzio/bigheads/-/commit/6b28809543f87128046816c58f749b9e06113b21))
+* notification of new episode ([b98ad1d](https://github.com/lazzio/bigheads/-/commit/b98ad1dccee83ddb68949e0fb0f0a795e6de7749))
+* notification of new episode ([#24](https://github.com/lazzio/bigheads/-/issues/24)) ([a5d1b38](https://github.com/lazzio/bigheads/-/commit/a5d1b38793f652979c359ab81590674ebad7706d))
+* retry notify 2 times ([3e6bae2](https://github.com/lazzio/bigheads/-/commit/3e6bae276b9755fb6d1590aa000b02ead2dd18c8))
+
+### Bug Fixes
+
+* mark as read ([638464d](https://github.com/lazzio/bigheads/-/commit/638464db90d41cc1ca7e5fe9a895d25b526a193c))
+
 ## [1.1.0](https://github.com/lazzio/bigheads/-/compare/v1.0.0...v1.1.0) (2025-04-07)
 
 ### Features
