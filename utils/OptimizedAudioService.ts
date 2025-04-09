@@ -26,6 +26,13 @@ class AudioManager {
   private isPlaying = false;
   private listeners: Set<(data: any) => void> = new Set();
   private keepAliveTimer: NodeJS.Timeout | null = null;
+  private isBuffering = false;
+  private progressiveLoading = false;
+  private bufferSize = 180000; // Valeur par défaut: 180 secondes
+  private nextEpisodePreload: { episode: Episode, sound: Audio.Sound } | null = null;
+  private lastReportedPosition = 0;
+  private bufferingStartTime = 0;
+  private bufferThreshold = 10000; // 10 secondes de buffer minimum
 
   private constructor() {
     // Constructeur privé pour le modèle singleton
@@ -57,14 +64,22 @@ class AudioManager {
       // Enregistrer une tâche d'arrière-plan simplifiée
       if (Platform.OS === 'android' && !this.isBackgroundTaskRegistered) {
         try {
-          await BackgroundFetch.registerTaskAsync(BACKGROUND_AUDIO_TASK, {
-            minimumInterval: 30, // 30 secondes - plus court pour les appareils restrictifs
-            stopOnTerminate: false,
-            startOnBoot: true,
-          });
+          // Vérifier si la tâche existe déjà avant d'essayer de l'enregistrer
+          const isTaskRegistered = await this.isTaskRegistered(BACKGROUND_AUDIO_TASK);
           
-          this.isBackgroundTaskRegistered = true;
-          console.log('Background task registered successfully');
+          if (!isTaskRegistered) {
+            await BackgroundFetch.registerTaskAsync(BACKGROUND_AUDIO_TASK, {
+              minimumInterval: 60, // 60 secondes - plus court pour les appareils restrictifs
+              stopOnTerminate: false,
+              startOnBoot: true,
+            });
+            
+            this.isBackgroundTaskRegistered = true;
+            console.log('Background task registered successfully');
+          } else {
+            console.log('Background task already registered');
+            this.isBackgroundTaskRegistered = true;
+          }
         } catch (error) {
           // Ne pas échouer complètement si la tâche ne peut pas être enregistrée
           console.warn('Could not register background task:', error);
@@ -79,6 +94,13 @@ class AudioManager {
   // Enregistrer la tâche d'arrière-plan pour maintenir l'application active
   private async registerBackgroundTask(): Promise<void> {
     try {
+      // Vérifier si la tâche est déjà enregistrée
+      if (await this.isTaskRegistered(BACKGROUND_AUDIO_TASK)) {
+        this.isBackgroundTaskRegistered = true;
+        console.log('Task was already registered');
+        return;
+      }
+      
       // Utiliser un intervalle plus court pour les appareils Pixel
       const isPixelDevice = Platform.OS === 'android' && 
         ((Platform.constants?.Brand || '').toLowerCase().includes('pixel') || 
@@ -94,9 +116,6 @@ class AudioManager {
       this.isBackgroundTaskRegistered = true;
       console.log('Background task registered successfully');
       
-      // Nous omettons l'appel à fetchTaskAsync car il n'est pas disponible
-      // La tâche s'exécutera automatiquement selon l'intervalle défini
-      
     } catch (error) {
       console.error('Error registering background task:', error);
       // Certaines erreurs peuvent être ignorées si la tâche est déjà enregistrée
@@ -107,15 +126,34 @@ class AudioManager {
     }
   }
 
+  // Vérifier si une tâche est enregistrée
+  private async isTaskRegistered(taskName: string): Promise<boolean> {
+    try {
+      const tasks = await TaskManager.getRegisteredTasksAsync();
+      return tasks.some(task => task.taskName === taskName);
+    } catch (error) {
+      console.error('Error checking task registration:', error);
+      return false;
+    }
+  }
+
   // Désactiver la tâche d'arrière-plan
   private async unregisterBackgroundTask(): Promise<void> {
     if (this.isBackgroundTaskRegistered) {
       try {
-        await BackgroundFetch.unregisterTaskAsync(BACKGROUND_AUDIO_TASK);
-        this.isBackgroundTaskRegistered = false;
-        console.log('Background task unregistered');
+        // Vérifier si la tâche existe avant de tenter de la supprimer
+        const isRegistered = await this.isTaskRegistered(BACKGROUND_AUDIO_TASK);
+        if (isRegistered) {
+          await BackgroundFetch.unregisterTaskAsync(BACKGROUND_AUDIO_TASK);
+          console.log('Background task unregistered');
+        } else {
+          console.log('Background task was not found, no need to unregister');
+        }
       } catch (error) {
         console.error('Error unregistering background task:', error);
+      } finally {
+        // Marquer comme non enregistré quoi qu'il arrive
+        this.isBackgroundTaskRegistered = false;
       }
     }
   }
@@ -158,6 +196,29 @@ class AudioManager {
     }
   
     try {
+      // Si nous sommes en train de buffer, attendre un peu plus
+      if (this.isBuffering && this.progressiveLoading) {
+        // Vérifier l'état actuel du buffer
+        const status = await this.sound.getStatusAsync();
+        if (status.isLoaded) {
+          const bufferAvailable = status.playableDurationMillis ? status.playableDurationMillis - status.positionMillis : 0;
+          
+          // Si le buffer est trop petit, attendre qu'il se remplisse davantage
+          if (bufferAvailable < this.bufferThreshold && !status.isPlaying) {
+            console.log(`Buffering before play: waiting for more data (${bufferAvailable}ms available)`);
+            
+            // Notifier que nous sommes en train de buffer
+            this.notifyListeners({
+              type: 'buffering',
+              isBuffering: true
+            });
+            
+            // Attendre que plus de données soient chargées
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
+      }
+      
       await this.sound.playAsync();
       this.startKeepAliveTimer(); // Démarrer le timer après avoir commencé la lecture
     } catch (error) {
@@ -183,12 +244,32 @@ class AudioManager {
   }
 
   // Charger un épisode
-  public async loadEpisode(episode: Episode): Promise<void> {
+  public async loadEpisode(episode: Episode, options?: { 
+    progressiveLoading?: boolean,
+    bufferSize?: number,
+    preloadNextEpisode?: Episode
+  }): Promise<void> {
     try {
       // Nettoyage du son précédent si existant
       if (this.sound) {
         await this.sound.unloadAsync();
         this.sound = null;
+      }
+
+      // Si nous avons préchargé cet épisode, utilisons-le
+      if (this.nextEpisodePreload && this.nextEpisodePreload.episode.id === episode.id) {
+        this.sound = this.nextEpisodePreload.sound;
+        this.currentEpisode = episode;
+        this.nextEpisodePreload = null;
+        
+        this.notifyListeners({
+          type: 'loaded',
+          episode,
+          duration: this.duration,
+          isLocalFile: !!episode.offline_path
+        });
+        
+        return;
       }
 
       // Prioriser le chemin hors ligne s'il existe
@@ -204,6 +285,13 @@ class AudioManager {
 
       this.currentEpisode = episode;
       
+      // Options de chargement progressif
+      this.progressiveLoading = options?.progressiveLoading ?? false;
+      if (options?.bufferSize) this.bufferSize = options.bufferSize;
+      
+      // Adapter le buffer threshold en fonction de la taille du buffer
+      this.bufferThreshold = Math.max(5000, Math.min(this.bufferSize / 2, 30000));
+      
       // Déterminer la source audio
       let source: { uri: string };
       
@@ -213,32 +301,60 @@ class AudioManager {
         console.log('Utilisation du fichier local');
       } else {
         // Normaliser l'URL pour les sources distantes
-        const normalizedUri = episode.mp3Link.startsWith('http') 
+        const normalizedUri = episode.mp3Link?.startsWith('http') 
           ? episode.mp3Link 
           : `https://${episode.mp3Link}`;
           
         source = { uri: normalizedUri };
         console.log('Utilisation de l\'URL distante');
       }
-      
+
       // Configuration optimisée pour le type de source
       const playbackConfig: {
         shouldPlay: boolean;
         progressUpdateIntervalMillis: number;
         positionMillis: number;
         androidImplementation?: string;
+        rate?: number;
+        initialStatus?: {
+          shouldPlay: boolean;
+          progressUpdateIntervalMillis: number;
+          positionMillis: number;
+          isLooping?: boolean;
+          rate?: number;
+        }
       } = {
         shouldPlay: false,
-        progressUpdateIntervalMillis: 1000,
+        progressUpdateIntervalMillis: 300, // Mise à jour plus fréquente pour améliorer la réactivité
         positionMillis: 0,
       };
       
       // Ajouter des configurations spécifiques pour Android si c'est une source distante
       if (Platform.OS === 'android' && !episode.offline_path) {
         playbackConfig.androidImplementation = 'MediaPlayer';
+        
+        // Configuration pour le chargement progressif
+        if (this.progressiveLoading) {
+          // Buffer plus grand pour une lecture plus stable
+          playbackConfig.initialStatus = {
+            shouldPlay: false,
+            progressUpdateIntervalMillis: 300,
+            positionMillis: 0,
+            isLooping: false,
+            rate: 1.0
+          };
+        }
       }
       
-      // Créer l'objet audio
+      // Marquer le début du chargement
+      this.isBuffering = true;
+      this.bufferingStartTime = Date.now();
+      this.notifyListeners({
+        type: 'buffering',
+        isBuffering: true
+      });
+      
+      // Créer l'objet audio avec les options appropriées
       const { sound } = await Audio.Sound.createAsync(
         source,
         playbackConfig,
@@ -246,6 +362,7 @@ class AudioManager {
       );
 
       this.sound = sound;
+      this.lastReportedPosition = 0;
       
       // Pour les fichiers locaux, on peut obtenir directement le statut
       // Pour les sources distantes sur Android, attendre un peu pour le préchargement
@@ -267,12 +384,25 @@ class AudioManager {
         }
       }
       
+      // Attendre un peu plus pour le buffer initial si c'est une source distante
+      if (!episode.offline_path && this.progressiveLoading) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
+      // Marquer la fin du chargement initial
+      this.isBuffering = false;
+      
       this.notifyListeners({
         type: 'loaded',
         episode,
         duration: this.duration,
         isLocalFile: !!episode.offline_path
       });
+      
+      // Si demandé, précharger le prochain épisode
+      if (options?.preloadNextEpisode && !options.preloadNextEpisode.offline_path) {
+        this.preloadNextEpisode(options.preloadNextEpisode);
+      }
       
     } catch (error) {
       console.error('Error loading episode:', error);
@@ -281,6 +411,48 @@ class AudioManager {
         error: error instanceof Error ? error.message : 'Erreur inconnue'
       });
       throw error;
+    }
+  }
+
+  // Précharger le prochain épisode en arrière-plan
+  private async preloadNextEpisode(episode: Episode): Promise<void> {
+    try {
+      // Ne pas précharger les fichiers locaux, ils se chargent déjà rapidement
+      if (episode.offline_path) return;
+      
+      // Normaliser l'URL pour les sources distantes
+      const normalizedUri = episode.mp3Link?.startsWith('http') 
+        ? episode.mp3Link 
+        : `https://${episode.mp3Link}`;
+        
+      const source = { uri: normalizedUri };
+      
+      // Configuration minimale pour le préchargement
+      const preloadConfig = {
+        shouldPlay: false,
+        progressUpdateIntervalMillis: 1000,
+        positionMillis: 0,
+        volume: 0, // Muet pendant le préchargement
+      };
+      
+      // Charger l'audio en arrière-plan mais ne pas commencer la lecture
+      const { sound } = await Audio.Sound.createAsync(
+        source,
+        preloadConfig,
+        null // Pas de callback pour les mises à jour
+      );
+      
+      // Stocker pour une utilisation future
+      this.nextEpisodePreload = {
+        episode,
+        sound
+      };
+      
+      console.log(`Préchargement de l'épisode suivant terminé: ${episode.title}`);
+    } catch (error) {
+      // Échec silencieux pour le préchargement, ce n'est pas critique
+      console.warn('Error preloading next episode:', error);
+      this.nextEpisodePreload = null;
     }
   }
 
@@ -297,8 +469,65 @@ class AudioManager {
       return;
     }
 
-    this.position = status.positionMillis;
+    // Mettre à jour la position seulement si la différence est significative
+    // ou si nous ne sommes pas en train de mettre en buffer
+    const newPosition = status.positionMillis;
+    const positionDiff = Math.abs(newPosition - this.lastReportedPosition);
+
+    // Détecter les sauts dans la lecture
+    if (this.isPlaying && positionDiff > 1000 && !status.isBuffering && !this.isBuffering) {
+      // Un saut s'est produit, mais nous ne sommes pas en train de buffer
+      // C'est probablement un seek manuel ou une fin de buffer silencieuse
+      console.log(`Position jumped by ${positionDiff}ms`);
+    }
+
+    this.lastReportedPosition = newPosition;
+    this.position = newPosition;
     this.isPlaying = status.isPlaying;
+    
+    // Améliorer la détection de buffering
+    const wasBuffering = this.isBuffering;
+    
+    // Gérer le buffering pour le chargement progressif
+    if (this.progressiveLoading) {
+      // Utilisons une logique plus sophistiquée pour détecter le buffering
+      if (status.isBuffering) {
+        // Entrée en mode buffering
+        if (!this.isBuffering) {
+          console.log('Buffering started');
+          this.bufferingStartTime = Date.now();
+        }
+        this.isBuffering = true;
+      } else if (this.isBuffering) {
+        // Sortie potentielle du mode buffering
+        
+        // Vérifier le buffer disponible
+        const bufferAvailable = status.playableDurationMillis - status.positionMillis;
+        
+        // Si nous avons assez de buffer, sortir du mode buffering
+        if (bufferAvailable > this.bufferThreshold) {
+          console.log(`Buffering ended with ${bufferAvailable}ms buffer`);
+          this.isBuffering = false;
+        } else {
+          // Sinon, rester en buffer mais vérifier combien de temps nous sommes bloqués
+          const bufferingTime = Date.now() - this.bufferingStartTime;
+          
+          // Si le buffering dure trop longtemps, sortir quand même
+          if (bufferingTime > 5000 && bufferAvailable > 3000) {
+            console.log(`Forced exit from buffering after ${bufferingTime}ms with ${bufferAvailable}ms buffer`);
+            this.isBuffering = false;
+          }
+        }
+      }
+    } else {
+      // Pour les sources non progressives, utiliser simplement le statut natif
+      this.isBuffering = status.isBuffering;
+    }
+    
+    // Si l'état de buffering a changé, notifier les écouteurs
+    if (wasBuffering !== this.isBuffering) {
+      console.log(`Buffering state changed to: ${this.isBuffering}`);
+    }
 
     // Notifier les écouteurs du changement d'état
     this.notifyListeners({
@@ -306,9 +535,32 @@ class AudioManager {
       position: this.position,
       duration: this.duration,
       isPlaying: this.isPlaying,
-      isBuffering: status.isBuffering
+      isBuffering: this.isBuffering
     });
-
+    
+    // Si nous utilisons le chargement progressif, vérifier si nous devons charger plus de contenu
+    if (this.progressiveLoading && 
+        this.duration > 0 && 
+        !status.isBuffering && 
+        status.positionMillis > 0) {
+      
+      // Buffer prédictif : demander plus de données avant d'en avoir besoin
+      const bufferAvailable = status.playableDurationMillis - status.positionMillis;
+      
+      // Si le buffer disponible devient trop petit, prévenir le buffering
+      if (bufferAvailable < this.bufferThreshold && this.isPlaying && !this.isBuffering) {
+        console.log(`Buffer getting low (${bufferAvailable}ms), preparing for buffering`);
+        
+        // Avertir que nous commençons à bufferiser
+        this.isBuffering = true;
+        this.bufferingStartTime = Date.now();
+        this.notifyListeners({
+          type: 'buffering',
+          isBuffering: true
+        });
+      }
+    }
+    
     // Gérer la fin de l'épisode
     if (status.didJustFinish) {
       this.notifyListeners({
@@ -343,10 +595,48 @@ class AudioManager {
     }
 
     try {
+      // Indiquer que nous sommes en train de bufferiser pendant le seek
+      this.isBuffering = true;
+      this.bufferingStartTime = Date.now();
+      
+      this.notifyListeners({
+        type: 'buffering',
+        isBuffering: true
+      });
+      
+      // Mettre à jour la position immédiatement pour éviter les sauts visuels
+      this.position = positionMillis;
+      this.lastReportedPosition = positionMillis;
+      
       await this.sound.setPositionAsync(positionMillis);
+      
+      // Pour les sources distantes, attendre un peu pour le rebuffering après un seek
+      if (this.progressiveLoading && !this.currentEpisode?.offline_path) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+      
+      // Vérifier l'état après le seek
+      const status = await this.sound.getStatusAsync();
+      if (status.isLoaded) {
+        // Mettre à jour pour s'assurer que nous avons la bonne position
+        this.position = status.positionMillis;
+        this.lastReportedPosition = status.positionMillis;
+      }
     } catch (error) {
       console.error('Error seeking sound:', error);
       throw error;
+    } finally {
+      // Réinitialiser l'état de buffering après un délai
+      setTimeout(() => {
+        this.isBuffering = false;
+        this.notifyListeners({
+          type: 'status',
+          position: this.position,
+          duration: this.duration,
+          isPlaying: this.isPlaying,
+          isBuffering: false
+        });
+      }, 300);
     }
   }
 
@@ -402,13 +692,32 @@ class AudioManager {
 
   // Nettoyer les ressources lors de la fermeture de l'application
   public async cleanup(): Promise<void> {
+    this.stopKeepAliveTimer();
+    
     if (this.sound) {
       try {
-        await this.sound.unloadAsync();
+        // Éviter les erreurs ANR en utilisant un timeout
+        const soundCleanupPromise = Promise.race([
+          this.sound.unloadAsync(),
+          new Promise(resolve => setTimeout(resolve, 3000)) // 3 secondes timeout
+        ]);
+        
+        await soundCleanupPromise;
       } catch (error) {
         console.error('Error unloading sound:', error);
+      } finally {
+        this.sound = null;
       }
-      this.sound = null;
+    }
+
+    // Nettoyer les préchargements éventuels
+    if (this.nextEpisodePreload?.sound) {
+      try {
+        await this.nextEpisodePreload.sound.unloadAsync().catch(() => {});
+      } catch (error) {
+        console.error('Error unloading preloaded sound:', error);
+      }
+      this.nextEpisodePreload = null;
     }
 
     await this.unregisterBackgroundTask();

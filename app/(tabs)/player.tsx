@@ -202,7 +202,10 @@ export default function PlayerScreen() {
         originalMp3Link: episode.original_mp3_link,
         mp3Link: episode.mp3_link,
         duration: episode.duration,
-        publicationDate: episode.publication_date
+        publicationDate: episode.publication_date,
+        mp3_link: episode.mp3_link,
+        publication_date: episode.publication_date,
+        offline_path: null // Initialisé comme null pour les épisodes non téléchargés
       }));
 
       console.log("Episodes chargés:", formattedEpisodes.length);
@@ -346,6 +349,9 @@ export default function PlayerScreen() {
         onNext={handleNext}
         onPrevious={handlePrevious}
         onComplete={() => markEpisodeAsWatched(currentEpisode.id)}
+        progressiveLoading={!isOffline && !currentEpisode.offline_path} // Activer le chargement progressif pour les sources en ligne
+        bufferSize={30000} // Taille du buffer en millisecondes (30 secondes)
+        preloadNext={!isOffline && episodes.length > 1} // Précharger l'épisode suivant si disponible et en ligne
       />
     </View>
   );
