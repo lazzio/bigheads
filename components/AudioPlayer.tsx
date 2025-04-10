@@ -12,9 +12,20 @@ interface AudioPlayerProps {
   onNext?: () => void;
   onPrevious?: () => void;
   onComplete?: () => void;
+  progressiveLoading?: boolean;
+  bufferSize?: number;
+  preloadNext?: boolean;
 }
 
-export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }: AudioPlayerProps) {
+export default function AudioPlayer({ 
+  episode, 
+  onNext, 
+  onPrevious, 
+  onComplete,
+  progressiveLoading = false,
+  bufferSize = 3000,
+  preloadNext = false
+}: AudioPlayerProps) {
   // État principal
   const [isPlaying, setIsPlaying] = useState(false);
   const [position, setPosition] = useState(0);
@@ -24,11 +35,14 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
   const [sleepTimerActive, setSleepTimerActive] = useState(false);
   const [isSeeking, setIsSeeking] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
+  const [showBufferingIndicator, setShowBufferingIndicator] = useState(false);
+  const bufferingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Références
   const progressBarRef = useRef<View>(null);
   const progressWidth = useRef(0);
   const progressPosition = useRef({ x: 0, y: 0 });
+  const wasPlaying = useRef(false);
 
   // Configurer audio au montage, nettoyer au démontage
   useEffect(() => {
@@ -51,7 +65,38 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
               setPosition(data.position);
             }
             setIsPlaying(data.isPlaying);
-            setIsBuffering(data.isBuffering);
+            
+            // Implémenter un debounce pour le buffer
+            if (data.isBuffering !== isBuffering) {
+              setIsBuffering(data.isBuffering);
+              
+              // Si on commence à buffer
+              if (data.isBuffering) {
+                // Annuler un timer existant
+                if (bufferingTimerRef.current) {
+                  clearTimeout(bufferingTimerRef.current);
+                }
+                
+                // Afficher l'indicateur seulement après un délai de 500ms
+                bufferingTimerRef.current = setTimeout(() => {
+                  if (isMounted) {
+                    setShowBufferingIndicator(true);
+                  }
+                }, 500);
+              } else {
+                // Si on arrête de buffer
+                if (bufferingTimerRef.current) {
+                  clearTimeout(bufferingTimerRef.current);
+                }
+                
+                // Attendre un court délai avant de masquer l'indicateur pour éviter le clignotement
+                setTimeout(() => {
+                  if (isMounted) {
+                    setShowBufferingIndicator(false);
+                  }
+                }, 200);
+              }
+            }
           } else if (data.type === 'error') {
             setError(data.error);
             setIsLoading(false);
@@ -84,15 +129,58 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     
     return () => {
       isMounted = false;
+      // Nettoyer le timer du buffering
+      if (bufferingTimerRef.current) {
+        clearTimeout(bufferingTimerRef.current);
+      }
     };
   }, [onComplete, sleepTimerActive]);
 
   // Charger le nouvel épisode quand il change
   useEffect(() => {
-    if (episode?.mp3Link) {
-      loadEpisode();
-    }
-  }, [episode]);
+    const loadEpisode = async () => {
+      try {
+        setIsLoading(true);
+        
+        // Passer les options de chargement progressif
+        await audioManager.loadEpisode(episode, {
+          progressiveLoading,
+          bufferSize,
+          preloadNextEpisode: preloadNext && onNext ? nextEpisode : undefined
+        });
+        
+        setIsLoading(false);
+        
+        // Si nous avions déjà commencé la lecture, reprendre
+        if (wasPlaying.current) {
+          wasPlaying.current = false;
+          audioManager.play();
+        }
+      } catch (error) {
+        console.error('Error loading episode:', error);
+        setError('Impossible de charger cet épisode');
+        setIsLoading(false);
+      }
+    };
+    
+    // Précharger le prochain épisode si disponible
+    const nextEpisode = preloadNext && typeof onNext === 'function' ? 
+      getNextEpisode() : undefined;
+    
+    loadEpisode();
+    
+    // Nettoyer lors du démontage
+    return () => {
+      wasPlaying.current = isPlaying;
+    };
+  }, [episode.id]);
+
+  // Fonction pour obtenir le prochain épisode (à implémenter selon votre logique)
+  const getNextEpisode = () => {
+    // Cette fonction devrait retourner l'épisode suivant
+    // Pour l'exemple, nous retournons undefined
+    return undefined;
+  };
 
   // Mesurer la barre de progression après le rendu
   useEffect(() => {
@@ -102,7 +190,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       }, 300);
     }
   }, [isLoading]);
-
   // Charger l'épisode
   async function loadEpisode() {
     try {
@@ -174,7 +261,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       setIsSeeking(false);
     }
   });
-
+  
   // Mesurer les dimensions de la barre de progression
   const measureProgressBar = () => {
     if (progressBarRef.current) {
@@ -380,8 +467,8 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
         </TouchableOpacity>
       </View>
       
-      {/* Indicateur de mise en mémoire tampon */}
-      {isBuffering && (
+      {/* Indicateur de mise en mémoire tampon - affiche uniquement quand showBufferingIndicator est true */}
+      {showBufferingIndicator && (
         <View style={styles.bufferingContainer}>
           <ActivityIndicator size="small" color="#0ea5e9" />
           <Text style={styles.bufferingText}>Mise en mémoire tampon...</Text>

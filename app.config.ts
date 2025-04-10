@@ -24,11 +24,12 @@ const config: ExpoConfig = {
     softwareKeyboardLayoutMode: "pan",
     package: "xyz.myops.bigheads",
     permissions: [
-      'FOREGROUND_SERVICE',
-      'WAKE_LOCK',
-      'RECEIVE_BOOT_COMPLETED',
-      'SCHEDULE_EXACT_ALARM',
-      'POST_NOTIFICATIONS'
+      'android.permission.FOREGROUND_SERVICE',
+      'android.permission.WAKE_LOCK',
+      'android.permission.RECEIVE_BOOT_COMPLETED',
+      'android.permission.SCHEDULE_EXACT_ALARM',
+      'android.permission.POST_NOTIFICATIONS',
+      'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
     ],
     foregroundService: {
       enabled: true,
@@ -44,7 +45,6 @@ const config: ExpoConfig = {
       "expo-av",
       {
         excludeFromRecentsWhenTaskRoot: false,
-        microphonePermission: "Autoriser l'application à accéder au microphone"
       }
     ],
     [
