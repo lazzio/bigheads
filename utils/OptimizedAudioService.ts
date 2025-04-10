@@ -28,7 +28,7 @@ class AudioManager {
   private keepAliveTimer: NodeJS.Timeout | null = null;
   private isBuffering = false;
   private progressiveLoading = false;
-  private bufferSize = 180000; // Valeur par défaut: 180 secondes
+  private bufferSize = 30000; // Valeur par défaut: 30 secondes
   private nextEpisodePreload: { episode: Episode, sound: Audio.Sound } | null = null;
   private lastReportedPosition = 0;
   private bufferingStartTime = 0;

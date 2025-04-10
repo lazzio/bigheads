@@ -10,7 +10,16 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    "app.config.ts",
+    "metro.config.js",
+    "eas.json",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "babel.config.js",
+    ".bolt",
+    ".github"
   ]
 }
