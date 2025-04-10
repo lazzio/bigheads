@@ -50,6 +50,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
             if (!isSeeking) {
               setPosition(data.position);
             }
+            setDuration(data.duration);
             setIsPlaying(data.isPlaying);
             setIsBuffering(data.isBuffering);
           } else if (data.type === 'error') {
@@ -65,6 +66,10 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
             if (sleepTimerActive) {
               handleSleepTimerEnd();
             }
+          } else if (data.type === 'remote-next' && onNext) {
+            onNext();
+          } else if (data.type === 'remote-previous' && onPrevious) {
+            onPrevious();
           }
         });
         
@@ -89,7 +94,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
 
   // Charger le nouvel épisode quand il change
   useEffect(() => {
-    if (episode?.mp3Link) {
+    if (episode?.mp3Link || episode?.offline_path) {
       loadEpisode();
     }
   }, [episode]);
@@ -163,7 +168,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
         
         // Appliquer la nouvelle position à l'audio
         await audioManager.seekTo(newPosition);
-        setPosition(newPosition);
       } catch (err) {
         console.error("Error while seeking:", err);
       } finally {
@@ -211,7 +215,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
   // Fonction pour sauter 10 minutes (600 secondes)
   async function handleSkip10Minutes() {
     try {
-      await handleSeek(600);
+      await audioManager.seekRelative(600);
       console.log("Skipped 10 minutes forward");
     } catch (err) {
       console.error("Error skipping 10 minutes:", err);

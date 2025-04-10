@@ -21,7 +21,20 @@ const config: ExpoConfig = {
   },
   
   android: {
+    adaptiveIcon: {
+      foregroundImage: "./assets/images/bh_opti.png",
+      backgroundColor: "#b48d7b"
+    },
     softwareKeyboardLayoutMode: "pan",
+    modeConfig: {
+      service: {
+        enabled: true,
+        notificationTitle: 'BigHeads Integrals',
+        notificationBody: 'Écoute en cours',
+        notificationColor: '#b48d7b',
+        foregroundService: true,
+      }
+    },
     package: "xyz.myops.bigheads",
     permissions: [
       'FOREGROUND_SERVICE',
@@ -40,14 +53,6 @@ const config: ExpoConfig = {
   platforms: ["android", "ios"],
   plugins: [
     "expo-router",
-    "expo-audio",
-    [
-      "expo-av",
-      {
-        excludeFromRecentsWhenTaskRoot: false,
-        microphonePermission: "Autoriser l'application à accéder au microphone"
-      }
-    ],
     [
       "expo-build-properties",
       {
