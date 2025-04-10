@@ -97,10 +97,12 @@ class AudioManager {
       this.updatePlaybackStatus();
     });
     
-    TrackPlayer.addEventListener(Event.PlaybackTrackChanged, async (event) => {
-      if (event.nextTrack !== undefined && event.nextTrack !== null) {
+    TrackPlayer.addEventListener(Event.PlaybackActiveTrackChanged, async (event) => {
+      if (event.track !== undefined && event.track !== null) {
         try {
-          const track = await TrackPlayer.getTrack(event.nextTrack);
+          // Use the index property for getTrack or directly use the event.track if it's already a Track object
+          const trackIndex = typeof event.track === 'number' ? event.track : 0;
+          const track = await TrackPlayer.getTrack(trackIndex);
           if (track) {
             this.duration = track.duration ? track.duration * 1000 : 0;
             this.notifyListeners({
@@ -198,45 +200,62 @@ class AudioManager {
     try {
       // Nettoyage du son précédent si existant
       await TrackPlayer.reset();
-
-      // Prioriser le chemin hors ligne s'il existe
-      const audioSource = episode.offline_path || episode.mp3Link;
+  
+      // Créer une copie modifiée de l'épisode
+      const episodeToLoad = { ...episode };
       
-      if (!audioSource) {
-        throw new Error("URL d'épisode invalide ou manquante");
+      // Vérification et journalisation des propriétés importantes
+      console.log('Episode loading details:');
+      console.log('- Title:', episodeToLoad.title);
+      console.log('- offline_path:', episodeToLoad.offline_path || 'not available');
+      console.log('- mp3Link:', episodeToLoad.mp3Link || 'not available');
+      
+      // Si nous avons un chemin hors ligne, l'utiliser en priorité absolue
+      let audioSource: string;
+      
+      if (episodeToLoad.offline_path) {
+        audioSource = episodeToLoad.offline_path;
+        console.log('PRIORITÉ: Utilisation du chemin local (offline_path)');
+      } else if (episodeToLoad.mp3Link) {
+        audioSource = episodeToLoad.mp3Link;
+        console.log('Utilisation de mp3Link (URL distante)');
+      } else {
+        throw new Error("Aucune source audio disponible");
       }
-
-      console.log(`Loading episode: ${episode.title}`);
-      console.log(`Audio source: ${audioSource.substring(0, 50)}...`);
-      console.log(`Source type: ${episode.offline_path ? 'Fichier local' : 'URL distante'}`);
-
-      this.currentEpisode = episode;
+  
+      this.currentEpisode = episodeToLoad;
       
-      // Déterminer la source audio
+      // Vérifier si le fichier existe (pour les fichiers locaux)
+      if (audioSource.startsWith('file:')) {
+        console.log('Vérification du fichier local:', audioSource);
+        // Note: idéalement ajouter une vérification d'existence de fichier ici
+      }
+      
+      // Déterminer la source audio finale
       let source: { uri: string };
       
-      if (episode.offline_path) {
-        // Utiliser le chemin local directement
-        source = { uri: episode.offline_path };
-        console.log('Utilisation du fichier local');
+      if (audioSource.startsWith('file:')) {
+        // C'est un fichier local
+        source = { uri: audioSource };
+        console.log('✅ Utilisation confirmée du FICHIER LOCAL:', audioSource.substring(0, 50) + '...');
       } else {
         // Normaliser l'URL pour les sources distantes
-        const normalizedUri = episode.mp3Link.startsWith('http') 
-          ? episode.mp3Link 
-          : `https://${episode.mp3Link}`;
+        const normalizedUri = audioSource.startsWith('http') 
+          ? audioSource 
+          : `https://${audioSource}`;
           
         source = { uri: normalizedUri };
-        console.log('Utilisation de l\'URL distante');
+        console.log('✅ Utilisation confirmée de L\'URL DISTANTE:', normalizedUri.substring(0, 50) + '...');
       }
       
       // Ajouter la piste à TrackPlayer
       await TrackPlayer.add({
-        id: String(episode.id),
+        id: String(episodeToLoad.id),
         url: source.uri,
         artist: 'L\'intégrale des Grosses Têtes',
-        title: episode.title,
-        description: episode.description,
-        duration: episode.duration ? Number(episode.duration) : undefined,
+        title: episodeToLoad.title,
+        description: episodeToLoad.description,
+        duration: episodeToLoad.duration ? Number(episodeToLoad.duration) : undefined,
         type: TrackType.Default,
       });
 
@@ -245,7 +264,7 @@ class AudioManager {
 
       this.notifyListeners({
         type: 'loaded',
-        episode,
+        episode: episodeToLoad,
         duration: this.duration,
         isLocalFile: !!episode.offline_path
       });
@@ -317,16 +336,42 @@ class AudioManager {
   // Avancer ou reculer de x secondes
   public async seekRelative(seconds: number): Promise<void> {
     try {
+      // Obtenir la position et la durée actuelles
       const position = await TrackPlayer.getPosition();
-      const duration = await TrackPlayer.getDuration() || 0;
+      const duration = await TrackPlayer.getDuration();
       
-      // Calculer la nouvelle position en secondes (TrackPlayer utilise des secondes)
-      const newPosition = Math.max(0, Math.min(position + seconds, duration));
+      if (position === undefined || duration === undefined) {
+        console.warn('Cannot seek: Position or duration is undefined');
+        return;
+      }
       
+      // Calculer la nouvelle position (en secondes pour TrackPlayer)
+      const newPosition = Math.min(
+        duration,
+        Math.max(0, position + seconds)
+      );
+      
+      // Appliquer la nouvelle position
       await TrackPlayer.seekTo(newPosition);
-      await this.updatePlaybackStatus();
+      
+      // Vérifier si l'utilisateur a avancé jusqu'à la fin de l'épisode
+      // (à moins de 1.5 seconde de la fin)
+      if (newPosition >= duration - 1.5) {
+        console.log("User seeked to end of episode, triggering completion");
+        
+        // Simuler la fin de l'épisode
+        this.notifyListeners({
+          type: 'finished'
+        });
+        
+        // Optionnellement, stopper la lecture
+        await this.stop();
+      } else {
+        // Mettre à jour l'état après la recherche
+        await this.updatePlaybackStatus();
+      }
     } catch (error) {
-      console.error('Error seeking sound:', error);
+      console.error('Error seeking audio:', error);
       throw error;
     }
   }

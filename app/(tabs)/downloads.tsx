@@ -518,6 +518,13 @@ export default function DownloadsScreen() {
             downloaded: false
           }
         }));
+        
+        // Remove episode from episodes list if we're in offline mode
+        if (isOffline) {
+          setEpisodes(prevEpisodes => 
+            prevEpisodes.filter(ep => ep.id !== episode.id)
+          );
+        }
       }
     } catch (error) {
       console.error('Error deleting download:', error);
@@ -546,6 +553,12 @@ export default function DownloadsScreen() {
         });
         
         setDownloadStatus(newStatus);
+        
+        // Clear episodes list if we're in offline mode
+        if (isOffline) {
+          setEpisodes([]);
+          setError('No episodes available in offline mode');
+        }
       }
     } catch (error) {
       console.error('Error deleting all downloads:', error);

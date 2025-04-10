@@ -16,6 +16,7 @@
       "reactNativeDirectoryCheck": {
         "exclude": [
           "lucide-react-native",
+          "react-native-track-player",
           "@lucide/lab",
           "eas-cli",
           "expo-core",

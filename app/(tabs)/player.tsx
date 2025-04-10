@@ -343,8 +343,8 @@ export default function PlayerScreen() {
       )}
       <AudioPlayer
         episode={currentEpisode}
-        onNext={handleNext}
-        onPrevious={handlePrevious}
+        onNext={handlePrevious}
+        onPrevious={handleNext}
         onComplete={() => markEpisodeAsWatched(currentEpisode.id)}
       />
     </View>

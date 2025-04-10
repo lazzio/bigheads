@@ -114,21 +114,22 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       setIsLoading(true);
       setError(null);
       
-      console.log('Loading episode in AudioPlayer:', 
-        episode?.title, 
-        'Offline path:', episode?.offline_path?.substring(0, 50),
-        'MP3 Link:', episode?.mp3Link?.substring(0, 50)
-      );
+      // Journalisation détaillée pour le débogage
+      // console.log('========= CHARGEMENT ÉPISODE =========');
+      // console.log('Titre:', episode?.title);
+      // console.log('Mode hors-ligne:', isOffline ? 'OUI' : 'NON');
+      // console.log('Chemin local:', episode?.offline_path || 'NON DISPONIBLE');
+      // console.log('URL distante:', episode?.mp3Link || 'NON DISPONIBLE');
       
-      // Créer une copie de l'épisode avec priorité au chemin hors ligne
+      // S'assurer que le chemin offline est prioritaire
       const episodeToLoad = {
         ...episode,
         mp3Link: episode.offline_path || episode.mp3Link
       };
       
+      // Maintenant charger avec le chemin prioritaire
       await audioManager.loadEpisode(episodeToLoad);
       
-      // L'état sera mis à jour via l'écouteur
     } catch (err) {
       console.error("Error loading episode:", err);
       setError(`Impossible de charger l'audio: ${err instanceof Error ? err.message : 'erreur inconnue'}`);
@@ -243,13 +244,21 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       
       setTimeout(() => {
         if (Platform.OS === 'android') {
+          // Solution plus fiable pour quitter sur Android
           BackHandler.exitApp();
+          // Forcer la fermeture avec une solution alternative
+          setTimeout(() => {
+            // Forcer l'arrêt de l'application si BackHandler.exitApp() ne fonctionne pas
+            console.log("Forcing app exit with process.exit()");
+            global.process.exit(0);
+          }, 500);
         } else if (Platform.OS === 'ios') {
+          // Code iOS inchangé
           try {
             IntentLauncher.startActivityAsync('com.apple.springboard');
           } catch (e) {
             console.log("Couldn't launch home screen, trying alternative method");
-            
+              
             Application.getIosApplicationReleaseTypeAsync().then(() => {
               setTimeout(() => {
                 global.process.exit(0);

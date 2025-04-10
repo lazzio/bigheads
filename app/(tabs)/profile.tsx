@@ -1,13 +1,14 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, SafeAreaView, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Modal, SafeAreaView, Platform, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
-import { LogOut, User } from 'lucide-react-native';
+import { LogOut, User, X } from 'lucide-react-native';
 import { storage } from '../../lib/storage';
 
 export default function ProfileScreen() {
   // État
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   
   // Hooks
   const router = useRouter();
@@ -16,51 +17,40 @@ export default function ProfileScreen() {
   const handleLogout = useCallback(async () => {
     if (isLoggingOut) return; // Éviter les déconnexions multiples
     
+    setShowLogoutModal(true);
+  }, [isLoggingOut]);
+
+  const confirmLogout = useCallback(async () => {
     try {
       setIsLoggingOut(true);
+      setShowLogoutModal(false);
       
-      // Demander confirmation avant déconnexion
-      Alert.alert(
-        "Déconnexion",
-        "Êtes-vous sûr de vouloir vous déconnecter ?",
-        [
-          { text: "Annuler", style: "cancel", onPress: () => setIsLoggingOut(false) },
-          { 
-            text: "Déconnexion", 
-            style: "destructive", 
-            onPress: async () => {
-              try {
-                // Déconnexion optimisée pour éviter les opérations inutiles
-                const { data } = await supabase.auth.getSession();
-                
-                if (data.session) {
-                  // Utiliser la méthode signOut qui gère déjà le nettoyage des tokens
-                  await supabase.auth.signOut();
-                  
-                  // Nettoyage supplémentaire par sécurité (asynchrone mais pas besoin d'attendre)
-                  storage.removeItem('supabase.auth.token').catch(() => {});
-                  storage.removeItem('supabase.auth.refreshToken').catch(() => {});
-                  storage.removeItem('supabase.auth.user').catch(() => {});
-                }
-                
-                // Redirection
-                router.replace('/auth/login');
-              } catch (error) {
-                console.error('Error during logout:', error);
-                Alert.alert("Erreur", "Une erreur est survenue lors de la déconnexion");
-                setIsLoggingOut(false);
-              }
-            }
-          }
-        ]
-      );
+      // Déconnexion optimisée pour éviter les opérations inutiles
+      const { data } = await supabase.auth.getSession();
+      
+      if (data.session) {
+        // Utiliser la méthode signOut qui gère déjà le nettoyage des tokens
+        await supabase.auth.signOut();
+        
+        // Nettoyage supplémentaire par sécurité (asynchrone mais pas besoin d'attendre)
+        storage.removeItem('supabase.auth.token').catch(() => {});
+        storage.removeItem('supabase.auth.refreshToken').catch(() => {});
+        storage.removeItem('supabase.auth.user').catch(() => {});
+      }
+      
+      // Redirection
+      router.replace('/auth/login');
     } catch (error) {
-      // Gestion d'erreur améliorée
-      console.error('Error initiating logout:', error);
+      console.error('Error during logout:', error);
       setIsLoggingOut(false);
-      Alert.alert("Erreur", "Une erreur est survenue");
+      setShowLogoutModal(false);
     }
-  }, [isLoggingOut, router]);
+  }, [router]);
+
+  const cancelLogout = useCallback(() => {
+    setShowLogoutModal(false);
+    setIsLoggingOut(false);
+  }, []);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -106,6 +96,48 @@ export default function ProfileScreen() {
           <Text style={styles.stickyText}>Zone personnalisable</Text>
         </View>
       </View>
+
+      {/* Modal de confirmation de déconnexion */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showLogoutModal}
+        onRequestClose={cancelLogout}
+      >
+        <Pressable style={styles.modalOverlay} onPress={cancelLogout}>
+          <View style={styles.modalContainer}>
+            <Pressable style={styles.modalContent} onPress={e => e.stopPropagation()}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Déconnexion</Text>
+                <TouchableOpacity onPress={cancelLogout} style={styles.closeButton}>
+                  <X size={24} color="#888" />
+                </TouchableOpacity>
+              </View>
+              
+              <Text style={styles.modalText}>
+                Êtes-vous sûr de vouloir vous déconnecter ?
+              </Text>
+              
+              <View style={styles.modalButtons}>
+                <TouchableOpacity 
+                  style={styles.cancelButton} 
+                  onPress={cancelLogout}
+                >
+                  <Text style={styles.cancelButtonText}>Annuler</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.confirmButton} 
+                  onPress={confirmLogout}
+                >
+                  <LogOut size={16} color="#fff" style={{ marginRight: 6 }} />
+                  <Text style={styles.confirmButtonText}>Déconnexion</Text>
+                </TouchableOpacity>
+              </View>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -183,5 +215,85 @@ const styles = StyleSheet.create({
     color: '#888',
     fontSize: 14,
     textAlign: 'center',
+  },
+  // Styles pour le modal de confirmation
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    width: '85%',
+    maxWidth: 400,
+  },
+  modalContent: {
+    backgroundColor: '#1e1e1e',
+    borderRadius: 16,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomColor: '#333',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    padding: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  modalText: {
+    color: '#bbb',
+    fontSize: 16,
+    padding: 20,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    borderTopColor: '#333',
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  cancelButton: {
+    flex: 1,
+    padding: 16,
+    alignItems: 'center',
+    borderRightColor: '#333',
+    borderRightWidth: StyleSheet.hairlineWidth,
+  },
+  cancelButtonText: {
+    color: '#0ea5e9',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  confirmButton: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: '#ef4444',
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
