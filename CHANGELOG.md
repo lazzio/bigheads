@@ -1,3 +1,9 @@
+## [1.3.0](https://github.com/lazzio/bigheads/-/compare/v1.2.1...v1.3.0) (2025-04-10)
+
+### Features
+
+* migrate from expo-av to react-native-track-player ([#27](https://github.com/lazzio/bigheads/-/issues/27)) ([a1e3baf](https://github.com/lazzio/bigheads/-/commit/a1e3baff4c70ffcaa3d3b66ff51c24899a01f77e))
+
 ## [1.2.1](https://github.com/lazzio/bigheads/-/compare/v1.2.0...v1.2.1) (2025-04-08)
 
 ### Bug Fixes
