@@ -86,8 +86,12 @@ def delete_episodes(supabase: Client, episode_uuids: List[str]) -> None:
 def delete_watched_episodes(supabase: Client, episode_uuids: List[str]) -> None:
     """Deletes entries from watched_episodes table for the given episode UUIDs."""
     for uuid in episode_uuids:
-        supabase.table("watched_episodes").delete().eq("episode_id", uuid).execute()
-        logger.info(f"Deleted watched_episodes records for episode {uuid}")
+        try:
+            result = supabase.table("watched_episodes").delete().eq("episode_id", uuid).execute()
+            logger.info(f"Deleted watched_episodes records for episode {uuid}")
+        except Exception as e:
+            logger.error(f"Error deleting watched_episodes for episode {uuid}: {e}")
+            raise  # Re-raise to stop the process if deletion fails
 
 
 def extract_filename_from_url(url: str) -> str:
