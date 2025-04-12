@@ -79,19 +79,36 @@ def get_old_episodes(supabase: Client) -> List[Dict[str, Any]]:
 def delete_episodes(supabase: Client, episode_uuids: List[str]) -> None:
     """Deletes entries from episodes table for the given episode UUIDs."""
     for uuid in episode_uuids:
-        supabase.table("episodes").delete().eq("id", uuid).execute()
-        logger.info(f"Deleted episodes records for episode {uuid}")
+        try:
+            # Double check that no watched_episodes remain for this UUID
+            check = supabase.table("watched_episodes").select("*").eq("episode_id", uuid).execute()
+            if check.data:
+                logger.warning(f"Found {len(check.data)} remaining watched_episodes for {uuid}, cannot delete episode")
+                continue
+            
+            # If no watched_episodes remain, delete the episode
+            supabase.table("episodes").delete().eq("id", uuid).execute()
+            logger.info(f"Deleted episode record for episode {uuid}")
+        except Exception as e:
+            logger.error(f"Error deleting episode {uuid}: {e}")
 
 
 def delete_watched_episodes(supabase: Client, episode_uuids: List[str]) -> None:
     """Deletes entries from watched_episodes table for the given episode UUIDs."""
-    for uuid in episode_uuids:
-        try:
-            result = supabase.table("watched_episodes").delete().eq("episode_id", uuid).execute()
-            logger.info(f"Deleted watched_episodes records for episode {uuid}")
-        except Exception as e:
-            logger.error(f"Error deleting watched_episodes for episode {uuid}: {e}")
-            raise  # Re-raise to stop the process if deletion fails
+    try:
+        # Get all watched episodes related to the episode IDs
+        for uuid in episode_uuids:
+            # Check if there are any watched episodes for this UUID
+            check = supabase.table("watched_episodes").select("*").eq("episode_id", uuid).execute()
+            if check.data:
+                # Delete all watched episodes for this UUID
+                result = supabase.table("watched_episodes").delete().eq("episode_id", uuid).execute()
+                logger.info(f"Deleted {len(check.data)} watched_episodes records for episode {uuid}")
+            else:
+                logger.info(f"No watched_episodes records found for episode {uuid}")
+    except Exception as e:
+        logger.error(f"Error deleting watched_episodes: {e}")
+        raise  # Re-raise to stop the process if deletion fails
 
 
 def extract_filename_from_url(url: str) -> str:
