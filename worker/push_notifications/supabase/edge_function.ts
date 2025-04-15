@@ -1,19 +1,36 @@
 // Setup type definitions for built-in Supabase Runtime APIs
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 const EXPO_ACCESS_TOKEN = Deno.env.get('EXPO_ACCESS_TOKEN');
-// const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-DelayNode.serve(async (req) => {
+if (!EXPO_ACCESS_TOKEN) {
+  throw new Error("EXPO_ACCESS_TOKEN is not set");
+}
+
+console.log("Notification stated!");
+
+interface Episode {
+  id: string;
+  title: string;
+  publication_date: string;
+}
+
+interface WebhookPayload {
+  type: 'INSERT';
+  table: string;
+  record: Episode;
+  schema: 'public';
+}
+
+const supabase = createClient(
+  Deno.env.get('SUPABASE_URL')!,
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+);
+
+Deno.serve(async (req) => {
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
-    )
-    
-    // Get all device tokens
+    // Récupération de tous les tokens d'appareils actifs
     const { data: tokens, error } = await supabase
       .from('device_tokens')
       .select('token')
@@ -21,24 +38,24 @@ DelayNode.serve(async (req) => {
       
     if (error) throw error;
     
-    // Get episode data from request
-    const { episode } = await req.json();
+    const payload: WebhookPayload = await req.json();
+    const episode = payload.record;
     
-    // Send notifications to all devices
+    // Send notifications to all active devices
+    // Check if there are any tokens
+    // and if the payload is of type 'INSERT'
     if (tokens && tokens.length > 0) {
       const messages = tokens.map(t => ({
         to: t.token,
-        title: 'New episode available!',
+        title: 'Nouvel épisode disponible !',
         body: episode.title,
         data: { episodeId: episode.id }
       }));
       
-      // Send to Expo push notification service
+      // Send the notifications to Expo
       const response = await fetch('https://exp.host/--/api/v2/push/send', {
         method: 'POST',
         headers: {
-          Accept: 'application/json',
-          'Accept-encoding': 'gzip, deflate',
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${EXPO_ACCESS_TOKEN}`,
         },
@@ -51,10 +68,11 @@ DelayNode.serve(async (req) => {
       });
     }
     
-    return new Response(JSON.stringify({ success: true, message: 'No tokens found' }), {
+    // No token found
+    return new Response(JSON.stringify({ success: true, message: 'Aucun token trouvé' }), {
       headers: { 'Content-Type': 'application/json' }
     });
-  } catch (error) {
+  } catch (error: any) {
     return new Response(JSON.stringify({ success: false, error: error.message }), {
       headers: { 'Content-Type': 'application/json' },
       status: 500
