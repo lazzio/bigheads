@@ -1,3 +1,9 @@
+## [1.4.0](https://github.com/lazzio/bigheads/-/compare/v1.3.0...v1.4.0) (2025-04-15)
+
+### Features
+
+* notification push ([#30](https://github.com/lazzio/bigheads/-/issues/30)) ([a7cd816](https://github.com/lazzio/bigheads/-/commit/a7cd816146c78536065b19e8143870dc9916d97a))
+
 ## [1.3.0](https://github.com/lazzio/bigheads/-/compare/v1.2.1...v1.3.0) (2025-04-10)
 
 ### Features
