@@ -72,10 +72,21 @@ const config: ExpoConfig = {
         "url": "https://sentry.io/"
       }
     ],
-    "expo-notifications",
+    [
+      "expo-notifications",
+      {
+        icon: "./assets/images/bh_opti.png",
+        color: '#b48d7b'
+      }
+    ],
     "expo-background-fetch",
     "expo-task-manager"
   ],
+  notification: {
+    icon: "./assets/images/bh_opti.png",
+    color: "#b48d7b",
+    iosDisplayInForeground: true,
+  },
   extra: {
     "router": {
         "origin": false

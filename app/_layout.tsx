@@ -12,7 +12,8 @@ import { initEpisodeNotificationService, setupNotificationListener } from '../ut
 import NetInfo from '@react-native-community/netinfo';
 import { syncOfflineWatchedEpisodes } from '../utils/WatchedEpisodeSyncService';
 
-// Définition des routes typées pour la navigation
+// Define the app routes
+// These routes are used for navigation and auth checks
 type AppRoute = '/(tabs)' | '/auth/login';
 
 // Keep splash screen visible until explicitly hidden
@@ -298,7 +299,8 @@ export default function RootLayout() {
         // Wait a bit to avoid race conditions
         await new Promise(resolve => setTimeout(resolve, 300));
         
-        // Initialiser le service de notification d'épisodes
+        // Initialize notification service
+        // This should be done before the app is fully ready
         try {
           // Initialiser le service de notification
           await initEpisodeNotificationService();

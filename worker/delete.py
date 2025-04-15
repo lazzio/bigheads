@@ -7,6 +7,7 @@ from google.cloud import storage
 from pathlib import Path, PurePath
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
+import time
 
 """
 Logger Configuration
@@ -79,15 +80,44 @@ def get_old_episodes(supabase: Client) -> List[Dict[str, Any]]:
 def delete_episodes(supabase: Client, episode_uuids: List[str]) -> None:
     """Deletes entries from episodes table for the given episode UUIDs."""
     for uuid in episode_uuids:
-        supabase.table("episodes").delete().eq("id", uuid).execute()
-        logger.info(f"Deleted episodes records for episode {uuid}")
+        try:
+            # Double check that no watched_episodes remain for this UUID
+            check = supabase.table("watched_episodes").select("*").eq("episode_id", uuid).execute()
+            if check.data:
+                logger.warning(f"Found {len(check.data)} remaining watched_episodes for {uuid}, cannot delete episode")
+                continue
+            
+            # If no watched_episodes remain, delete the episode
+            supabase.table("episodes").delete().eq("id", uuid).execute()
+            logger.info(f"Deleted episode record for episode {uuid}")
+        except Exception as e:
+            logger.error(f"Error deleting episode {uuid}: {e}")
 
 
-def delete_watched_episodes(supabase: Client, episode_uuids: List[str]) -> None:
-    """Deletes entries from watched_episodes table for the given episode UUIDs."""
+def delete_watched_episodes(supabase: Client, episode_uuids: List[str]) -> List[str]:
+    """
+    Deletes entries from watched_episodes table for the given episode UUIDs.
+    Returns a list of episode UUIDs where deletion was successful.
+    """
+    successfully_cleared = []
+    
     for uuid in episode_uuids:
-        supabase.table("watched_episodes").delete().eq("episode_id", uuid).execute()
-        logger.info(f"Deleted watched_episodes records for episode {uuid}")
+        try:
+            # Force a direct deletion attempt first
+            supabase.table("watched_episodes").delete().eq("episode_id", uuid).execute()
+            
+            # Then verify that it's actually gone
+            verify = supabase.table("watched_episodes").select("*").eq("episode_id", uuid).execute()
+            if not verify.data:
+                logger.info(f"Successfully cleared watched_episodes for episode {uuid}")
+                successfully_cleared.append(uuid)
+            else:
+                logger.warning(f"Failed to delete all watched_episodes for {uuid}, {len(verify.data)} records remain")
+                
+        except Exception as e:
+            logger.error(f"Error deleting watched_episodes for {uuid}: {e}")
+    
+    return successfully_cleared
 
 
 def extract_filename_from_url(url: str) -> str:
@@ -102,26 +132,36 @@ def delete_mp3_files(mp3_links: List[Optional[str]]) -> None:
     try:
         # Initialize GCS client
         storage_client: storage.Client = storage.Client.from_service_account_json(gcp_sa)
-        
         bucket: storage.Bucket = storage_client.bucket(gcp_bucket_name)
         
         for mp3_link in mp3_links:
-            if mp3_link:
-                filename: str = extract_filename_from_url(mp3_link)
-                # Create the correct path with "mp3" folder
-                blob_path: str = f"{gcp_folder_name}/{filename}"
-                blob: storage.Blob = bucket.blob(blob_path)
-                blob.delete()
-                logger.info(f"Deleted MP3 file from bucket: {blob_path}")
+            if not mp3_link:
+                continue
                 
-                # Optionally, delete the file from the local filesystem
+            try:
+                filename: str = extract_filename_from_url(mp3_link)
+                # Create the correct path with folder name
+                blob_path: str = f"{gcp_folder_name}/{filename}"
+                
+                # Check if the blob exists before attempting to delete
+                blob: storage.Blob = bucket.blob(blob_path)
+                if blob.exists():
+                    blob.delete()
+                    logger.info(f"Deleted MP3 file from bucket: {blob_path}")
+                else:
+                    logger.warning(f"MP3 file not found in bucket: {blob_path}")
+                
+                # Also try to delete the local file if it exists
                 local_file_path = Path(os.path.join("downloads", filename))
                 if local_file_path.exists():
                     local_file_path.unlink()
                     logger.info(f"Deleted local MP3 file: {local_file_path}")
+                    
+            except Exception as e:
+                logger.error(f"Error deleting MP3 file {mp3_link}: {e}")
     
     except Exception as e:
-        logger.error(f"Error deleting MP3 files: {e}")
+        logger.error(f"Error initializing GCS client: {e}")
 
 
 def clean_old_episodes() -> None:
@@ -140,16 +180,32 @@ def clean_old_episodes() -> None:
     episode_uuids: List[str] = [episode["id"] for episode in old_episodes]
     mp3_links: List[Optional[str]] = [episode["mp3_link"] for episode in old_episodes]
     
-    # Delete watched episodes records
-    delete_watched_episodes(supabase, episode_uuids)
+    # Check for all watched_episodes
+    problematic_episodes = []
+    for uuid in episode_uuids:
+        check = supabase.table("watched_episodes").select("*").eq("episode_id", uuid).execute()
+        if check.data:
+            logger.info(f"Found {len(check.data)} watched_episodes for {uuid}")
+            problematic_episodes.append(uuid)
     
-    # Delete episodes records
-    delete_episodes(supabase, episode_uuids)
+    # Delete watched episodes records and get list of successfully cleared episodes
+    safe_to_delete = delete_watched_episodes(supabase, episode_uuids)
     
-    # Delete MP3 files from storage
-    delete_mp3_files(mp3_links)
+    # Ensure database consistency with a small delay
+    time.sleep(2)
     
-    logger.info(f"Successfully cleaned up {len(old_episodes)} old episodes.")
+    # Only delete episodes that have been safely cleared of watched_episodes
+    delete_episodes(supabase, safe_to_delete)
+    
+    # Delete MP3 files from storage - only for successful episode deletions
+    successful_episode_mp3s = []
+    for i, uuid in enumerate(episode_uuids):
+        if uuid in safe_to_delete:
+            successful_episode_mp3s.append(mp3_links[i])
+    
+    delete_mp3_files(successful_episode_mp3s)
+    
+    logger.info(f"Found {len(old_episodes)} old episodes. Successfully processed {len(safe_to_delete)} episodes.")
 
 
 if __name__ == "__main__":
