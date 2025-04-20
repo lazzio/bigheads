@@ -107,7 +107,7 @@ class AudioManager {
     }
 
     console.log(`[AudioManager] Loading sound for episode ${episode.id} at ${initialPositionMillis}ms`);
-    
+
     try {
       await TrackPlayer.reset(); // Réinitialiser avant de charger une nouvelle piste
 
@@ -429,7 +429,8 @@ class AudioManager {
             title: data.track.title || 'Épisode inconnu',
             mp3Link: data.track.url as string,
             description: '',
-            duration: String(data.track.duration ?? 0),
+            duration: data.track.duration ? Number(data.track.duration) * 1000 : null, // Convertir en millisecondes
+            offline_path: undefined, // Pas de chemin local pour les pistes distantes
             publicationDate: ''
           };
         }
@@ -496,10 +497,24 @@ export const audioManager = AudioManager.getInstance();
 
 // Exporter des fonctions utilitaires
 export function formatTime(milliseconds: number): string {
-  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
+  if (isNaN(milliseconds) || milliseconds < 0) {
+    return "0:00"; // Retourner une valeur par défaut pour les entrées invalides
+  }
+
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+  const paddedSeconds = seconds.toString().padStart(2, '0');
+  const paddedMinutes = minutes.toString().padStart(2, '0');
+
+  if (hours > 0) {
+    const paddedHours = hours.toString().padStart(2, '0');
+    return `${paddedHours}:${paddedMinutes}:${paddedSeconds}`;
+  } else {
+    return `${minutes}:${paddedSeconds}`; // Garder MM:SS si moins d'une heure
+  }
 }
 
 export function isValidAudioUrl(url: string | undefined): boolean {

@@ -2,34 +2,26 @@ import * as Notifications from 'expo-notifications';
 import { supabase } from '../lib/supabase';
 import { Platform} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Sentry from '@sentry/react-native';
 
 // Initialize the notification service
 export async function initEpisodeNotificationService(): Promise<void> {
   try {
-    // Get and save push token
+    // Get and save push token (this function already handles permissions)
     const token = await registerForPushNotificationsAsync();
-    
+
     if (token) {
+      // Attempt to save immediately (might have null user_id if not logged in yet)
       await savePushTokenToSupabase(token);
+    } else {
+      console.log('No push token obtained, skipping initial save.');
+      // No token means permissions likely denied or error occurred.
     }
-    
-    // Request notification permissions
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-    
-    // Only ask for permission if not already determined
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-    
-    if (finalStatus !== 'granted') {
-      console.warn('Notification permissions were not granted');
-    }
-    
-    console.log('Episode notification service successfully initialized');
+
+    console.log('Episode notification service initialization attempt finished.');
   } catch (error) {
     console.error('Error initializing notification service:', error);
+    Sentry.captureException(error); // Assurer la capture d'erreur
   }
 }
 
@@ -76,17 +68,24 @@ async function registerForPushNotificationsAsync(): Promise<string | null> {
   }
   
   // Get the token
-  const token = (await Notifications.getExpoPushTokenAsync({
-    projectId: process.env.EXPO_PROJECT_ID, // Add this to your app.config.ts or app.json
-  })).data;
-  
-  console.log('Push token:', token);
-  
-  // Store the token in AsyncStorage for later use
-  await AsyncStorage.setItem('expoPushToken', token);
-  
-  // Return the token
-  return token;
+  try {
+    const token = (await Notifications.getExpoPushTokenAsync({
+      projectId: process.env.EXPO_PROJECT_ID, // Add this to your app.config.ts or app.json
+    })).data;
+    
+    console.log('Push token:', token);
+    
+    // Store the token in AsyncStorage for later use
+    await AsyncStorage.setItem('expoPushToken', token);
+    
+    return token;
+  }
+  catch (error) {
+    console.error('Error getting push token:', error);
+    Sentry.captureException(error);
+
+    return null;
+  }
 }
 
 // Add this function to store push tokens in Supabase
@@ -115,5 +114,25 @@ async function savePushTokenToSupabase(token: string): Promise<void> {
     }
   } catch (error) {
     console.error('Error in savePushTokenToSupabase:', error);
+  }
+}
+
+// --- NOUVELLE FONCTION EXPORTÉE ---
+/**
+ * Attempts to save the push token stored in AsyncStorage to Supabase.
+ * Should be called after user login to ensure user_id is associated.
+ */
+export async function syncPushTokenAfterLogin(): Promise<void> {
+  try {
+    const token = await AsyncStorage.getItem('expoPushToken');
+    if (token) {
+      console.log('[syncPushTokenAfterLogin] Found token in storage, attempting to sync with user ID.');
+      await savePushTokenToSupabase(token); // This will now likely have the user ID
+    } else {
+      console.log('[syncPushTokenAfterLogin] No token found in storage.');
+    }
+  } catch (error) {
+    console.error('[syncPushTokenAfterLogin] Error syncing push token:', error);
+    Sentry.captureException(error);
   }
 }

@@ -5,7 +5,7 @@ import { Episode } from '../types/episode';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Application from 'expo-application';
 import * as IntentLauncher from 'expo-intent-launcher';
-import { audioManager, formatTime } from '../utils/OptimizedAudioService';
+import { audioManager, formatTime, AudioStatus } from '../utils/OptimizedAudioService';
 
 interface AudioPlayerProps {
   episode: Episode;
@@ -15,143 +15,129 @@ interface AudioPlayerProps {
   onRetry?: () => void;
 }
 
-export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, onRetry }: AudioPlayerProps) { // <<< Ajouter onRetry ici
+export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, onRetry }: AudioPlayerProps) {
+  const initialDurationMs = episode.duration ? episode.duration * 1000 : 0;
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [position, setPosition] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [duration, setDuration] = useState(initialDurationMs);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [sleepTimerActive, setSleepTimerActive] = useState(false);
-  const [isSeeking, setIsSeeking] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isSeeking, setIsSeeking] = useState(false);
+  const [sleepTimerActive, setSleepTimerActive] = useState(false);
+  const sleepTimerId = useRef<NodeJS.Timeout | null>(null);
 
   const progressBarRef = useRef<View>(null);
   const progressWidth = useRef(0);
-  const progressPosition = useRef({ x: 0, y: 0 });
+  const progressPosition = useRef(0);
 
   useEffect(() => {
     let isMounted = true;
+    setIsLoading(true);
+    setError(null);
 
-    const setup = async () => {
-      try {
-        const unsubscribe = audioManager.addListener((data) => {
-          if (!isMounted) return;
+    const unsubscribe = audioManager.addListener((data: any) => {
+      if (!isMounted) return;
 
-          if (data.type === 'loaded') {
+      switch (data.type) {
+        case 'loaded':
+          if (duration === 0 && data.duration > 0) {
             setDuration(data.duration);
-            setIsLoading(false);
-            setError(null);
-          } else if (data.type === 'status') {
-            if (!isSeeking) {
-              setPosition(data.position);
-            }
-            setDuration(data.duration);
-            setIsPlaying(data.isPlaying);
-            setIsBuffering(data.isBuffering);
-            if (isLoading && data.isLoaded) {
-              setIsLoading(false);
-            }
-            setError(null);
-          } else if (data.type === 'error') {
-            setError(data.error);
-            setIsLoading(false);
-            setIsPlaying(false);
-          } else if (data.type === 'finished') {
-            console.log('Audio playback finished, calling onComplete');
-            if (onComplete) {
-              onComplete();
-            }
-            if (sleepTimerActive) {
-              handleSleepTimerEnd();
-            }
-          } else if (data.type === 'remote-next' && onNext) {
-            onNext();
-          } else if (data.type === 'remote-previous' && onPrevious) {
-            onPrevious();
           }
-        });
-
-        const initialStatus = await audioManager.getStatusAsync();
-        if (isMounted) {
-          setPosition(initialStatus.positionMillis);
-          setDuration(initialStatus.durationMillis);
-          setIsPlaying(initialStatus.isPlaying);
-          setIsBuffering(initialStatus.isBuffering);
-          setIsLoading(!initialStatus.isLoaded);
-        }
-
-        return () => {
-          unsubscribe();
-        };
-      } catch (err) {
-        console.error("Error in audio setup/listener:", err);
-        if (isMounted) {
-          setError(`Erreur audio: ${err instanceof Error ? err.message : 'inconnue'}`);
+          setError(null);
+          break;
+        case 'status':
+          if (!isSeeking) {
+            setPosition(data.position);
+          }
+          if (data.duration > 0 && data.duration !== duration) {
+            setDuration(data.duration);
+          }
+          setIsPlaying(data.isPlaying);
+          setIsBuffering(data.isBuffering);
+          if (isLoading && data.isLoaded && data.duration > 0) {
+            setIsLoading(false);
+          } else if (isLoading && data.isLoaded && duration > 0) {
+            setIsLoading(false);
+          }
+          setError(null);
+          break;
+        case 'error':
+          setError(data.error);
           setIsLoading(false);
-        }
+          setIsPlaying(false);
+          setIsBuffering(false);
+          break;
+        case 'finished':
+          console.log('Audio playback finished, calling onComplete');
+          if (onComplete) onComplete();
+          if (sleepTimerActive) handleSleepTimerEnd();
+          break;
+        case 'remote-next':
+          if (onNext) onNext();
+          break;
+        case 'remote-previous':
+          if (onPrevious) onPrevious();
+          break;
       }
-    };
+    });
 
-    setup();
+    if (initialDurationMs > 0) {
+    }
 
     return () => {
       isMounted = false;
+      unsubscribe();
+      if (sleepTimerId.current) {
+        clearTimeout(sleepTimerId.current);
+      }
     };
-  }, [onComplete, sleepTimerActive, onNext, onPrevious]);
+  }, [onComplete, onNext, onPrevious, isSeeking, sleepTimerActive]);
 
-  useEffect(() => {
-    if (!isLoading) {
-      setTimeout(() => {
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        setIsSeeking(true);
         measureProgressBar();
-      }, 300);
-    }
-  }, [isLoading]);
-
-  const panResponder = PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: () => true,
-    onPanResponderGrant: () => {
-      setIsSeeking(true);
-    },
-    onPanResponderMove: (e: GestureResponderEvent) => {
-      if (progressWidth.current <= 0) return;
-
-      const touchX = e.nativeEvent.pageX - progressPosition.current.x;
-      const percentage = Math.max(0, Math.min(touchX / progressWidth.current, 1));
-      const newPosition = percentage * duration;
-
-      setPosition(newPosition);
-    },
-    onPanResponderRelease: async (e: GestureResponderEvent) => {
-      if (progressWidth.current <= 0) {
-        setIsSeeking(false);
-        return;
-      }
-
-      try {
-        const touchX = e.nativeEvent.pageX - progressPosition.current.x;
-        const percentage = Math.max(0, Math.min(touchX / progressWidth.current, 1));
-        const newPosition = percentage * duration;
-
-        await audioManager.seekTo(newPosition);
-      } catch (err) {
-        console.error("Error while seeking:", err);
-      } finally {
-        setIsSeeking(false);
-      }
-    },
-    onPanResponderTerminate: () => {
-      setIsSeeking(false);
-    }
-  });
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        if (!isSeeking) return;
+        const totalWidth = progressWidth.current;
+        const startX = progressPosition.current;
+        if (totalWidth > 0 && duration > 0) {
+          const touchX = gestureState.moveX - startX;
+          const clampedX = Math.max(0, Math.min(touchX, totalWidth));
+          const percentage = clampedX / totalWidth;
+          const newPosition = percentage * duration;
+          setPosition(newPosition);
+        }
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        if (!isSeeking) return;
+        const totalWidth = progressWidth.current;
+        const startX = progressPosition.current;
+        if (totalWidth > 0 && duration > 0) {
+          const touchX = gestureState.moveX - startX;
+          const clampedX = Math.max(0, Math.min(touchX, totalWidth));
+          const percentage = clampedX / totalWidth;
+          const newPosition = percentage * duration;
+          console.log(`[AudioPlayer] Seek to: ${newPosition}ms (${(percentage * 100).toFixed(1)}%)`);
+          audioManager.seekTo(newPosition);
+        }
+        setTimeout(() => {
+          setIsSeeking(false);
+        }, 100);
+      },
+    })
+  ).current;
 
   const measureProgressBar = () => {
-    if (progressBarRef.current) {
-      progressBarRef.current.measure((x, y, width, height, pageX, pageY) => {
-        progressWidth.current = width;
-        progressPosition.current = { x: pageX, y: pageY };
-      });
-    }
+    progressBarRef.current?.measure((x, y, width, height, pageX, pageY) => {
+      progressWidth.current = width;
+      progressPosition.current = pageX;
+    });
   };
 
   async function handlePlayPause() {
@@ -159,11 +145,23 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
       if (isPlaying) {
         await audioManager.pause();
       } else {
-        await audioManager.play();
+        if (duration <= 0) {
+          console.warn("[AudioPlayer] Tentative de lecture avec durée 0. Re-vérification du statut.");
+          const currentStatus = await audioManager.getStatusAsync();
+          if (currentStatus.durationMillis > 0) {
+            setDuration(currentStatus.durationMillis);
+            await audioManager.play();
+          } else {
+            setError("Impossible de déterminer la durée de l'épisode.");
+            setIsLoading(false);
+          }
+        } else {
+          await audioManager.play();
+        }
       }
     } catch (err) {
-      console.error("Error toggling playback:", err);
-      setError(`Erreur de lecture: ${err instanceof Error ? err.message : 'erreur inconnue'}`);
+      console.error("Error playing/pausing:", err);
+      setError('Erreur lors de la lecture/pause.');
     }
   }
 
@@ -171,59 +169,38 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
     try {
       await audioManager.seekRelative(seconds);
     } catch (err) {
-      console.error("Error seeking:", err);
+      console.error("Error seeking relative:", err);
+      setError('Erreur lors de l\'avance/recul.');
     }
   }
 
   async function handleSkip10Minutes() {
-    try {
-      await audioManager.seekRelative(600);
-      console.log("Skipped 10 minutes forward");
-    } catch (err) {
-      console.error("Error skipping 10 minutes:", err);
-    }
+    await handleSeek(600);
   }
 
   function toggleSleepTimer() {
-    setSleepTimerActive(prevState => !prevState);
-    console.log(`Sleep timer ${!sleepTimerActive ? 'activated' : 'deactivated'}`);
+    if (sleepTimerActive) {
+      if (sleepTimerId.current) {
+        clearTimeout(sleepTimerId.current);
+        sleepTimerId.current = null;
+      }
+      setSleepTimerActive(false);
+      console.log('[AudioPlayer] Sleep timer désactivé.');
+    } else {
+      setSleepTimerActive(true);
+      console.log('[AudioPlayer] Sleep timer activé pour 15 minutes.');
+      sleepTimerId.current = setTimeout(handleSleepTimerEnd, 15 * 60 * 1000);
+    }
   }
 
   async function handleSleepTimerEnd() {
+    console.log('[AudioPlayer] Sleep timer terminé, mise en pause.');
     try {
-      await audioManager.stop();
+      await audioManager.pause();
       setSleepTimerActive(false);
-      console.log("Sleep timer completed - closing app now");
-
-      Alert.alert(
-        "Minuteur de sommeil terminé",
-        "L'application va se fermer dans 5 secondes...",
-        [{ text: "OK" }]
-      );
-
-      setTimeout(() => {
-        if (Platform.OS === 'android') {
-          BackHandler.exitApp();
-          setTimeout(() => {
-            console.log("Forcing app exit with process.exit()");
-            global.process.exit(0);
-          }, 500);
-        } else if (Platform.OS === 'ios') {
-          try {
-            IntentLauncher.startActivityAsync('com.apple.springboard');
-          } catch (e) {
-            console.log("Couldn't launch home screen, trying alternative method");
-
-            Application.getIosApplicationReleaseTypeAsync().then(() => {
-              setTimeout(() => {
-                global.process.exit(0);
-              }, 1000);
-            });
-          }
-        }
-      }, 5000);
+      sleepTimerId.current = null;
     } catch (err) {
-      console.error("Error in sleep timer end handling:", err);
+      console.error("Error pausing on sleep timer end:", err);
     }
   }
 
@@ -233,7 +210,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
     return (
       <View style={styles.container}>
         <ActivityIndicator size="large" color="#0ea5e9" />
-        <Text style={styles.loadingText}>Chargement...</Text>
+        <Text style={styles.loadingText}>Chargement de l'épisode...</Text>
       </View>
     );
   }
@@ -242,13 +219,12 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
     return (
       <View style={styles.container}>
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity 
-          style={styles.retryButton} 
-          onPress={onRetry} // <<< Utiliser la prop onRetry ici
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={onRetry}
         >
           <Text style={styles.retryText}>Réessayer</Text>
         </TouchableOpacity>
-        
         <View style={styles.debugContainer}>
           <Text style={styles.debugUrl} numberOfLines={3} ellipsizeMode="middle">
             URL: {episode?.mp3Link || "Non définie"}
@@ -292,7 +268,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
         
         <View style={styles.timeContainer}>
           <Text style={styles.timeText}>{formatTime(position)}</Text>
-          <Text style={styles.timeText}>-{formatTime(Math.max(0, duration - position))}</Text>
+          <Text style={styles.timeText}>{formatTime(duration)}</Text>
         </View>
       </View>
 
@@ -437,12 +413,11 @@ const styles = StyleSheet.create({
   timeContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    width: '100%',
-    marginTop: 8,
+    marginHorizontal: 20,
   },
   timeText: {
-    color: '#fff',
-    fontSize: 14,
+    color: '#ccc',
+    fontSize: 12,
   },
   controls: {
     flexDirection: 'row',
