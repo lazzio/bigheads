@@ -1,6 +1,6 @@
-import { View, Text, StyleSheet, AppState, Platform, BackHandler, AppStateStatus, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, AppState, BackHandler, AppStateStatus, ActivityIndicator } from 'react-native';
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'; // Importer useFocusEffect
+import { useLocalSearchParams, useRouter } from 'expo-router'; // Importer useFocusEffect
 import AudioPlayer from '../../components/AudioPlayer';
 import { supabase } from '../../lib/supabase';
 import { Database } from '../../types/supabase';
@@ -65,7 +65,6 @@ export default function PlayerScreen() {
   }, []);
 
    const clearPendingPosition = useCallback(async (episodeId: string, userId: string) => {
-    // ... (code existant)
      console.log(`[PlayerScreen] Clearing pending local position for ${episodeId}`);
      try {
        const existingPendingString = await AsyncStorage.getItem(PENDING_POSITIONS_KEY);
@@ -508,7 +507,6 @@ export default function PlayerScreen() {
       {!loading && error && !currentEpisode && ( // Afficher l'erreur seulement si aucun épisode n'a pu être chargé
            <View style={styles.centered}>
                <Text style={{ color: 'red', marginBottom: 10 }}>{error}</Text>
-               {/* Ajouter un bouton retry qui relance l'initialisation? */}
            </View>
        )}
        {/* Affichage si aucun épisode disponible après chargement */}
@@ -523,8 +521,8 @@ export default function PlayerScreen() {
         <AudioPlayer
           key={currentEpisode.id} // Clé importante pour forcer le re-rendu si l'épisode change
           episode={currentEpisode}
-          onNext={handleNext}
-          onPrevious={handlePrevious}
+          onNext={handlePrevious}
+          onPrevious={handleNext}
           onRetry={handleRetryLoad} // handleRetryLoad gère maintenant la logique
           onComplete={handlePlaybackComplete}
         />
@@ -544,8 +542,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#121212',
-    justifyContent: 'center', // <<< Réactiver pour centrer verticalement
-    // padding: 20, // Le padding est géré dans AudioPlayer ou .centered
+    justifyContent: 'center',
   },
   centered: {
     flex: 1,

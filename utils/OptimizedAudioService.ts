@@ -3,14 +3,12 @@ import TrackPlayer, {
   Event,
   State,
   TrackType,
-  useTrackPlayerEvents,
-  RepeatMode,
   AppKilledPlaybackBehavior,
   Track, // Importer Track
   PlaybackState, // Importer PlaybackState
 } from 'react-native-track-player';
 import { Episode } from '../types/episode';
-import { Platform, PermissionsAndroid, NativeModules, Linking } from 'react-native';
+import { Platform, PermissionsAndroid, Linking } from 'react-native';
 import * as IntentLauncher from 'expo-intent-launcher';
 
 // Interface pour le statut retourné par getStatusAsync
@@ -109,7 +107,7 @@ class AudioManager {
     console.log(`[AudioManager] Loading sound for episode ${episode.id} at ${initialPositionMillis}ms`);
 
     try {
-      await TrackPlayer.reset(); // Réinitialiser avant de charger une nouvelle piste
+      await TrackPlayer.reset();
 
       let audioSourceUri: string;
       const isLocal = !!episode.offline_path;
@@ -118,72 +116,102 @@ class AudioManager {
         audioSourceUri = episode.offline_path!;
         console.log('[AudioManager] Using local file:', audioSourceUri);
       } else if (episode.mp3Link) {
-        audioSourceUri = normalizeAudioUrl(episode.mp3Link); // Utiliser la fonction de normalisation
+        audioSourceUri = normalizeAudioUrl(episode.mp3Link);
         console.log('[AudioManager] Using remote URL:', audioSourceUri);
       } else {
         throw new Error("Episode has no valid audio source (offline_path or mp3Link).");
       }
 
       this.currentEpisode = { ...episode }; // Stocker l'épisode actuel
+      // Réinitialiser l'état avant le chargement
+      this.position = 0;
+      this.duration = episode.duration ? episode.duration * 1000 : 0; // Utiliser la durée de l'épisode si dispo
+      this.isPlaying = false;
+      this.isBuffering = true; // Considérer en buffering pendant le chargement
 
       const track: Track = {
-        id: String(episode.id), // Utiliser l'ID de l'épisode comme ID de piste
+        id: String(episode.id),
         url: audioSourceUri,
         title: episode.title || 'Épisode sans titre',
-        artist: 'Les Intégrales BigHeads', // Ou autre artiste par défaut
-        duration: episode.duration ? Number(episode.duration) : undefined, // Durée en secondes
+        artist: 'Les Intégrales BigHeads',
+        duration: episode.duration ? Number(episode.duration) : undefined,
         type: TrackType.Default,
       };
 
       await TrackPlayer.add(track);
       console.log(`[AudioManager] Track added: ${track.title}`);
 
-      // Se positionner si nécessaire (après l'ajout de la piste)
+      // --- Gestion du Seek Initial ---
+      let actualInitialPositionMillis = 0;
       if (initialPositionMillis > 0) {
-        // Convertir en secondes pour TrackPlayer.seekTo
         const initialPositionSeconds = initialPositionMillis / 1000;
-        // S'assurer que la position initiale ne dépasse pas la durée (si connue)
-        const seekPosition = track.duration ? Math.min(initialPositionSeconds, track.duration - 0.1) : initialPositionSeconds;
+        const trackDurationSeconds = track.duration; // Durée en secondes
+        const seekPositionSeconds = trackDurationSeconds ? Math.min(initialPositionSeconds, trackDurationSeconds - 0.1) : initialPositionSeconds;
 
-        if (seekPosition > 0) {
-          console.log(`[AudioManager] Seeking to initial position: ${seekPosition}s`);
-          // Attendre un court instant pour que le lecteur soit prêt à chercher
-          await new Promise(resolve => setTimeout(resolve, 150)); // Petit délai
+        if (seekPositionSeconds > 0) {
+          console.log(`[AudioManager] Seeking to initial position: ${seekPositionSeconds}s`);
+          await new Promise(resolve => setTimeout(resolve, 150)); // Délai
           try {
-            await TrackPlayer.seekTo(seekPosition);
+            await TrackPlayer.seekTo(seekPositionSeconds);
+            actualInitialPositionMillis = seekPositionSeconds * 1000; // Mémoriser la position réelle après seek
           } catch (seekError) {
-            console.error(`[AudioManager] Error seeking to initial position ${seekPosition}s:`, seekError);
-            // Continuer même si le seek échoue initialement
+            console.error(`[AudioManager] Error seeking to initial position ${seekPositionSeconds}s:`, seekError);
           }
         }
       }
+      // --- Fin Seek Initial ---
 
-      // Mettre à jour l'état interne et notifier les écouteurs
-      await this.updateLocalStatus(); // Mettre à jour l'état local immédiatement
+      // Mettre à jour l'état interne APRÈS le seek potentiel
+      this.position = actualInitialPositionMillis;
+      // Essayer de récupérer la durée réelle si non fournie ou 0
+      if (this.duration === 0) {
+          try {
+              const actualDuration = await TrackPlayer.getDuration(); // secondes
+              if (actualDuration > 0) {
+                  this.duration = actualDuration * 1000;
+              }
+          } catch (e) { /* Ignorer si getDuration échoue ici */ }
+      }
+      this.isBuffering = false; // Supposer que le chargement/seek initial est terminé
+
+      // <<< SUPPRIMER l'appel à updateLocalStatus >>>
+      // await this.updateLocalStatus();
+
+      // Notifier que le chargement est terminé avec l'état interne mis à jour
       this.notifyListeners({
         type: 'loaded',
         episode: this.currentEpisode,
-        duration: this.duration, // Utiliser la durée mise à jour
+        duration: this.duration,
         isLocalFile: isLocal,
       });
+      // Envoyer aussi un événement status initial
+       this.notifyListeners({
+         type: 'status',
+         position: this.position,
+         duration: this.duration,
+         isPlaying: this.isPlaying, // Devrait être false initialement
+         isBuffering: this.isBuffering, // Devrait être false ici
+         isLoaded: true,
+       });
+
 
     } catch (error) {
       console.error('[AudioManager] Error in loadSound:', error);
-      this.currentEpisode = null; // Réinitialiser l'épisode en cas d'erreur
+      this.currentEpisode = null;
+      this.position = 0;
+      this.duration = 0;
+      this.isPlaying = false;
+      this.isBuffering = false;
       this.notifyListeners({ type: 'error', error: error instanceof Error ? error.message : String(error) });
-      throw error; // Propager l'erreur
+      this.notifyListeners({ type: 'status', position: 0, duration: 0, isPlaying: false, isBuffering: false, isLoaded: false });
+      throw error;
     }
   }
 
-  // --- NOUVELLE MÉTHODE: Obtenir le statut actuel ---
-  /**
-   * Récupère l'état actuel du lecteur audio.
-   * @returns Promise<AudioStatus> L'état actuel.
-   */
+  // --- MODIFICATION: getStatusAsync devient une pure requête ---
   public async getStatusAsync(): Promise<AudioStatus> {
     if (!this.isPlayerReady) {
-      // Retourner un état par défaut si le lecteur n'est pas prêt
-      return {
+      return { /* ... état non prêt ... */
         isLoaded: false,
         isPlaying: false,
         isBuffering: false,
@@ -194,46 +222,41 @@ class AudioManager {
     }
     try {
       const state = await TrackPlayer.getState();
-      const activeTrack = await TrackPlayer.getActiveTrack(); // Obtenir la piste active
-      const position = await TrackPlayer.getPosition(); // en secondes
-      const duration = await TrackPlayer.getDuration(); // en secondes
-      const buffered = await TrackPlayer.getBufferedPosition(); // en secondes
+      const activeTrack = await TrackPlayer.getActiveTrack();
+      const position = await TrackPlayer.getPosition();
+      const duration = await TrackPlayer.getDuration();
+      const buffered = await TrackPlayer.getBufferedPosition();
 
       const isLoaded = activeTrack !== null && activeTrack !== undefined;
       const isPlaying = state === State.Playing;
-      // Considérer comme buffering si l'état est Buffering/Loading ou si la position bufferisée est proche de la position actuelle
       const isBuffering = state === State.Buffering || state === State.Loading || (isLoaded && duration > 0 && buffered < position + 1 && !isPlaying);
 
-      // Mettre à jour l'état local pour la cohérence (optionnel mais recommandé)
-      this.isPlaying = isPlaying;
-      this.isBuffering = isBuffering;
-      this.position = position * 1000;
-      this.duration = duration * 1000;
-      // Assurer que currentEpisode est à jour si une piste est chargée
-      if (isLoaded && (!this.currentEpisode || String(this.currentEpisode.id) !== activeTrack.id)) {
-        // Potentiellement recharger les détails de l'épisode si nécessaire,
-        // mais pour le statut, l'ID suffit.
-        console.warn(`[AudioManager] Mismatch between active track ID (${activeTrack.id}) and stored episode ID (${this.currentEpisode?.id}). Status reflects active track.`);
-      }
+      // <<< SUPPRIMER les mises à jour de l'état interne ici >>>
+      // this.isPlaying = isPlaying;
+      // this.isBuffering = isBuffering;
+      // this.position = position * 1000;
+      // this.duration = duration * 1000;
+      // ... (supprimer la logique de vérification/mise à jour de this.currentEpisode ici aussi) ...
 
+      // Retourner l'état fraîchement récupéré
       return {
         isLoaded,
         isPlaying,
         isBuffering,
-        positionMillis: this.position,
-        durationMillis: this.duration,
-        currentEpisodeId: activeTrack?.id ?? null, // Utiliser l'ID de la piste active
+        // Retourner les valeurs directes de TrackPlayer (converties)
+        positionMillis: position * 1000,
+        durationMillis: duration * 1000,
+        currentEpisodeId: activeTrack?.id ?? null,
       };
     } catch (error) {
       console.error('[AudioManager] Error getting status:', error);
-      // Retourner un état par défaut en cas d'erreur
-      return {
+      return { /* ... état d'erreur ... */
         isLoaded: false,
         isPlaying: false,
         isBuffering: false,
         positionMillis: 0,
         durationMillis: 0,
-        currentEpisodeId: this.currentEpisode?.id ?? null, // Retourner l'ID connu si possible
+        currentEpisodeId: this.currentEpisode?.id ?? null,
       };
     }
   }
@@ -302,12 +325,20 @@ class AudioManager {
     console.log(`[AudioManager] Seeking to absolute ${positionSeconds.toFixed(1)}s`);
     try {
       const duration = await TrackPlayer.getDuration(); // en secondes
+      // S'assurer que la position cible est valide
       const targetPosition = duration ? Math.min(Math.max(0, positionSeconds), duration - 0.1) : Math.max(0, positionSeconds);
 
+      // Simplement demander à TrackPlayer de chercher la position
       await TrackPlayer.seekTo(targetPosition);
-      await this.updateLocalStatus(); // Mettre à jour l'état local immédiatement
+
+      // <<< Supprimer la mise à jour locale immédiate >>>
+      // await this.updateLocalStatus();
+      // La mise à jour se fera via l'événement PlaybackProgressUpdated
+
     } catch (error) {
       console.error(`[AudioManager] Error seeking to ${positionSeconds}s:`, error);
+      // Optionnel: notifier une erreur de seek?
+      // this.notifyListeners({ type: 'error', error: 'Erreur lors du déplacement.' });
     }
   }
 
@@ -320,12 +351,15 @@ class AudioManager {
     if (!this.isPlayerReady) return;
     console.log(`[AudioManager] Seeking relative by ${offsetSeconds}s`);
     try {
-      const currentPosition = await TrackPlayer.getPosition(); // Position actuelle en secondes
-      const newPositionSeconds = currentPosition + offsetSeconds;
+      // Obtenir la position actuelle directement depuis TrackPlayer pour plus de précision
+      const currentPositionSeconds = await TrackPlayer.getPosition();
+      const newPositionSeconds = currentPositionSeconds + offsetSeconds;
       // Utiliser la méthode seekTo existante qui gère les limites et prend des millisecondes
-      await this.seekTo(newPositionSeconds * 1000);
+      await this.seekTo(newPositionSeconds * 1000); // seekTo ne met plus à jour immédiatement
     } catch (error) {
       console.error(`[AudioManager] Error seeking relative by ${offsetSeconds}s:`, error);
+      // Optionnel: notifier une erreur de seek?
+      // this.notifyListeners({ type: 'error', error: 'Erreur lors du déplacement relatif.' });
     }
   }
 
@@ -336,70 +370,66 @@ class AudioManager {
 
   // --- Gestion des écouteurs et état interne ---
 
-  // Mettre à jour l'état local basé sur les requêtes TrackPlayer
-  // Utile après des actions comme seekTo pour une mise à jour immédiate
-  private async updateLocalStatus(): Promise<void> {
-    if (!this.isPlayerReady) return;
-    try {
-      const status = await this.getStatusAsync(); // Utiliser la nouvelle méthode
-      this.isPlaying = status.isPlaying;
-      this.isBuffering = status.isBuffering;
-      this.position = status.positionMillis;
-      this.duration = status.durationMillis;
-      // Notifier les changements
-      this.notifyListeners({
-        type: 'status',
-        position: this.position,
-        duration: this.duration,
-        isPlaying: this.isPlaying,
-        isBuffering: this.isBuffering,
-        isLoaded: status.isLoaded,
-      });
-    } catch (error) {
-      console.error('[AudioManager] Error updating local status:', error);
-    }
-  }
-
   private setupEventListeners(): void {
     console.log('[AudioManager] Setting up event listeners...');
     // Utiliser un Map pour stocker les références aux listeners pour pouvoir les supprimer
     const listeners = new Map<Event, (payload: any) => void>();
 
-    listeners.set(Event.PlaybackState, async (data: { state: State | PlaybackState }) => {
+    // --- MODIFICATION: PlaybackState met à jour l'état interne et notifie directement ---
+    listeners.set(Event.PlaybackState, (data: { state: State | PlaybackState }) => {
       console.log('[AudioManager] Event.PlaybackState:', data.state);
-      const state = typeof data.state === 'string' ? data.state as State : State.None; // Gérer les anciens et nouveaux types d'état
+      const state = typeof data.state === 'string' ? data.state as State : State.None;
+
+      // Mettre à jour l'état interne directement
       this.isPlaying = state === State.Playing;
       this.isBuffering = state === State.Buffering || state === State.Loading;
-      await this.updateLocalStatus(); // Mettre à jour tout l'état local
-      // Déclencher 'finished' UNIQUEMENT lorsque la lecture se termine naturellement.
-      // Ne plus le faire pour State.Stopped (qui peut être causé par reset/stop).
+
+      // Notifier immédiatement avec l'état interne mis à jour
+      this.notifyListeners({
+        type: 'status',
+        position: this.position, // Utiliser la position interne actuelle
+        duration: this.duration, // Utiliser la durée interne actuelle
+        isPlaying: this.isPlaying,
+        isBuffering: this.isBuffering,
+        isLoaded: state !== State.None && state !== State.Stopped, // Considérer chargé sauf si None/Stopped
+      });
+
+      // Gérer la fin de lecture
       if (state === State.Ended) {
         console.log('[AudioManager] Playback ended.');
-        this.notifyListeners({ type: 'finished' }); // Notifier la fin
-        // Réinitialiser la position locale et l'état de lecture
-        this.position = 0;
-        this.isPlaying = false;
-        // Notifier le changement de statut (position 0, non en lecture)
-        this.notifyListeners({ type: 'status', position: 0, isPlaying: false, isBuffering: false, isLoaded: true }); // Assumer toujours chargé à la fin
+        this.position = 0; // Réinitialiser la position interne
+        this.isPlaying = false; // Assurer que isPlaying est false
+        this.notifyListeners({ type: 'finished' });
+        // Notifier aussi le statut final (position 0, non en lecture)
+        this.notifyListeners({ type: 'status', position: 0, duration: this.duration, isPlaying: false, isBuffering: false, isLoaded: true });
       } else if (state === State.Stopped) {
-        // Simplement logguer l'arrêt sans déclencher 'finished'
-        console.log('[AudioManager] Playback stopped (likely due to reset or stop call).');
-        // L'état isPlaying et isBuffering est déjà mis à jour plus haut.
-        // updateLocalStatus s'assure que les listeners sont notifiés de l'état arrêté.
+        console.log('[AudioManager] Playback stopped.');
+        // L'état isPlaying/isBuffering est déjà mis à jour, la notification status ci-dessus suffit.
+        // Si un arrêt implique un déchargement, unloadSound devrait être appelé ailleurs.
       }
+      // <<< SUPPRIMER l'appel à updateLocalStatus >>>
+      // await this.updateLocalStatus();
     });
 
+    // --- MODIFICATION: PlaybackProgressUpdated met à jour l'état interne et notifie ---
     listeners.set(Event.PlaybackProgressUpdated, (data: { position: number; duration: number; buffered: number }) => {
+      // Mettre à jour l'état interne
       this.position = data.position * 1000;
-      this.duration = data.duration * 1000;
-      // Mettre à jour isBuffering basé sur la position bufferisée
-      this.isBuffering = this.isPlaying && data.buffered < data.position + 1.5 && data.duration > 0;
+      // Mettre à jour la durée seulement si elle est valide et différente pour éviter des écrasements
+      if (data.duration > 0 && data.duration * 1000 !== this.duration) {
+          this.duration = data.duration * 1000;
+      }
+      // Mettre à jour isBuffering basé sur la position bufferisée (logique affinée)
+      const wasBuffering = this.isBuffering;
+      this.isBuffering = this.isPlaying && data.duration > 0 && data.buffered < data.position + 1.5;
 
+      // Notifier seulement si quelque chose a changé (position, durée, buffering)
+      // ou toujours notifier pour que l'UI se mette à jour ? -> Toujours notifier pour la position.
       this.notifyListeners({
         type: 'status',
         position: this.position,
         duration: this.duration,
-        isPlaying: this.isPlaying, // Garder l'état isPlaying actuel
+        isPlaying: this.isPlaying, // Utiliser l'état interne isPlaying
         isBuffering: this.isBuffering,
         isLoaded: true, // Si on reçoit la progression, c'est chargé
       });
@@ -407,35 +437,54 @@ class AudioManager {
 
     listeners.set(Event.PlaybackError, (error: any) => {
       console.error('[AudioManager] Event.PlaybackError:', error.code, error.message);
+      // Mettre à jour l'état interne
       this.isPlaying = false;
       this.isBuffering = false;
+      // Notifier l'erreur et le changement de statut
       this.notifyListeners({ type: 'error', error: error.message || 'Erreur de lecture inconnue' });
+      this.notifyListeners({ type: 'status', position: this.position, duration: this.duration, isPlaying: false, isBuffering: false, isLoaded: false }); // Indiquer non chargé en cas d'erreur? Ou garder isLoaded? A tester.
     });
 
+    // --- MODIFICATION: PlaybackActiveTrackChanged ---
     listeners.set(Event.PlaybackActiveTrackChanged, async (data: { track?: Track | null, nextTrack?: Track | null }) => {
-      console.log(`[AudioManager] Event.PlaybackActiveTrackChanged: New track ID: ${data.track?.id}`);
-      if (!data.track) {
-        // La piste a été retirée ou la file est vide
-        console.log('[AudioManager] Active track is now null/undefined.');
-        await this.unloadSound(); // Considérer comme déchargé
-      } else {
-        // Une nouvelle piste est active, mettre à jour l'épisode actuel si possible
-        if (!this.currentEpisode || String(this.currentEpisode.id) !== data.track.id) {
-          console.warn(`[AudioManager] Active track changed (${data.track.id}), but internal episode might be out of sync.`);
-          // Idéalement, il faudrait retrouver l'objet Episode correspondant à data.track.id
-          // Pour l'instant, on met juste à jour l'état avec les infos de la piste
-          this.currentEpisode = { // Créer un Episode partiel basé sur la Track
-            id: data.track.id!,
-            title: data.track.title || 'Épisode inconnu',
-            mp3Link: data.track.url as string,
-            description: '',
-            duration: data.track.duration ? Number(data.track.duration) * 1000 : null, // Convertir en millisecondes
-            offline_path: undefined, // Pas de chemin local pour les pistes distantes
-            publicationDate: ''
-          };
+        console.log(`[AudioManager] Event.PlaybackActiveTrackChanged: New track ID: ${data.track?.id}`);
+        if (!data.track) {
+            // La piste a été retirée ou la file est vide
+            console.log('[AudioManager] Active track is now null/undefined.');
+            // Appeler unloadSound pour nettoyer complètement l'état interne
+            await this.unloadSound();
+        } else {
+            // Une nouvelle piste est active, mettre à jour l'épisode actuel si possible
+            const newTrackId = String(data.track.id); // Assurer que c'est une string
+            if (!this.currentEpisode || this.currentEpisode.id !== newTrackId) {
+                console.warn(`[AudioManager] Active track changed (${newTrackId}), updating internal episode.`);
+                // Essayer de créer un objet Episode partiel basé sur la Track
+                this.currentEpisode = {
+                    id: newTrackId,
+                    title: data.track.title || 'Épisode inconnu',
+                    mp3Link: data.track.url as string, // Assumer que l'URL est le mp3Link
+                    description: '', // Infos manquantes
+                    // Convertir la durée en secondes si elle existe, sinon null
+                    duration: data.track.duration ? Number(data.track.duration) : null,
+                    offline_path: undefined, // Pas de chemin local connu ici
+                    publicationDate: '' // Info manquante
+                };
+                // Réinitialiser position/durée car la piste a changé
+                this.position = 0;
+                this.duration = data.track.duration ? Number(data.track.duration) * 1000 : 0;
+            }
+            // Notifier le changement de statut après changement de piste
+            this.notifyListeners({
+                type: 'status',
+                position: this.position,
+                duration: this.duration,
+                isPlaying: this.isPlaying, // Garder l'état isPlaying actuel
+                isBuffering: this.isBuffering,
+                isLoaded: true, // La nouvelle piste est chargée
+            });
+            // <<< SUPPRIMER l'appel à updateLocalStatus >>>
+            // await this.updateLocalStatus();
         }
-        await this.updateLocalStatus(); // Mettre à jour le statut avec la nouvelle piste
-      }
     });
 
     // --- Écouteurs pour les contrôles à distance (notification/lock screen) ---
@@ -448,19 +497,28 @@ class AudioManager {
 
     // Ajouter tous les écouteurs définis
     for (const [event, listener] of listeners.entries()) {
+      // Supprimer d'abord un éventuel listener précédent pour éviter les doublons
+      // Note: addEventListener typically replaces existing listeners for the same event in many libraries,
+      // or TrackPlayer might handle this internally. If duplicates become an issue,
+      // store the subscription returned by addEventListener and call .remove() on it before adding a new one.
       TrackPlayer.addEventListener(event, listener);
     }
+    console.log('[AudioManager] Event listeners setup complete.');
   }
 
   public addListener(callback: (data: any) => void): () => void {
     this.listeners.add(callback);
-    // Envoyer l'état actuel immédiatement après l'ajout
-    this.getStatusAsync().then(status => {
-      callback({
-        type: 'status',
-        ...status // Envoyer toutes les propriétés du statut
-      });
-    }).catch(err => console.error("Error sending initial status to listener:", err));
+    // Envoyer l'état interne actuel immédiatement après l'ajout
+    callback({
+      type: 'status',
+      position: this.position,
+      duration: this.duration,
+      isPlaying: this.isPlaying,
+      isBuffering: this.isBuffering,
+      isLoaded: this.currentEpisode !== null, // Considérer chargé si un épisode est défini
+      // Envoyer toutes les propriétés de AudioStatus si possible
+      currentEpisodeId: this.currentEpisode?.id ?? null,
+    });
 
     return () => {
       this.listeners.delete(callback);
