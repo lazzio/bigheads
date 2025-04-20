@@ -9,7 +9,7 @@ import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
-type WatchedEpisode = Database['public']['Tables']['watched_episodes']['Row'];
+type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row']; // Utiliser le type Row complet
 
 const EPISODES_CACHE_KEY = 'cached_episodes';
 
@@ -138,27 +138,29 @@ export default function EpisodesScreen() {
 
   async function fetchWatchedEpisodes() {
     try {
-      // Vérifier si l'utilisateur est connecté
       const userResponse = await supabase.auth.getUser();
       const userId = userResponse.data.user?.id;
-      
       if (!userId) {
-        console.log('User not logged in, skipping watched episodes fetch');
+        console.log('Utilisateur non connecté, saut récupération épisodes vus');
+        setWatchedEpisodes(new Set()); // S'assurer que c'est vide si non connecté
         return;
       }
 
       const { data, error } = await supabase
         .from('watched_episodes')
-        .select('episode_id')
-        .eq('user_id', userId);
+        .select('episode_id') // Sélectionner seulement l'ID
+        .eq('user_id', userId)
+        .eq('is_finished', true); // <<< Ajouter ce filtre
 
       if (error) throw error;
 
-      const watchedIds = new Set((data as WatchedEpisode[]).map(we => we.episode_id));
-      console.log(`Fetched ${watchedIds.size} watched episodes`);
+      // Utiliser WatchedEpisodeRow si on sélectionne plus, sinon juste { episode_id: string }
+      const watchedIds = new Set((data as { episode_id: string }[]).map(we => we.episode_id));
+      console.log(`Récupéré ${watchedIds.size} épisodes terminés`);
       setWatchedEpisodes(watchedIds);
     } catch (err) {
-      console.error('Error fetching watched episodes:', err);
+      console.error('Erreur récupération épisodes vus:', err);
+      setWatchedEpisodes(new Set()); // Réinitialiser en cas d'erreur
     }
   }
 

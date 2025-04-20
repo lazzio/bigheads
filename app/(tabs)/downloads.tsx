@@ -245,7 +245,7 @@ export default function DownloadsScreen() {
         description: meta.description || '',
         mp3Link: '',
         mp3_link: '',
-        duration: '',
+        duration: meta.duration,
         publicationDate: meta.downloadDate || new Date().toISOString(),
         publication_date: meta.downloadDate || new Date().toISOString(),
         offline_path: meta.filePath

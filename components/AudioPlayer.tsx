@@ -12,10 +12,10 @@ interface AudioPlayerProps {
   onNext?: () => void;
   onPrevious?: () => void;
   onComplete?: () => void;
+  onRetry?: () => void;
 }
 
-export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }: AudioPlayerProps) {
-  // État principal
+export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, onRetry }: AudioPlayerProps) { // <<< Ajouter onRetry ici
   const [isPlaying, setIsPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -25,23 +25,18 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
   const [isSeeking, setIsSeeking] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
 
-  // Références
   const progressBarRef = useRef<View>(null);
   const progressWidth = useRef(0);
   const progressPosition = useRef({ x: 0, y: 0 });
 
-  // Configurer audio au montage, nettoyer au démontage
   useEffect(() => {
     let isMounted = true;
-    
+
     const setup = async () => {
       try {
-        await audioManager.setupAudio();
-        
-        // Ajouter un écouteur pour les mises à jour d'état
         const unsubscribe = audioManager.addListener((data) => {
           if (!isMounted) return;
-          
+
           if (data.type === 'loaded') {
             setDuration(data.duration);
             setIsLoading(false);
@@ -53,16 +48,19 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
             setDuration(data.duration);
             setIsPlaying(data.isPlaying);
             setIsBuffering(data.isBuffering);
+            if (isLoading && data.isLoaded) {
+              setIsLoading(false);
+            }
+            setError(null);
           } else if (data.type === 'error') {
             setError(data.error);
             setIsLoading(false);
+            setIsPlaying(false);
           } else if (data.type === 'finished') {
             console.log('Audio playback finished, calling onComplete');
-            
             if (onComplete) {
               onComplete();
             }
-            
             if (sleepTimerActive) {
               handleSleepTimerEnd();
             }
@@ -72,34 +70,35 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
             onPrevious();
           }
         });
-        
+
+        const initialStatus = await audioManager.getStatusAsync();
+        if (isMounted) {
+          setPosition(initialStatus.positionMillis);
+          setDuration(initialStatus.durationMillis);
+          setIsPlaying(initialStatus.isPlaying);
+          setIsBuffering(initialStatus.isBuffering);
+          setIsLoading(!initialStatus.isLoaded);
+        }
+
         return () => {
           unsubscribe();
         };
       } catch (err) {
-        console.error("Error in audio setup:", err);
+        console.error("Error in audio setup/listener:", err);
         if (isMounted) {
-          setError(`Erreur de configuration audio: ${err instanceof Error ? err.message : 'erreur inconnue'}`);
+          setError(`Erreur audio: ${err instanceof Error ? err.message : 'inconnue'}`);
           setIsLoading(false);
         }
       }
     };
-    
+
     setup();
-    
+
     return () => {
       isMounted = false;
     };
-  }, [onComplete, sleepTimerActive]);
+  }, [onComplete, sleepTimerActive, onNext, onPrevious]);
 
-  // Charger le nouvel épisode quand il change
-  useEffect(() => {
-    if (episode?.mp3Link || episode?.offline_path) {
-      loadEpisode();
-    }
-  }, [episode]);
-
-  // Mesurer la barre de progression après le rendu
   useEffect(() => {
     if (!isLoading) {
       setTimeout(() => {
@@ -108,36 +107,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   }, [isLoading]);
 
-  // Charger l'épisode
-  async function loadEpisode() {
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      // Journalisation détaillée pour le débogage
-      // console.log('========= CHARGEMENT ÉPISODE =========');
-      // console.log('Titre:', episode?.title);
-      // console.log('Mode hors-ligne:', isOffline ? 'OUI' : 'NON');
-      // console.log('Chemin local:', episode?.offline_path || 'NON DISPONIBLE');
-      // console.log('URL distante:', episode?.mp3Link || 'NON DISPONIBLE');
-      
-      // S'assurer que le chemin offline est prioritaire
-      const episodeToLoad = {
-        ...episode,
-        mp3Link: episode.offline_path || episode.mp3Link
-      };
-      
-      // Maintenant charger avec le chemin prioritaire
-      await audioManager.loadEpisode(episodeToLoad);
-      
-    } catch (err) {
-      console.error("Error loading episode:", err);
-      setError(`Impossible de charger l'audio: ${err instanceof Error ? err.message : 'erreur inconnue'}`);
-      setIsLoading(false);
-    }
-  }
-
-  // Gestionnaire de glissement pour le curseur de progression
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
@@ -146,13 +115,11 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     },
     onPanResponderMove: (e: GestureResponderEvent) => {
       if (progressWidth.current <= 0) return;
-      
-      // Calculer la nouvelle position basée sur le toucher
+
       const touchX = e.nativeEvent.pageX - progressPosition.current.x;
       const percentage = Math.max(0, Math.min(touchX / progressWidth.current, 1));
       const newPosition = percentage * duration;
-      
-      // Mettre à jour uniquement la position visuelle pendant le glissement
+
       setPosition(newPosition);
     },
     onPanResponderRelease: async (e: GestureResponderEvent) => {
@@ -160,14 +127,12 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
         setIsSeeking(false);
         return;
       }
-      
+
       try {
-        // Calculer la position finale
         const touchX = e.nativeEvent.pageX - progressPosition.current.x;
         const percentage = Math.max(0, Math.min(touchX / progressWidth.current, 1));
         const newPosition = percentage * duration;
-        
-        // Appliquer la nouvelle position à l'audio
+
         await audioManager.seekTo(newPosition);
       } catch (err) {
         console.error("Error while seeking:", err);
@@ -180,7 +145,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   });
 
-  // Mesurer les dimensions de la barre de progression
   const measureProgressBar = () => {
     if (progressBarRef.current) {
       progressBarRef.current.measure((x, y, width, height, pageX, pageY) => {
@@ -190,7 +154,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   };
 
-  // Gérer le bouton play/pause
   async function handlePlayPause() {
     try {
       if (isPlaying) {
@@ -204,7 +167,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   }
 
-  // Avancer ou reculer
   async function handleSeek(seconds: number) {
     try {
       await audioManager.seekRelative(seconds);
@@ -213,7 +175,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   }
 
-  // Fonction pour sauter 10 minutes (600 secondes)
   async function handleSkip10Minutes() {
     try {
       await audioManager.seekRelative(600);
@@ -223,42 +184,36 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   }
 
-  // Fonction pour activer/désactiver le minuteur de sommeil
   function toggleSleepTimer() {
     setSleepTimerActive(prevState => !prevState);
     console.log(`Sleep timer ${!sleepTimerActive ? 'activated' : 'deactivated'}`);
   }
 
-  // Fonction pour gérer la fin du minuteur de sommeil
   async function handleSleepTimerEnd() {
     try {
       await audioManager.stop();
       setSleepTimerActive(false);
       console.log("Sleep timer completed - closing app now");
-      
+
       Alert.alert(
         "Minuteur de sommeil terminé",
         "L'application va se fermer dans 5 secondes...",
         [{ text: "OK" }]
       );
-      
+
       setTimeout(() => {
         if (Platform.OS === 'android') {
-          // Solution plus fiable pour quitter sur Android
           BackHandler.exitApp();
-          // Forcer la fermeture avec une solution alternative
           setTimeout(() => {
-            // Forcer l'arrêt de l'application si BackHandler.exitApp() ne fonctionne pas
             console.log("Forcing app exit with process.exit()");
             global.process.exit(0);
           }, 500);
         } else if (Platform.OS === 'ios') {
-          // Code iOS inchangé
           try {
             IntentLauncher.startActivityAsync('com.apple.springboard');
           } catch (e) {
             console.log("Couldn't launch home screen, trying alternative method");
-              
+
             Application.getIosApplicationReleaseTypeAsync().then(() => {
               setTimeout(() => {
                 global.process.exit(0);
@@ -272,10 +227,8 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   }
 
-  // Calculer la progression en pourcentage
   const progress = duration > 0 ? (position / duration) * 100 : 0;
 
-  // Affichage pendant le chargement
   if (isLoading) {
     return (
       <View style={styles.container}>
@@ -285,14 +238,13 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     );
   }
 
-  // Affichage en cas d'erreur
   if (error) {
     return (
       <View style={styles.container}>
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity 
           style={styles.retryButton} 
-          onPress={loadEpisode}
+          onPress={onRetry} // <<< Utiliser la prop onRetry ici
         >
           <Text style={styles.retryText}>Réessayer</Text>
         </TouchableOpacity>
@@ -316,13 +268,11 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      {/* Titre et description */}
       <Text style={styles.title}>{episode.title}</Text>
       <Text style={styles.description} numberOfLines={2} ellipsizeMode="tail">
         {episode.description}
       </Text>
       
-      {/* Barre de progression avec curseur */}
       <View style={styles.progressContainer}>
         <View 
           ref={progressBarRef}
@@ -340,14 +290,12 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
           />
         </View>
         
-        {/* Affichage du temps */}
         <View style={styles.timeContainer}>
           <Text style={styles.timeText}>{formatTime(position)}</Text>
           <Text style={styles.timeText}>-{formatTime(Math.max(0, duration - position))}</Text>
         </View>
       </View>
 
-      {/* Contrôles de lecture */}
       <View style={styles.controls}>
         <TouchableOpacity onPress={onPrevious} style={styles.button}>
           <SkipBack size={24} color="#fff" />
@@ -375,13 +323,11 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       </View>
 
       <View style={styles.additionalControls}>
-        {/* Bouton "Passer les auditeurs" */}
         <TouchableOpacity onPress={handleSkip10Minutes} style={styles.skipButton}>
           <Forward size={20} color="#fff" />
           <Text style={styles.skipText}>Passer les auditeurs</Text>
         </TouchableOpacity>
 
-        {/* Bouton minuteur de sommeil */}
         <TouchableOpacity 
           onPress={toggleSleepTimer} 
           style={[styles.sleepButton, sleepTimerActive && styles.sleepButtonActive]}
@@ -393,7 +339,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
         </TouchableOpacity>
       </View>
       
-      {/* Indicateur de mise en mémoire tampon */}
       {isBuffering && (
         <View style={styles.bufferingContainer}>
           <ActivityIndicator size="small" color="#0ea5e9" />
@@ -445,9 +390,9 @@ const styles = StyleSheet.create({
   },
   progressBarContainer: {
     width: '100%',
-    height: 20, // Plus grand pour faciliter le toucher
+    height: 20,
     justifyContent: 'center',
-    backgroundColor: 'transparent', // Transparent pour capter les touches sur une plus grande surface
+    backgroundColor: 'transparent',
   },
   progressBackground: {
     position: 'absolute',

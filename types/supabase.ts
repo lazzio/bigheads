@@ -8,7 +8,7 @@ export interface Database {
           description: string;
           originalMp3Link: string;
           mp3Link: string;
-          duration: string;
+          duration: number | null;
           publicationDate: string;
           created_at: string;
         };
@@ -18,7 +18,7 @@ export interface Database {
           description: string;
           originalMp3Link: string;
           mp3Link: string;
-          duration: string;
+          duration: number | null;
           publicationDate: string;
           created_at?: string;
         };
@@ -28,7 +28,7 @@ export interface Database {
           description?: string;
           originalMp3Link?: string;
           mp3Link?: string;
-          duration?: string;
+          duration?: number | null;
           created_at?: string;
         };
       };
@@ -38,18 +38,24 @@ export interface Database {
           user_id: string;
           episode_id: string;
           watched_at: string;
+          playback_position: number | null;
+          is_finished: boolean;
         };
         Insert: {
           id?: string;
           user_id: string;
           episode_id: string;
           watched_at?: string;
+          playback_position?: number | null;
+          is_finished?: boolean;
         };
         Update: {
           id?: string;
           user_id?: string;
           episode_id?: string;
           watched_at?: string;
+          playback_position?: number | null;
+          is_finished?: boolean;
         };
       };
     };

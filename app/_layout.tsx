@@ -11,6 +11,8 @@ import { makeRedirectUri } from 'expo-auth-session';
 import { initEpisodeNotificationService, setupNotificationListener } from '../utils/EpisodeNotificationService';
 import NetInfo from '@react-native-community/netinfo';
 import { syncOfflineWatchedEpisodes } from '../utils/WatchedEpisodeSyncService';
+import { Stack } from 'expo-router';
+import { initializePlaybackSync } from '../utils/PlaybackSyncService';
 
 // Define the app routes
 // These routes are used for navigation and auth checks
@@ -351,12 +353,28 @@ export default function RootLayout() {
       // unsubscribeNetInfo?.();
     };
   }, []);
-  
+
+  useEffect(() => {
+    // Initialiser le service de notification (si ce n'est pas déjà fait ailleurs)
+    initEpisodeNotificationService();
+
+    // Initialiser la synchronisation de la position de lecture
+    const cleanupSync = initializePlaybackSync();
+
+    // Fonction de nettoyage pour supprimer les écouteurs lors du démontage du layout racine
+    return () => {
+      cleanupSync();
+    };
+  }, []); // Le tableau vide assure que cela ne s'exécute qu'une fois au montage
+
   // Important: always render Slot first, before any conditional logic
   return (
     <ErrorBoundary>
-      {/* Order matters here - always render Slot first! */}
-      <Slot />
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+        {/* Assurez-vous que PlayerScreen n'est pas défini ici s'il est dans (tabs) */}
+      </Stack>
       
       {/* Only handle auth routing after app is ready */}
       {isAppReady ? <AuthRouter /> : <LoadingScreen />}
