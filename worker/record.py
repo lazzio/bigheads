@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from google.cloud import storage
 from datetime import datetime
 from typing import List, Dict, Optional, Any
+from mutagen.mp3 import MP3
 
 """
 Logger Configuration
@@ -58,6 +59,68 @@ NB_EPISODES_TO_KEEP: int = int(os.environ.get("NB_EPISODES_TO_KEEP", 15))
 
 # Ensure download directory exists
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+
+def get_mp3_duration(file_path: str) -> Optional[float]:
+    """Get the duration of an MP3 file."""
+    try:
+        # Load the MP3 file
+        if not os.path.exists(file_path):
+            logger.error(f"File not found: {file_path}")
+            return None
+        if not file_path.endswith('.mp3'):
+            logger.error(f"File is not an MP3: {file_path}")
+            return None
+        
+        audio = MP3(file_path)
+        
+        # Get the duration in seconds
+        if not audio.info or not hasattr(audio.info, 'length'):
+            logger.error(f"Could not retrieve duration for file: {file_path}")
+            return None
+        duration_in_seconds = audio.info.length
+        
+        return duration_in_seconds
+    except Exception as e:
+        logger.error(f"Error getting duration for file {file_path}: {e}")
+        return None
+
+
+def validate_duration_format(duration: str) -> bool:
+    """Validate the duration format HH:MM:SS."""
+    pattern = r'^([0-9]{2}):([0-9]{2}):([0-9]{2})$'
+    match = re.match(pattern, duration)
+    
+    if not match:
+        return False
+    
+    # Extract hours, minutes, seconds
+    hours, minutes, seconds = map(int, match.groups())
+    
+    # Validate ranges for hours, minutes, seconds
+    if hours < 0 or hours > 23:
+        return False
+    if minutes < 0 or minutes > 59:
+        return False
+    if seconds < 0 or seconds > 59:
+        return False
+    
+    return True
+
+def convert_in_seconds(duration: str) -> float:
+    """Convert HH:MM:SS duration to total seconds."""
+    total_seconds: float = 0
+
+    if not validate_duration_format(duration):
+        raise ValueError(f"Invalid duration format: {duration}. Expected HH:MM:SS")
+
+    # Divide the string into hours, minutes, and seconds
+    hours, minutes, seconds = map(int, duration.split(':'))
+    
+    # Calculate total seconds
+    total_seconds = hours * 3600 + minutes * 60 + seconds
+    
+    return total_seconds
 
 
 class StorageManager:
@@ -343,7 +406,6 @@ def process_episodes(feed_data: Dict, max_episodes: int, db_manager: DatabaseMan
             episode = {
                 "title": item["title"],
                 "publication_date": convert_pubdate_format(item["pubDate"]),
-                "duration": item["itunes:duration"],
                 "description": item["description"].split('\n', 1)[0]
             }
             
@@ -366,9 +428,17 @@ def process_episodes(feed_data: Dict, max_episodes: int, db_manager: DatabaseMan
             if not mp3_filename:
                 logger.warning(f"Failed to download MP3 for: {episode['title']}")
                 continue
-                
-            # Upload to cloud storage
+            
+            # Get duration
             local_path = os.path.join(DOWNLOAD_DIR, mp3_filename)
+            duration: float = get_mp3_duration(local_path)
+            if duration is None:
+                logger.warning(f"Failed to get duration for: {mp3_filename}")
+                duration = item["itunes:duration"],
+            
+            episode["duration"] = duration
+
+            # Upload to cloud storage
             if storage_manager.upload_file(local_path, "bigheads", "mp3", mp3_filename):
                 # Get public URL
                 public_url = storage_manager.get_public_url("bigheads", f"mp3/{mp3_filename}")
