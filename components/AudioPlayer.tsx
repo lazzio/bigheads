@@ -178,7 +178,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
           const clampedX = Math.max(0, Math.min(touchXRelativeToBar, totalWidth));
           const percentage = clampedX / totalWidth;
           const newPosition = percentage * duration;
-          // Update position state directly during move for visual feedback
           setPosition(newPosition);
         }
       },
