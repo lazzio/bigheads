@@ -77,7 +77,9 @@ class AudioManager {
           Capability.SkipToPrevious,
           Capability.SkipToNext,
         ],
+        icon: require('../assets/images/bh_opti.png'),
         progressUpdateEventInterval: 1,
+        alwaysPauseOnInterruption: false,
       });
 
       this.isPlayerReady = true;

@@ -9,11 +9,6 @@ import NetInfo from '@react-native-community/netinfo';
 import * as Sentry from '@sentry/react-native';
 import { StatusBar } from 'expo-status-bar';
 
-// Configuration Sentry (si pas déjà faite ailleurs)
-Sentry.init({
-  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
-  debug: process.env.NODE_ENV === 'development',
-});
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -46,14 +41,37 @@ export default function RootLayout() {
           await initEpisodeNotificationService();
           // Configurer l'écouteur pour la navigation
           setupNotificationListener((episodeId) => {
-            if (appMounted.current) {
-              console.log(`[RootLayout] Notification received, navigating to episode: ${episodeId}`);
-              // --- MODIFICATION ICI ---
-              router.push({
-                pathname: '/player', // Chemin cible
-                params: { episodeId: episodeId }, // Paramètres
+            console.log(`[NotificationHandler] Received notification for episode ${episodeId}`);
+            
+            // Navigation vers l'écran player
+            const navigateToPlayer = () => {
+              console.log('[NotificationHandler] Navigating to player tab');
+              router.navigate({
+                pathname: '/(tabs)/player',
+                params: { 
+                  episodeId: episodeId, 
+                  source: 'notification',
+                  timestamp: Date.now() // Add timestamp to force refresh
+                }
               });
-              // --- FIN MODIFICATION ---
+            };
+
+            // Si l'app est prête, naviguer immédiatement
+            if (appMounted.current && isAppReady) {
+              navigateToPlayer();
+            } else {
+              // Sinon, attendre que l'app soit prête et naviguer ensuite
+              console.log('[NotificationHandler] App not ready, waiting...');
+              const readyCheckInterval = setInterval(() => {
+                if (appMounted.current && isAppReady) {
+                  console.log('[NotificationHandler] App now ready, navigating...');
+                  clearInterval(readyCheckInterval);
+                  navigateToPlayer();
+                }
+              }, 200);
+              
+              // Arrêter de vérifier après 10 secondes pour éviter une boucle infinie
+              setTimeout(() => clearInterval(readyCheckInterval), 10000);
             }
           });
           console.log('Episode notification service initialized');
@@ -77,11 +95,12 @@ export default function RootLayout() {
         try {
           await SplashScreen.hideAsync();
         } catch (error) {
-          console.log('SplashScreen hide failed (might be normal):', error);
+          console.warn('SplashScreen.hideAsync failed:', error);
         }
 
         // Marquer l'application comme prête
         if (appMounted.current) {
+          console.log('[RootLayout] App is now ready.');
           setIsAppReady(true);
         }
       } catch (error) {
@@ -105,9 +124,11 @@ export default function RootLayout() {
 
   // Afficher Slot seulement quand l'app est prête pour éviter les flashs
   if (!isAppReady) {
+    console.log('[RootLayout] App not ready, rendering null.');
     return null; // Ou retourner un écran de chargement minimal si SplashScreen.hideAsync a échoué
   }
 
+  console.log('[RootLayout] App is ready, rendering Slot.');
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>

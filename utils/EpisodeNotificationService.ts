@@ -27,14 +27,31 @@ export async function initEpisodeNotificationService(): Promise<void> {
 
 // Set up a handler for received notifications
 export function setupNotificationListener(onNotificationReceived: (episodeId: string) => void): () => void {
+  // Make sure to set the correct behavior for foreground notifications
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: false,
+      shouldSetBadge: false,
+      priority: Notifications.AndroidNotificationPriority.HIGH,
+    }),
+  });
+
+  // Add this to ensure proper handling of notification taps
   const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+    console.log('[NotificationService] User tapped on notification', response);
+    
+    // Get episodeId from the notification
     const episodeId = response.notification.request.content.data?.episodeId;
     if (episodeId) {
+      console.log(`[NotificationService] Processing notification tap for episode ${episodeId}`);
       onNotificationReceived(episodeId);
     }
   });
-  
-  return () => subscription.remove();
+
+  return () => {
+    subscription.remove();
+  };
 }
 
 // Test function for notifications

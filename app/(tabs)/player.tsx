@@ -35,7 +35,7 @@ function parseDuration(durationStr: string | number | null): number | null {
 }
 
 export default function PlayerScreen() {
-  const { episodeId, offlinePath } = useLocalSearchParams<{ episodeId?: string; offlinePath?: string }>();
+  const { episodeId, offlinePath, source } = useLocalSearchParams<{ episodeId?: string; offlinePath?: string; source?: string }>();
   const router = useRouter();
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number | null>(null);
@@ -426,6 +426,24 @@ export default function PlayerScreen() {
       subscription.remove();
     };
   }, [savePlaybackPosition]); // Dépend de savePlaybackPosition
+
+  // Add effect to handle notification open
+  useEffect(() => {
+    // If coming from notification and already have currentEpisodeId matching the requested one
+    if (source === 'notification' && episodeId && currentEpisodeIdRef.current === episodeId) {
+      console.log('[PlayerScreen] Opened from notification with matching episode, ensuring playback');
+      
+      // If sound is already loaded, just make sure it's playing
+      audioManager.getStatusAsync().then(status => {
+        if (status.isLoaded && !status.isPlaying && currentEpisodeIdRef.current === episodeId) {
+          console.log('[PlayerScreen] Resuming playback for already loaded episode');
+          audioManager.play().catch(err => 
+            console.error('[PlayerScreen] Error resuming playback:', err)
+          );
+        }
+      }).catch(error => console.error('[PlayerScreen] Error checking audio status:', error));
+    }
+  }, [episodeId, source]);
 
   // --- Handler pour la fin de lecture ---
   const handlePlaybackComplete = useCallback(async () => {
