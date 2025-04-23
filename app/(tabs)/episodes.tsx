@@ -1,6 +1,6 @@
-import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Platform, ActivityIndicator } from 'react-native'; // Ajouter Platform et ActivityIndicator
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Play, CircleCheck as CheckCircle2, WifiOff } from 'lucide-react-native';
+import { Play, CircleCheck as CheckCircle2, WifiOff, Music } from 'lucide-react-native'; // Importer une icône pour le placeholder
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Database } from '../../types/supabase';
@@ -12,6 +12,22 @@ type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
 type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row']; // Utiliser le type Row complet
 
 const EPISODES_CACHE_KEY = 'cached_episodes';
+
+const colors = {
+  background: '#121212',
+  cardBackground: '#1a1a1a',
+  textPrimary: '#ffffff', // Blanc pur pour le titre
+  textSecondary: '#b3b3b3', // Gris clair pour la description
+  textMuted: '#808080',    // Gris plus foncé pour la durée
+  iconColor: '#ffffff',
+  iconColorWatched: '#0ea5e9', // Garder le bleu pour "vu"
+  offlineBackground: '#333333',
+  offlineText: '#aaaaaa',
+  errorBackground: 'rgba(239, 68, 68, 0.2)',
+  errorBorder: '#ef4444',
+  errorText: '#ff4444',
+  loadingText: '#ffffff',
+};
 
 export default function EpisodesScreen() {
   const router = useRouter();
@@ -150,7 +166,7 @@ export default function EpisodesScreen() {
         .from('watched_episodes')
         .select('episode_id') // Sélectionner seulement l'ID
         .eq('user_id', userId)
-        .eq('is_finished', true); // <<< Ajouter ce filtre
+        .eq('is_finished', true);
 
       if (error) throw error;
 
@@ -164,9 +180,31 @@ export default function EpisodesScreen() {
     }
   }
 
+  // --- Fonction pour formater la durée (si tu n'en as pas déjà une) ---
+  const formatDuration = (seconds: number | null | undefined): string => {
+    if (seconds === null || seconds === undefined || isNaN(seconds) || seconds <= 0) {
+      return '--:--';
+    }
+    const totalSeconds = Math.floor(seconds);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+
+    const minutesStr = String(minutes).padStart(2, '0');
+    const secsStr = String(secs).padStart(2, '0');
+
+    if (hours > 0) {
+      return `${hours}:${minutesStr}:${secsStr}`;
+    } else {
+      return `${minutesStr}:${secsStr}`;
+    }
+  };
+
+  // --- Rendu du composant ---
   if (loading) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color={colors.textPrimary} />
         <Text style={styles.loadingText}>Chargement des épisodes...</Text>
       </View>
     );
@@ -175,152 +213,220 @@ export default function EpisodesScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.header}>Episodes</Text>
-      
+
       {isOffline && (
         <View style={styles.offlineContainer}>
-          <WifiOff size={20} color="#888" />
+          <WifiOff size={20} color={colors.textSecondary} />
           <Text style={styles.offlineText}>
-            Mode hors-ligne - Seuls les épisodes en cache sont disponibles
+            Mode hors-ligne activé
           </Text>
         </View>
       )}
-      
-      {error && (
+
+      {error && !isOffline && ( // Afficher l'erreur seulement si on n'est pas en mode offline (qui a son propre message)
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error}</Text>
         </View>
       )}
-      
-      {episodes.length === 0 ? (
+
+      {episodes.length === 0 && !loading ? ( // Vérifier !loading aussi
         <View style={styles.emptyContainer}>
           {isOffline ? (
             <>
-              <Text style={styles.emptyText}>Aucun épisode disponible en mode hors-ligne</Text>
-              <Text style={styles.hintText}>Connectez-vous à Internet pour accéder aux épisodes</Text>
+              <Text style={styles.emptyText}>Aucun épisode téléchargé ou en cache.</Text>
+              <Text style={styles.hintText}>Connectez-vous pour voir les derniers épisodes.</Text>
             </>
           ) : (
-            <Text style={styles.emptyText}>Aucun épisode disponible</Text>
+            <Text style={styles.emptyText}>Aucun épisode trouvé.</Text>
           )}
         </View>
       ) : (
         <FlatList
           data={episodes}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.episodeItem}
-              onPress={() => {
-                // Pass the episode ID instead of index
-                router.push({
-                  pathname: '/player',
-                  params: { episodeId: item.id }
-                });
-              }}
-            >
-              <View style={styles.episodeInfo}>
-                <Text style={styles.episodeTitle}>{item.title}</Text>
-                <Text style={styles.episodeDescription} numberOfLines={2}>
-                  {item.description}
-                </Text>
-                <Text style={styles.episodeDuration}>{item.duration}</Text>
-              </View>
-              {watchedEpisodes.has(item.id) ? (
-                <CheckCircle2 size={24} color="#0ea5e9" />
-              ) : (
-                <Play size={24} color="#fff" />
-              )}
-            </TouchableOpacity>
-          )}
+          contentContainerStyle={styles.listContentContainer} // Style pour le contenu interne
+          renderItem={({ item }) => {
+            const displayDuration = formatDuration(item.duration);
+            const isWatched = watchedEpisodes.has(item.id);
+
+            const handlePress = () => {
+              router.push({
+                pathname: '/(tabs)/player',
+                params: { episodeId: item.id }
+              });
+            };
+
+            return (
+              // Rendre la carte entière cliquable pour la navigation
+              <TouchableOpacity
+                style={[styles.episodeItem, isWatched && styles.episodeItemWatched]} // Style optionnel pour item vu
+                onPress={handlePress}
+                activeOpacity={0.8} // Légèrement plus visible au toucher
+              >
+                {/* 1. Placeholder Image/Icon */}
+                <View style={styles.episodeImagePlaceholder}>
+                  {/* Tu pourrais mettre une Image ici plus tard */}
+                  <Music size={24} color={colors.textSecondary} />
+                </View>
+
+                {/* Informations principales (Titre, Desc, Durée) */}
+                <View style={styles.episodeInfo}>
+                  <Text style={styles.episodeTitle} numberOfLines={2}>{item.title}</Text>
+                  <Text style={styles.episodeMeta} numberOfLines={1}>
+                    {item.description ? item.description.substring(0, 50) + '...' : new Date(item.publication_date).toLocaleDateString()}
+                  </Text>
+                  <Text style={styles.episodeDuration}>{displayDuration}</Text>
+                </View>
+
+                {/* Bouton d'action à droite (Play/Check) */}
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={handlePress} // Le bouton fait la même action que la carte
+                  hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }} // Zone de clic plus grande
+                >
+                  {isWatched ? (
+                    <CheckCircle2 size={28} color={colors.iconColorWatched} />
+                  ) : (
+                    <Play size={28} color={colors.iconColor} />
+                  )}
+                </TouchableOpacity>
+              </TouchableOpacity>
+            );
+          }}
         />
       )}
     </View>
   );
 }
 
+// --- Styles Refondus (UI Moderne) ---
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: colors.background,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
     padding: 20,
   },
   header: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 20,
-    marginTop: 20,
+    color: colors.textPrimary,
+    marginBottom: 15,
+    marginTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingHorizontal: 20,
+    backgroundColor: colors.background,
+    borderBottomWidth: 1,
   },
   offlineContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#333',
-    padding: 12,
+    backgroundColor: colors.offlineBackground,
+    paddingVertical: 8,
+    paddingHorizontal: 15,
     borderRadius: 8,
     marginBottom: 16,
+    marginHorizontal: 20,
   },
   offlineText: {
-    color: '#aaa',
+    color: colors.offlineText,
     fontSize: 14,
-    marginLeft: 8,
+    marginLeft: 10,
     flex: 1,
   },
   errorContainer: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    backgroundColor: colors.errorBackground,
     padding: 12,
     marginBottom: 16,
     borderRadius: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: '#ef4444',
+    borderLeftWidth: 4,
+    borderLeftColor: colors.errorBorder,
+    marginHorizontal: 20,
   },
   errorText: {
-    color: '#ff4444',
-    fontSize: 16,
+    color: colors.errorText,
+    fontSize: 15,
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 30,
+    paddingBottom: 50,
   },
   emptyText: {
-    color: '#888',
-    fontSize: 16,
+    color: colors.textMuted,
+    fontSize: 17,
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   hintText: {
-    color: '#666',
+    color: colors.textSecondary,
     fontSize: 14,
     textAlign: 'center',
+  },
+  // --- Styles Liste & Items ---
+  listContentContainer: {
+    paddingHorizontal: 10, // Réduire légèrement le padding global
+    paddingBottom: 30,
+    paddingTop: 5,
   },
   episodeItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 15,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 10,
-    marginBottom: 10,
+    backgroundColor: 'transparent', // Fond transparent, on se base sur le fond global
+    paddingVertical: 12, // Padding vertical
+    paddingHorizontal: 10, // Padding horizontal
+    marginBottom: 8, // Espace entre items
+    // Enlever le fond de carte et l'ombre pour un look plus intégré type liste
+  },
+  episodeItemWatched: {
+    opacity: 0.6, // Atténuer un peu plus les éléments vus
+  },
+  // Style pour le placeholder d'image
+  episodeImagePlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 8, // Coins arrondis
+    backgroundColor: colors.cardBackground, // Fond gris foncé
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15, // Espace entre image et texte
   },
   episodeInfo: {
-    flex: 1,
+    flex: 1, // Prend l'espace restant entre image et bouton
+    justifyContent: 'center', // Centrer verticalement le contenu texte
   },
   episodeTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 4,
+    fontSize: 16, // Taille ok
+    fontWeight: 'bold', // Gras pour le titre
+    color: colors.textPrimary,
+    marginBottom: 4, // Espace sous le titre
   },
-  episodeDescription: {
-    fontSize: 14,
-    color: '#888',
-    marginBottom: 4,
+  episodeMeta: { // Pour description courte ou date
+    fontSize: 13,
+    color: colors.textSecondary, // Couleur secondaire
+    marginBottom: 6, // Espace sous la meta
   },
   episodeDuration: {
     fontSize: 12,
-    color: '#666',
+    color: colors.textMuted, // Couleur discrète
   },
+  // Bouton d'action à droite
+  actionButton: {
+    paddingLeft: 15, // Espace avant le bouton
+    paddingRight: 5, // Espace après le bouton
+    height: 40, // Assurer une hauteur suffisante pour le clic
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Pas besoin de styles spécifiques pour playIcon/checkIcon si on utilise juste les icônes
   loadingText: {
-    color: '#fff',
+    marginTop: 10,
+    color: colors.loadingText,
     fontSize: 16,
-    textAlign: 'center',
   },
 });

@@ -156,7 +156,10 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 20,
+    marginBottom: 15,
+    marginTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
   },
   content: {
     flex: 1,

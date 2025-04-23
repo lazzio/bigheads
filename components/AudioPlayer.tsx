@@ -401,27 +401,27 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
       {/* Playback Controls */}
       <View style={styles.controls}>
          <TouchableOpacity onPress={onPrevious} style={styles.button} disabled={!onPrevious}>
-           <MaterialIcons name="skip-previous" color={onPrevious ? "#fff" : "#555"} size={32} />
+           <MaterialIcons name="skip-previous" color={onPrevious ? "#fff" : "#555"} size={42} />
          </TouchableOpacity>
 
          <TouchableOpacity onPress={() => handleSeek(-30)} style={styles.button}>
-           <MaterialIcons name="replay-30" color="#fff" size={32} />
+           <MaterialIcons name="replay-30" color="#fff" size={42} />
          </TouchableOpacity>
 
          <TouchableOpacity onPress={handlePlayPause} style={[styles.button, styles.playButton]}>
            {isPlaying ? (
-             <MaterialIcons name="pause" color="#fff" size={42} />
+             <MaterialIcons name="pause" color="#fff" size={48} />
            ) : (
-             <MaterialIcons name="play-arrow" color="#fff" size={42} />
+             <MaterialIcons name="play-arrow" color="#fff" size={48} />
            )}
          </TouchableOpacity>
 
          <TouchableOpacity onPress={() => handleSeek(30)} style={styles.button}>
-           <MaterialIcons name="forward-30" color="#fff" size={32} />
+           <MaterialIcons name="forward-30" color="#fff" size={42} />
          </TouchableOpacity>
 
          <TouchableOpacity onPress={onNext} style={styles.button} disabled={!onNext}>
-           <MaterialIcons name="skip-next" color={onNext ? "#fff" : "#555"} size={32} />
+           <MaterialIcons name="skip-next" color={onNext ? "#fff" : "#555"} size={42} />
          </TouchableOpacity>
        </View>
 
@@ -458,7 +458,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     alignItems: 'center',
     padding: 20,
     backgroundColor: '#121212',
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   title: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
     textAlign: 'center',
@@ -563,15 +563,20 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   button: {
-    padding: 10,
+    // padding: 10,
   },
   playButton: {
     backgroundColor: '#0ea5e9',
-    borderRadius: 30,
-    width: 60,
-    height: 60,
+    borderRadius: 40,
+    width: 80,
+    height: 80,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   additionalControls: {
     flexDirection: 'column',
@@ -583,10 +588,12 @@ const styles = StyleSheet.create({
   skipButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 8,
-    marginBottom: 10,
+    paddingTop: 4,
+    paddingBottom: 4,
+    paddingHorizontal: 10,
+    marginBottom: 15,
     backgroundColor: '#333',
-    borderRadius: 8,
+    borderRadius: 30,
   },
   skipText: {
     color: '#fff',
@@ -596,9 +603,11 @@ const styles = StyleSheet.create({
   sleepButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 8,
+    paddingTop: 4,
+    paddingBottom: 4,
+    paddingHorizontal: 10,
     backgroundColor: '#333',
-    borderRadius: 8,
+    borderRadius: 30,
   },
   sleepButtonActive: {
     backgroundColor: '#0ea5e9',
