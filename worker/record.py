@@ -399,6 +399,9 @@ def process_episodes(feed_data: Dict, max_episodes: int, db_manager: DatabaseMan
         count = 0
         
         for item in items:
+            if not item["title"].startswith("L'INTÉGRALE"):
+                continue
+            
             if count >= max_episodes:
                 break
                 
@@ -467,13 +470,13 @@ def main():
         fetcher = PodcastFetcher()
         
         # Get RSS feed
-        rss_link = fetcher.extract_rss_link(AUDIO_SOURCE_URL)
-        if not rss_link:
-            logger.error("Could not find RSS link")
-            return
+        # rss_link = fetcher.extract_rss_link(AUDIO_SOURCE_URL)
+        # if not rss_link:
+        #     logger.error("Could not find RSS link")
+        #     return
             
         # Get and parse feed
-        xml_content = fetcher.get_feed_content(rss_link)
+        xml_content = fetcher.get_feed_content(AUDIO_SOURCE_URL)
         if not xml_content:
             logger.error("Could not fetch feed content")
             return
