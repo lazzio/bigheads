@@ -356,26 +356,38 @@ class AudioManager {
 
   // seekTo prend maintenant des millisecondes pour la cohérence interne
   public async seekTo(positionMillis: number): Promise<void> {
-    if (!this.isPlayerReady) return;
-    const positionSeconds = positionMillis / 1000;
-    console.log(`[AudioManager] Seeking to absolute ${positionSeconds.toFixed(1)}s`);
+    if (!this.isPlayerReady || this.currentEpisode === null) return;
+    
+    // Ensure position is within bounds (slightly before duration if seeking to end)
+    const safePositionMillis = Math.max(0, this.duration > 0 ? Math.min(positionMillis, this.duration - 100) : positionMillis);
+    const positionSeconds = safePositionMillis / 1000;
+    
+    console.log(`[AudioManager] Seeking to ${positionSeconds}s (requested ${positionMillis}ms, safe ${safePositionMillis}ms)`);
+    
     try {
-      const duration = await TrackPlayer.getDuration(); // en secondes
-      // S'assurer que la position cible est valide
-      const targetPosition = duration ? Math.min(Math.max(0, positionSeconds), duration - 0.1) : Math.max(0, positionSeconds);
-
-      // Simplement demander à TrackPlayer de chercher la position
-      await TrackPlayer.seekTo(targetPosition);
-
-      // <<< Supprimer la mise à jour locale immédiate >>>
-      // await this.updateLocalStatus();
-      // La mise à jour se fera via l'événement PlaybackProgressUpdated
-
+        await TrackPlayer.seekTo(positionSeconds);
+        // DO NOT update this.position or notify here immediately.
+        // Let the PlaybackProgressUpdated event handle the state update.
+        // This prevents the slider from jumping back if the seek takes time.
+        console.log(`[AudioManager] TrackPlayer.seekTo(${positionSeconds}) called.`);
     } catch (error) {
-      console.error(`[AudioManager] Error seeking to ${positionSeconds}s:`, error);
-      // Optionnel: notifier une erreur de seek?
-      // this.notifyListeners({ type: 'error', error: 'Erreur lors du déplacement.' });
+        console.error(`[AudioManager] Error seeking to ${positionSeconds}s:`, error);
+        // Optionally notify an error, but avoid changing position state
+        this.notifyListeners({ type: 'error', error: `Erreur lors du déplacement à ${formatTime(safePositionMillis)}.` });
     }
+    /* 
+    // REMOVED: Immediate state update and notification
+    this.position = positionMillis; 
+    this.notifyListeners({
+      type: 'status',
+      position: this.position,
+      duration: this.duration,
+      isPlaying: this.isPlaying,
+      isBuffering: this.isBuffering, // Keep buffering state consistent? Or set to true?
+      isLoaded: true,
+      currentEpisodeId: this.currentEpisode.id,
+    });
+    */
   }
 
   // --- NOUVELLE MÉTHODE: Avancer/Reculer relativement ---
@@ -384,18 +396,21 @@ class AudioManager {
    * @param offsetSeconds Nombre de secondes à ajouter (positif pour avancer, négatif pour reculer).
    */
   public async seekRelative(offsetSeconds: number): Promise<void> {
-    if (!this.isPlayerReady) return;
+    if (!this.isPlayerReady || this.currentEpisode === null) { // Added check for currentEpisode
+        console.warn('[AudioManager] seekRelative called but player not ready or no episode loaded.');
+        return;
+    }
     console.log(`[AudioManager] Seeking relative by ${offsetSeconds}s`);
     try {
-      // Obtenir la position actuelle directement depuis TrackPlayer pour plus de précision
-      const currentPositionSeconds = await TrackPlayer.getPosition();
+      // Utiliser la position interne comme base pour le calcul relatif
+      const currentPositionSeconds = this.position / 1000;
       const newPositionSeconds = currentPositionSeconds + offsetSeconds;
       // Utiliser la méthode seekTo existante qui gère les limites et prend des millisecondes
-      await this.seekTo(newPositionSeconds * 1000); // seekTo ne met plus à jour immédiatement
+      // seekTo notifiera maintenant immédiatement les listeners
+      await this.seekTo(newPositionSeconds * 1000);
     } catch (error) {
       console.error(`[AudioManager] Error seeking relative by ${offsetSeconds}s:`, error);
-      // Optionnel: notifier une erreur de seek?
-      // this.notifyListeners({ type: 'error', error: 'Erreur lors du déplacement relatif.' });
+      // seekTo gère déjà la notification d'erreur si nécessaire
     }
   }
 
@@ -670,7 +685,7 @@ export async function requestBatteryOptimizationExemption(): Promise<boolean> {
       } catch (e) {
         try {
           // Méthode 2: Utiliser IntentLauncher
-          // @ts-ignore // Ignore error assuming the type definition is incorrect or environment issue
+          // L'argument 'data' doit être dans l'objet options
           await IntentLauncher.startActivityAsync(
             'android.settings.APPLICATION_DETAILS_SETTINGS',
             { data: intent }

@@ -204,7 +204,7 @@ export default function EpisodesScreen() {
   if (loading) {
     return (
       <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={colors.textPrimary} />
+        <ActivityIndicator size="large" color={colors.iconColorWatched} />
         <Text style={styles.loadingText}>Chargement des épisodes...</Text>
       </View>
     );
