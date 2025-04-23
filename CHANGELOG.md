@@ -1,3 +1,9 @@
+## [1.5.1](https://github.com/lazzio/bigheads/-/compare/v1.5.0...v1.5.1) (2025-04-23)
+
+### Bug Fixes
+
+* **worker:** new rss process ([#33](https://github.com/lazzio/bigheads/-/issues/33)) ([60550ff](https://github.com/lazzio/bigheads/-/commit/60550fff8ca82a4536a3528def5db2eb651b413a))
+
 ## [1.5.0](https://github.com/lazzio/bigheads/-/compare/v1.4.0...v1.5.0) (2025-04-23)
 
 ### Features
