@@ -1,3 +1,9 @@
+## [1.5.0](https://github.com/lazzio/bigheads/-/compare/v1.4.0...v1.5.0) (2025-04-23)
+
+### Features
+
+* store duration in seconds ([#31](https://github.com/lazzio/bigheads/-/issues/31)) ([cefcecd](https://github.com/lazzio/bigheads/-/commit/cefcecdcde289ba733d7174d273ff25efe34c014))
+
 ## [1.4.0](https://github.com/lazzio/bigheads/-/compare/v1.3.0...v1.4.0) (2025-04-15)
 
 ### Features
