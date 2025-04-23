@@ -1,557 +1,539 @@
-import { View, Text, StyleSheet, AppState, BackHandler, AppStateStatus, ActivityIndicator } from 'react-native';
-import { useEffect, useState, useRef, useCallback } from 'react';
-import { useLocalSearchParams, useRouter } from 'expo-router'; // Importer useFocusEffect
+import { View, Text, StyleSheet, AppState, Platform, BackHandler, ActivityIndicator } from 'react-native'; // Added ActivityIndicator
+import { useEffect, useState, useRef } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import AudioPlayer from '../../components/AudioPlayer';
 import { supabase } from '../../lib/supabase';
 import { Database } from '../../types/supabase';
 import { Episode } from '../../types/episode';
-import { audioManager, AudioStatus } from '../../utils/OptimizedAudioService';
+import { audioManager } from '../../utils/OptimizedAudioService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import NetInfo from '@react-native-community/netinfo';
-import { syncPlaybackPositions } from '../../utils/PlaybackSyncService';
 
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
+type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row']; // Added type
 
+// Constante pour la clé de cache
 const EPISODES_CACHE_KEY = 'cached_episodes';
-const PENDING_POSITIONS_KEY = 'pendingPlaybackPositions';
-
-interface PendingPosition {
-  episodeId: string;
-  positionSeconds: number;
-  userId: string;
-  timestamp: string;
-}
-
-function parseDuration(durationStr: string | number | null): number | null {
-  if (typeof durationStr === 'number') return durationStr;
-  if (typeof durationStr !== 'string' || !durationStr) return null;
-  const parts = durationStr.split(':').map(Number);
-  let seconds = 0;
-  if (parts.length === 3) seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
-  else if (parts.length === 2) seconds = parts[0] * 60 + parts[1];
-  else if (parts.length === 1 && !isNaN(parts[0])) seconds = parts[0];
-  return isNaN(seconds) ? null : seconds;
-}
 
 export default function PlayerScreen() {
-  const { episodeId, offlinePath, source } = useLocalSearchParams<{ episodeId?: string; offlinePath?: string; source?: string }>();
-  const router = useRouter();
+  const { episodeId, offlinePath } = useLocalSearchParams<{ episodeId: string, offlinePath: string }>();
   const [episodes, setEpisodes] = useState<Episode[]>([]);
-  const [currentIndex, setCurrentIndex] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true); // Chargement initial de la liste d'épisodes
+  const [currentIndex, setCurrentIndex] = useState(-1); // Initialize to -1
+  const [playbackPositions, setPlaybackPositions] = useState<Map<string, number>>(new Map()); // State for positions
+  const [loading, setLoading] = useState(true);
+  const [isOffline, setIsOffline] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // const [isOffline, setIsOffline] = useState(false); // Moins critique pour la logique principale
-  const currentEpisodeIdRef = useRef<string | null>(null);
-  const appState = useRef(AppState.currentState);
-  const isSavingRef = useRef(false);
-  // const [isLoadingSound, setIsLoadingSound] = useState(false); // Supprimé, géré par AudioPlayer
-  // const episodeDurationRef = useRef<number | null>(null); // Supprimé, géré par AudioPlayer/audioManager
+  const appStateRef = useRef(AppState.currentState);
+  const router = useRouter();
+  const currentEpisodeRef = useRef<Episode | null>(null); // Ref to track the episode being loaded
 
-  // --- Helpers pour sauvegarde/nettoyage local (inchangés) ---
-  const savePositionLocally = useCallback(async (epId: string, positionSeconds: number, userId: string) => {
-    // ... (code existant)
-     console.log(`[PlayerScreen] Saving position locally for ${epId}`);
-     try {
-       const existingPendingString = await AsyncStorage.getItem(PENDING_POSITIONS_KEY);
-       let pendingPositions: PendingPosition[] = existingPendingString ? JSON.parse(existingPendingString) : [];
-       pendingPositions = pendingPositions.filter(p => !(p.userId === userId && p.episodeId === epId));
-       pendingPositions.push({ episodeId: epId, positionSeconds, userId, timestamp: new Date().toISOString() });
-       await AsyncStorage.setItem(PENDING_POSITIONS_KEY, JSON.stringify(pendingPositions));
-       console.log(`[PlayerScreen] Position for ${epId} saved locally.`);
-     } catch (error) {
-       console.error("[PlayerScreen] Error saving position locally:", error);
-     }
-  }, []);
-
-   const clearPendingPosition = useCallback(async (episodeId: string, userId: string) => {
-     console.log(`[PlayerScreen] Clearing pending local position for ${episodeId}`);
-     try {
-       const existingPendingString = await AsyncStorage.getItem(PENDING_POSITIONS_KEY);
-       if (!existingPendingString) return;
-       let pendingPositions: PendingPosition[] = JSON.parse(existingPendingString);
-       const initialLength = pendingPositions.length;
-       pendingPositions = pendingPositions.filter(p => !(p.userId === userId && p.episodeId === episodeId));
-       if (pendingPositions.length < initialLength) {
-         if (pendingPositions.length === 0) {
-           await AsyncStorage.removeItem(PENDING_POSITIONS_KEY);
-         } else {
-           await AsyncStorage.setItem(PENDING_POSITIONS_KEY, JSON.stringify(pendingPositions));
-         }
-         console.log(`[PlayerScreen] Cleared pending local position for ${episodeId}.`);
-       }
-     } catch (error) {
-       console.error("[PlayerScreen] Error clearing pending position:", error);
-     }
-   }, []);
-
-  // --- Fonction pour SAUVEGARDER la position (Hybride) ---
-  const savePlaybackPosition = useCallback(async (
-    epId: string | null,
-    positionMillis: number | null,
-    markAsFinished: boolean = false
-  ) => {
-    // ... (code existant, incluant récupération de durée via getStatusAsync) ...
-     if (isSavingRef.current) return;
-     if (!epId || positionMillis === null) return;
-     isSavingRef.current = true; // Mettre le flag au début
-
-     let durationSeconds = 0;
-     try {
-       const currentStatus = await audioManager.getStatusAsync();
-       if (currentStatus.isLoaded) {
-         durationSeconds = currentStatus.durationMillis / 1000;
-       }
-     } catch (e) { console.warn("[PlayerScreen] Impossible d'obtenir la durée actuelle pour la sauvegarde."); }
-
-     const positionSeconds = positionMillis / 1000;
-     const isConsideredFinished = markAsFinished || (durationSeconds > 0 && positionSeconds >= durationSeconds * 0.98);
-
-     if (!isConsideredFinished && positionSeconds < 5) {
-       isSavingRef.current = false; // Ne pas oublier de remettre le flag
-       return;
-     }
-
-     const { data: { user } } = await supabase.auth.getUser();
-     if (!user) {
-       console.warn('[PlayerScreen] Impossible de sauvegarder la position, utilisateur non connecté.');
-       isSavingRef.current = false; // Ne pas oublier de remettre le flag
-       return;
-     }
-
-     console.log(`[PlayerScreen] Tentative de sauvegarde pour ${epId}: ${positionSeconds}s, Terminé: ${isConsideredFinished}`);
-     const netInfoState = await NetInfo.fetch();
-     const positionData = { /* ... */ user_id: user.id, episode_id: epId, playback_position: isConsideredFinished ? 0 : positionSeconds, watched_at: new Date().toISOString(), is_finished: isConsideredFinished };
-
-     if (netInfoState.isConnected && netInfoState.isInternetReachable) {
-       try {
-         const { error: upsertError } = await supabase.from('watched_episodes').upsert(positionData, { onConflict: 'user_id, episode_id' });
-         if (upsertError) {
-           console.error("[PlayerScreen] Erreur de sauvegarde sur Supabase:", upsertError.message);
-           if (!isConsideredFinished) await savePositionLocally(epId, positionSeconds, user.id);
-         } else {
-           console.log(`[PlayerScreen] Position/Statut pour ${epId} sauvegardé sur Supabase.`);
-           await clearPendingPosition(epId, user.id);
-           syncPlaybackPositions(); // Déclencher la synchro générale
-         }
-       } catch (err) {
-         console.error("[PlayerScreen] Exception de sauvegarde sur Supabase:", err);
-         if (!isConsideredFinished) await savePositionLocally(epId, positionSeconds, user.id);
-       }
-     } else {
-       if (!isConsideredFinished) {
-         console.log(`[PlayerScreen] Hors ligne: Sauvegarde de la position pour ${epId} localement.`);
-         await savePositionLocally(epId, positionSeconds, user.id);
-       } else {
-         console.log(`[PlayerScreen] Hors ligne: Impossible de marquer ${epId} comme terminé.`);
-       }
-     }
-     isSavingRef.current = false; // Remettre le flag à la fin
-  }, [savePositionLocally, clearPendingPosition]); // Ajouter les dépendances
-
-  // --- Fonction pour RÉCUPÉRER la position (Hybride) ---
-  const getPlaybackPosition = useCallback(async (epId: string): Promise<number | null> => {
-    // ... (code existant) ...
-     const { data: { user } } = await supabase.auth.getUser();
-     if (!user) return null;
-     let supabasePositionMillis: number | null = null;
-     let localPositionMillis: number | null = null;
-     const netInfoState = await NetInfo.fetch();
-
-     if (netInfoState.isConnected && netInfoState.isInternetReachable) {
-       try { /* ... fetch supabase ... */
-         const { data, error } = await supabase.from('watched_episodes').select('playback_position').eq('user_id', user.id).eq('episode_id', epId).maybeSingle();
-         if (error) console.error("[PlayerScreen] Erreur de récupération depuis Supabase:", error.message);
-         else if (data?.playback_position) supabasePositionMillis = data.playback_position * 1000;
-       } catch (err) { console.error("[PlayerScreen] Exception de récupération depuis Supabase:", err); }
-     }
-     try { /* ... fetch local ... */
-       const existingPendingString = await AsyncStorage.getItem(PENDING_POSITIONS_KEY);
-       if (existingPendingString) {
-         const pendingPositions: PendingPosition[] = JSON.parse(existingPendingString);
-         const pending = pendingPositions.find(p => p.userId === user.id && p.episodeId === epId);
-         if (pending) localPositionMillis = pending.positionSeconds * 1000;
-       }
-     } catch (error) { console.error("[PlayerScreen] Erreur de récupération depuis le stockage local:", error); }
-
-     const finalPosition = localPositionMillis ?? supabasePositionMillis; // Priorité au local
-     console.log(`[PlayerScreen] Position initiale finale pour ${epId}: ${finalPosition}ms`);
-     return finalPosition;
-  }, []); // Pas de dépendances externes nécessaires ici
-
-  // --- Fonction pour charger les épisodes depuis le cache ---
-  const loadCachedEpisodes = useCallback(async (): Promise<Episode[]> => {
-    // ... (code existant) ...
-     try {
-       const cachedData = await AsyncStorage.getItem(EPISODES_CACHE_KEY);
-       if (cachedData) {
-         const episodes: Episode[] = JSON.parse(cachedData);
-         // Normaliser la durée
-         const normalizedEpisodes = episodes.map(ep => ({ ...ep, duration: parseDuration(ep.duration) }));
-         console.log(`Loaded ${normalizedEpisodes.length} episodes from cache for player`);
-         return normalizedEpisodes;
-       }
-     } catch (error) { console.error('Error loading cached episodes:', error); }
-     return [];
-  }, []); // Pas de dépendances
-
-  // --- Fonction pour récupérer les détails d'un épisode hors ligne ---
-  const getOfflineEpisodeDetails = useCallback(async (filePath: string): Promise<Episode | null> => {
-    // ... (code existant avec parseDuration) ...
-     try {
-       const metaPath = filePath + '.meta';
-       const fileExists = await FileSystem.getInfoAsync(metaPath);
-       if (fileExists.exists) {
-         const metaContent = await FileSystem.readAsStringAsync(metaPath);
-         const metadata = JSON.parse(metaContent);
-         return {
-           id: metadata.id,
-           title: metadata.title || 'Épisode téléchargé',
-           description: metadata.description || '',
-           mp3Link: filePath,
-           publicationDate: metadata.downloadDate || new Date().toISOString(),
-           duration: parseDuration(metadata.duration),
-           offline_path: filePath,
-           originalMp3Link: metadata.originalMp3Link
-         };
-       } return null;
-     } catch (error) { console.error('Error getting offline episode details:', error); return null; }
-  }, []); // Pas de dépendances
-
-  // --- Fonction pour charger l'épisode et sa position ---
-  const loadEpisodeAndPosition = useCallback(async (index: number | null) => {
-    if (index === null || episodes.length <= index) {
-      console.log("[PlayerScreen] Index invalide ou épisodes non chargés, déchargement.");
-      await audioManager.unloadSound();
-      currentEpisodeIdRef.current = null;
-      return;
-    }
-
-    const currentEp = episodes[index];
-    // Vérifier si l'épisode à charger est déjà celui en cours
-    if (currentEpisodeIdRef.current === currentEp.id && (await audioManager.getStatusAsync()).isLoaded) {
-        console.log(`[PlayerScreen] Episode ${currentEp.title} est déjà chargé.`);
-        // Optionnel: forcer la mise à jour de l'état dans AudioPlayer si nécessaire
-        // audioManager.notifyListeners({ type: 'status', ...(await audioManager.getStatusAsync()) });
-        return; // Ne pas recharger si c'est le même épisode et qu'il est chargé
-    }
-
-
-    currentEpisodeIdRef.current = currentEp.id;
-    // setIsLoadingSound(true); // Supprimé
-    setError(null); // Réinitialiser l'erreur avant le chargement
-    console.log(`[PlayerScreen] Préparation chargement: ${currentEp.title} (Index: ${index})`);
-
-    try {
-      const initialPosition = await getPlaybackPosition(currentEp.id);
-      console.log(`[PlayerScreen] Position initiale pour ${currentEp.id}: ${initialPosition}ms`);
-      await audioManager.loadSound(currentEp, initialPosition ?? 0);
-      console.log(`[PlayerScreen] Chargé avec succès: ${currentEp.title}`);
-    } catch (loadError: any) {
-      console.error("[PlayerScreen] Erreur chargement épisode:", loadError);
-      setError(`Erreur chargement: ${loadError.message || 'Inconnue'}`);
-      await audioManager.unloadSound(); // Décharger en cas d'erreur
-      currentEpisodeIdRef.current = null; // Réinitialiser l'ID en cas d'erreur
-    } finally {
-      // setIsLoadingSound(false); // Supprimé
-    }
-  }, [episodes, getPlaybackPosition]); // Dépend de episodes et getPlaybackPosition
-
-  // --- Effet Principal d'Initialisation et de Chargement ---
   useEffect(() => {
-    let isMounted = true;
-    setLoading(true); // Indiquer le chargement initial de l'écran
+    // Vérifier l'état de la connexion
+    checkNetworkStatus();
 
-    const initializeAndLoad = async () => {
+    // Initialiser le service audio
+    const initAudio = async () => {
       try {
-        // 1. Configurer le service audio (une seule fois)
         await audioManager.setupAudio();
-
-        // 2. Déterminer la source des épisodes (API ou Cache)
-        const networkState = await NetInfo.fetch();
-        let fetchedEpisodes: Episode[] = [];
-
-        if (offlinePath) {
-          // Priorité au chargement hors ligne si spécifié
-          console.log("[PlayerScreen] Chargement épisode hors ligne demandé:", offlinePath);
-          const offlineEpisode = await getOfflineEpisodeDetails(offlinePath);
-          if (offlineEpisode) {
-            fetchedEpisodes = [offlineEpisode];
-          } else {
-            throw new Error("Impossible de charger les détails de l'épisode hors ligne.");
-          }
-        } else if (networkState.isConnected) {
-          // En ligne: Charger depuis Supabase
-          console.log("[PlayerScreen] En ligne, chargement depuis Supabase...");
-          const { data, error: apiError } = await supabase
-            .from('episodes')
-            .select('*')
-            .order('publication_date', { ascending: false });
-
-          if (apiError) throw apiError;
-
-          fetchedEpisodes = (data as SupabaseEpisode[]).map(episode => ({
-            id: episode.id,
-            title: episode.title,
-            description: episode.description,
-            originalMp3Link: episode.original_mp3_link ?? undefined,
-            mp3Link: episode.mp3_link ?? '',
-            duration: parseDuration(episode.duration),
-            publicationDate: episode.publication_date,
-            offline_path: episode.offline_path ?? undefined,
-          }));
-          // Sauvegarder dans le cache après fetch API réussi
-          await AsyncStorage.setItem(EPISODES_CACHE_KEY, JSON.stringify(fetchedEpisodes));
-        } else {
-          // Hors ligne (et pas d'offlinePath spécifié): Charger depuis le cache
-          console.log("[PlayerScreen] Hors ligne, chargement depuis le cache...");
-          fetchedEpisodes = await loadCachedEpisodes();
-          if (fetchedEpisodes.length === 0) {
-            setError("Mode hors ligne et aucun épisode en cache.");
-          }
-        }
-
-        if (!isMounted) return; // Vérifier si le composant est toujours monté
-
-        // 3. Mettre à jour l'état des épisodes (une seule fois)
-        setEpisodes(fetchedEpisodes);
-
-        // 4. Déterminer l'index initial (après que `episodes` soit défini)
-        let initialIndex: number | null = null;
-        if (fetchedEpisodes.length > 0) {
-            if (offlinePath) {
-                // Si chargé depuis offlinePath, l'index est 0
-                initialIndex = 0;
-            } else if (episodeId) {
-                // Chercher l'index par ID
-                const index = fetchedEpisodes.findIndex(ep => ep.id === episodeId);
-                if (index !== -1) {
-                    initialIndex = index;
-                } else {
-                    console.warn(`[PlayerScreen] Episode ID ${episodeId} non trouvé dans la liste chargée.`);
-                    // Optionnel: définir sur le premier épisode? Ou afficher une erreur?
-                    // initialIndex = 0; // Charger le premier par défaut?
-                    setError("L'épisode demandé n'a pas été trouvé.");
-                }
-            } else {
-                // Aucun ID/chemin spécifié, charger le premier épisode par défaut
-                initialIndex = 0;
-                console.log("[PlayerScreen] Aucun épisode spécifié, chargement du premier.");
-            }
-        } else {
-            console.log("[PlayerScreen] Aucun épisode à charger.");
-            // setError("Aucun épisode disponible."); // Géré par le rendu conditionnel
-        }
-
-        // 5. Mettre à jour l'index et arrêter le chargement initial
-        setCurrentIndex(initialIndex);
-        setLoading(false); // Fin du chargement initial de l'écran
-
-      } catch (err: any) {
-        if (!isMounted) return;
-        console.error('[PlayerScreen] Erreur d\'initialisation:', err);
-        setError(`Erreur: ${err.message || 'Inconnue'}`);
-        setLoading(false); // Arrêter le chargement même en cas d'erreur
-        // Essayer de charger depuis le cache en dernier recours si l'API a échoué
-        if (!offlinePath) {
-            try {
-                const cached = await loadCachedEpisodes();
-                if (cached.length > 0) {
-                    setEpisodes(cached);
-                    // Essayer de trouver l'index dans le cache
-                    if (episodeId) {
-                        const index = cached.findIndex(ep => ep.id === episodeId);
-                        setCurrentIndex(index !== -1 ? index : 0); // Fallback au premier
-                    } else {
-                        setCurrentIndex(0);
-                    }
-                    setError("Affichage des données en cache suite à une erreur réseau."); // Info plutôt qu'erreur bloquante
-                }
-            } catch (cacheErr) {
-                // Ignorer l'erreur de cache ici, l'erreur principale est déjà définie
-            }
-        }
+      } catch (err) {
+        console.error("Error setting up audio:", err);
       }
     };
 
-    initializeAndLoad();
+    initAudio();
+    fetchEpisodes();
 
-    // Nettoyage au démontage
-    return () => {
-      isMounted = false;
-      console.log('[PlayerScreen] Démontage, déchargement audio.');
-      // Pas besoin de sauvegarder ici, l'effet AppState s'en charge
-      audioManager.unloadSound(); // Décharger le son au démontage
-    };
-  // Exécuter seulement au montage initial ou si les paramètres de route changent
-  }, [episodeId, offlinePath, loadCachedEpisodes, getOfflineEpisodeDetails]);
-
-
-  // --- Effet pour charger le son quand l'index change ---
-  useEffect(() => {
-    // Ne charger que si le chargement initial est terminé et qu'on a un index valide
-    if (!loading && currentIndex !== null) {
-      loadEpisodeAndPosition(currentIndex);
-    } else if (!loading && episodes.length > 0 && currentIndex === null) {
-        // Cas où les épisodes sont chargés mais aucun index n'a pu être déterminé (ex: ID invalide)
-        // On pourrait choisir de charger le premier épisode ici ou laisser l'état tel quel
-        console.log("[PlayerScreen] Episodes chargés mais index non défini, chargement du premier.");
-        setCurrentIndex(0); // Tentative de charger le premier
-        // loadEpisodeAndPosition(0); // Ou appeler directement si setCurrentIndex ne suffit pas
-    } else if (!loading && episodes.length === 0) {
-        // Cas où aucun épisode n'est disponible après chargement
-        audioManager.unloadSound(); // S'assurer que rien n'est chargé
-    }
-  }, [currentIndex, loading, loadEpisodeAndPosition, episodes.length]); // Ajouter episodes.length pour le cas 0 épisode
-
-
-  // --- Effet pour sauvegarder en arrière-plan ---
-  useEffect(() => {
-    const saveOnBackground = async () => {
-      const status = await audioManager.getStatusAsync();
-      if (status.isLoaded && currentEpisodeIdRef.current) {
-        await savePlaybackPosition(currentEpisodeIdRef.current, status.positionMillis, false);
+    // Gérer les changements d'état de l'application
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (appStateRef.current === 'active' && nextAppState.match(/inactive|background/)) {
+        // App passe en arrière-plan
+        console.log('App is going to background');
+      } else if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
+        // App revient au premier plan
+        console.log('App is coming to foreground');
+        checkNetworkStatus();
       }
-    };
+      appStateRef.current = nextAppState;
+    });
 
-    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
-      if (appState.current.match(/active/) && nextAppState.match(/inactive|background/)) {
-        console.log('[PlayerScreen] App en arrière-plan, sauvegarde position.');
-        saveOnBackground();
-      }
-      appState.current = nextAppState;
+    // Handler pour le bouton back d'Android
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      // Retourner sur la page précédente et libérer les ressources audio
+      router.back();
+      return true;
     });
 
     return () => {
+      // Nettoyage au démontage
       subscription.remove();
+      backHandler.remove();
     };
-  }, [savePlaybackPosition]); // Dépend de savePlaybackPosition
+  }, [router]);
 
-  // Add effect to handle notification open
-  useEffect(() => {
-    // If coming from notification and already have currentEpisodeId matching the requested one
-    if (source === 'notification' && episodeId && currentEpisodeIdRef.current === episodeId) {
-      console.log('[PlayerScreen] Opened from notification with matching episode, ensuring playback');
+  // Vérifier le statut du réseau
+  const checkNetworkStatus = async () => {
+    try {
+      const state = await NetInfo.fetch();
+      setIsOffline(!state.isConnected);
+    } catch (error) {
+      console.warn('Error checking network status:', error);
+      // En cas d'erreur, supposer que nous sommes en ligne
+      setIsOffline(false);
+    }
+  };
+
+  // Charger les épisodes depuis le cache
+  const loadCachedEpisodes = async (): Promise<Episode[]> => {
+    try {
+      const cachedData = await AsyncStorage.getItem(EPISODES_CACHE_KEY);
+      if (cachedData) {
+        const episodes = JSON.parse(cachedData);
+        console.log(`Loaded ${episodes.length} episodes from cache for player`);
+        return episodes;
+      }
+    } catch (error) {
+      console.error('Error loading cached episodes:', error);
+    }
+    return [];
+  };
+
+  // Récupérer les détails d'un épisode hors ligne depuis son fichier méta
+  const getOfflineEpisodeDetails = async (filePath: string): Promise<Episode | null> => {
+    try {
+      const metaPath = filePath + '.meta';
+      const fileExists = await FileSystem.getInfoAsync(metaPath);
       
-      // If sound is already loaded, just make sure it's playing
-      audioManager.getStatusAsync().then(status => {
-        if (status.isLoaded && !status.isPlaying && currentEpisodeIdRef.current === episodeId) {
-          console.log('[PlayerScreen] Resuming playback for already loaded episode');
-          audioManager.play().catch(err => 
-            console.error('[PlayerScreen] Error resuming playback:', err)
-          );
-        }
-      }).catch(error => console.error('[PlayerScreen] Error checking audio status:', error));
+      if (fileExists.exists) {
+        const metaContent = await FileSystem.readAsStringAsync(metaPath);
+        const metadata = JSON.parse(metaContent);
+        
+        return {
+          id: metadata.id,
+          title: metadata.title || 'Épisode téléchargé',
+          description: metadata.description || '',
+          mp3Link: filePath, // Utiliser le chemin local
+          publicationDate: metadata.downloadDate || new Date().toISOString(),
+          duration: metadata.duration || '0:00',
+          offline_path: filePath
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting offline episode details:', error);
+      return null;
     }
-  }, [episodeId, source]);
+  };
 
-  // --- Handler pour la fin de lecture ---
-  const handlePlaybackComplete = useCallback(async () => {
-    // ... (code existant) ...
-     console.log('[PlayerScreen] Lecture terminée détectée.');
-     if (currentEpisodeIdRef.current) {
-       let finalDurationMillis = 0;
-       try { finalDurationMillis = (await audioManager.getStatusAsync()).durationMillis; } catch(e) {}
-       await savePlaybackPosition(currentEpisodeIdRef.current, finalDurationMillis, true);
-       // Optionnel: passer au suivant?
-       // handleNext();
+  // Fetch playback positions for the user
+  const fetchPlaybackPositions = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return; // Not logged in
+
+      const { data, error } = await supabase
+        .from('watched_episodes')
+        .select('episode_id, playback_position')
+        .eq('user_id', user.id)
+        .filter('playback_position', 'gt', 0);
+
+      if (error) throw error;
+
+      const positionsMap = new Map<string, number>();
+      if (data) {
+        (data as WatchedEpisodeRow[]).forEach(row => {
+          if (row.episode_id && row.playback_position !== null) {
+            positionsMap.set(row.episode_id, row.playback_position);
+          }
+        });
+      }
+      console.log(`[PlayerScreen] Fetched ${positionsMap.size} playback positions.`);
+      setPlaybackPositions(positionsMap);
+
+    } catch (err) {
+      console.error('[PlayerScreen] Error fetching playback positions:', err);
+      // Don't set error state here, playback can continue from start
+    }
+  };
+
+  // Load and seek episode using AudioManager
+  const loadAndSeekEpisode = async (episode: Episode, initialPositionSeconds?: number) => {
+     if (!episode || currentEpisodeRef.current?.id === episode.id) {
+       // Avoid reloading the same episode unnecessarily
+       // console.log("[PlayerScreen] Skipping load: Episode already loaded or invalid.");
+       return;
      }
-  }, [savePlaybackPosition]);
+     
+     console.log(`[PlayerScreen] Loading episode: ${episode.title} with initial position: ${initialPositionSeconds ?? 0}s`);
+     currentEpisodeRef.current = episode; // Track the episode being loaded
+     
+     try {
+       await audioManager.loadEpisode(episode, initialPositionSeconds);
+     } catch (loadError) {
+       console.error("[PlayerScreen] Error loading episode in AudioManager:", loadError);
+       setError(`Failed to load audio: ${loadError instanceof Error ? loadError.message : 'Unknown error'}`);
+       currentEpisodeRef.current = null; // Reset ref on error
+     }
+  };
 
-  // --- Fonctions de navigation (Next/Previous) ---
-  const handleNext = useCallback(async () => {
-    // Sauvegarder la position actuelle d'abord
-    const status = await audioManager.getStatusAsync();
-    if (status?.isLoaded && currentEpisodeIdRef.current) {
-      await savePlaybackPosition(currentEpisodeIdRef.current, status.positionMillis);
-    }
-    // Passer au suivant
-    if (currentIndex !== null && currentIndex < episodes.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-    } else { console.log("Déjà au dernier épisode"); }
-  }, [currentIndex, episodes.length, savePlaybackPosition]);
-
-  const handlePrevious = useCallback(async () => {
-    // Sauvegarder la position actuelle d'abord
-    const status = await audioManager.getStatusAsync();
-    if (status?.isLoaded && currentEpisodeIdRef.current) {
-      await savePlaybackPosition(currentEpisodeIdRef.current, status.positionMillis);
-    }
-    // Passer au précédent
-    if (currentIndex !== null && currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1);
-    } else { console.log("Déjà au premier épisode"); }
-  }, [currentIndex, savePlaybackPosition]);
-
-  // --- Fonction de Retry ---
-  const handleRetryLoad = useCallback(() => {
-    console.log("[PlayerScreen] Retrying episode load...");
-    if (currentIndex !== null) {
-      // Relancer le chargement pour l'index actuel
-      loadEpisodeAndPosition(currentIndex);
-    } else {
-        // Si l'index est null, tenter de relancer l'initialisation complète ?
-        // Ou simplement essayer de recharger la liste d'épisodes ?
-        // Pour l'instant, on ne fait rien si l'index est null.
-        console.warn("[PlayerScreen] Retry impossible, index courant inconnu.");
-    }
-  }, [currentIndex, loadEpisodeAndPosition]);
-
-  // --- Gérer le bouton back Android ---
+  // Lorsque les épisodes sont chargés, définir l'épisode courant
   useEffect(() => {
-    const backAction = () => {
-      // Optionnel: Sauvegarder la position avant de quitter?
-      // savePlaybackPosition(...)
-      router.back(); // Comportement par défaut: retour
-      return true; // Indique qu'on a géré l'événement
+    const setCurrentEpisode = async () => {
+      // Si nous avons un chemin hors ligne spécifié
+      if (offlinePath && episodes.length === 0) {
+        try {
+          const offlineEpisode = await getOfflineEpisodeDetails(offlinePath);
+          if (offlineEpisode) {
+            setEpisodes([offlineEpisode]);
+            setCurrentIndex(0);
+            setLoading(false);
+            return;
+          }
+        } catch (error) {
+          console.error("Error loading offline episode:", error);
+        }
+      }
+      
+      // Sinon, chercher l'épisode par ID
+      if (episodeId && episodes.length > 0) {
+        const index = episodes.findIndex(ep => ep.id === episodeId);
+        if (index !== -1) {
+          setCurrentIndex(index);
+          setLoading(false);
+        }
+      }
     };
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
-    return () => backHandler.remove();
-  }, [router]); // Dépend de router
+    
+    setCurrentEpisode();
+  }, [episodeId, offlinePath, episodes]);
 
-  // --- Rendu JSX ---
-  const currentEpisode = !loading && currentIndex !== null && episodes.length > currentIndex ? episodes[currentIndex] : null;
+  // Effect to load episode data and positions
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      await checkNetworkStatus();
+      await fetchEpisodes(); // Fetches episodes list
+      // Fetch positions after episodes are potentially loaded
+      // We need episode IDs first if fetching positions relies on them
+      // Let's fetch positions inside fetchEpisodes after data is available
+      setLoading(false); // Set loading false after initial data fetch attempt
+    };
+    loadData();
+  }, []); // Run only once on mount
+
+  // Effect to determine and load the *current* episode when relevant state changes
+  useEffect(() => {
+    const determineAndLoadCurrentEpisode = async () => {
+      if (episodes.length === 0) {
+        // console.log("[PlayerScreen] Waiting for episodes list...");
+        return; // Wait until episodes are loaded
+      }
+
+      let targetIndex = -1;
+      let episodeToLoad: Episode | null = null;
+
+      if (offlinePath) {
+        // Prioritize offline path if provided
+        const offlineEpisode = await getOfflineEpisodeDetails(offlinePath);
+        if (offlineEpisode) {
+           // Find if this offline episode exists in our main list, or treat it as a standalone
+           const existingIndex = episodes.findIndex(ep => ep.id === offlineEpisode.id);
+           if (existingIndex !== -1) {
+              targetIndex = existingIndex;
+              episodeToLoad = episodes[targetIndex];
+              // Ensure offline path is set if we found it in the main list
+              if (!episodeToLoad.offline_path) episodeToLoad.offline_path = offlinePath;
+           } else {
+              // Treat as a standalone episode if not in the main list
+              episodeToLoad = offlineEpisode;
+              // We might need to temporarily add it to the state or handle it separately
+              // For simplicity, let's assume it should ideally be in the fetched list
+              // If not found, maybe show an error or just play it standalone?
+              // Let's find by path directly if ID match fails
+              targetIndex = episodes.findIndex(ep => ep.offline_path === offlinePath);
+              if (targetIndex !== -1) {
+                 episodeToLoad = episodes[targetIndex];
+              } else {
+                 // Fallback: use the details fetched directly
+                 console.warn("[PlayerScreen] Offline episode not found in main list, playing directly.");
+                 // Set a temporary index or handle outside the main list logic if needed
+                 targetIndex = 0; // Or some indicator?
+                 setEpisodes([offlineEpisode]); // Overwrite list if playing standalone offline
+              }
+           }
+        } else {
+           setError("Could not load offline episode details.");
+           setLoading(false);
+           return;
+        }
+      } else if (episodeId) {
+        // Find by episode ID
+        targetIndex = episodes.findIndex(ep => ep.id === episodeId);
+        if (targetIndex !== -1) {
+          episodeToLoad = episodes[targetIndex];
+        } else {
+          console.warn(`[PlayerScreen] Episode ID ${episodeId} not found in loaded list.`);
+          // Optionally try fetching again or show error
+          setError("Episode not found.");
+          setLoading(false);
+          return;
+        }
+      } else if (episodes.length > 0) {
+         // Default to the first episode if no specific ID/path provided
+         targetIndex = 0;
+         episodeToLoad = episodes[0];
+      }
+
+      if (targetIndex !== -1 && episodeToLoad) {
+        // Only update index and load if it's different or not set yet
+        if (currentIndex !== targetIndex) {
+           setCurrentIndex(targetIndex);
+        }
+        // Retrieve initial position for this episode
+        const initialPosition = playbackPositions.get(episodeToLoad.id);
+        // Load the episode with the initial position
+        await loadAndSeekEpisode(episodeToLoad, initialPosition);
+      } else if (!loading && episodes.length > 0) {
+         // If loading is done but no episode determined, maybe default to first?
+         // This case might indicate an issue if episodeId was expected but not found.
+         console.warn("[PlayerScreen] Could not determine episode to load.");
+         // setError("Could not determine episode to load.");
+      }
+      
+      // Ensure loading is false if we reached here with episodes
+      if (episodes.length > 0) setLoading(false);
+
+    };
+
+    determineAndLoadCurrentEpisode();
+
+  }, [episodeId, offlinePath, episodes, playbackPositions]); // Rerun when these change
+
+  async function fetchEpisodes() {
+    try {
+      setLoading(true);
+      
+      // Vérifier l'état du réseau
+      const networkState = await NetInfo.fetch();
+      const isConnected = networkState.isConnected;
+      setIsOffline(!isConnected);
+      
+      // Si nous avons un chemin hors ligne spécifié, charger directement cet épisode
+      if (offlinePath) {
+        const offlineEpisode = await getOfflineEpisodeDetails(offlinePath);
+        if (offlineEpisode) {
+          setEpisodes([offlineEpisode]);
+          setCurrentIndex(0);
+          setLoading(false);
+          return;
+        }
+      }
+      
+      // Si nous sommes hors ligne, essayer de charger depuis le cache
+      if (!isConnected) {
+        const cachedEpisodes = await loadCachedEpisodes();
+        if (cachedEpisodes.length > 0) {
+          setEpisodes(cachedEpisodes);
+          setError(null);
+          // Fetch positions even if offline, they might be relevant if synced before
+          await fetchPlaybackPositions(); 
+        } else {
+          setError('Aucun épisode disponible en mode hors ligne');
+        }
+        setLoading(false);
+        return;
+      }
+      
+      // Si nous sommes en ligne, charger depuis Supabase
+      const { data, error: apiError } = await supabase
+        .from('episodes')
+        .select('*')
+        .order('publication_date', { ascending: false });
+
+      if (apiError) throw apiError;
+
+      // Correction du mapping des propriétés snake_case vers camelCase
+      const formattedEpisodes: Episode[] = (data as SupabaseEpisode[]).map(episode => ({
+        id: episode.id,
+        title: episode.title,
+        description: episode.description,
+        originalMp3Link: episode.original_mp3_link,
+        mp3Link: episode.mp3_link,
+        duration: episode.duration,
+        publicationDate: episode.publication_date,
+        // Ensure offline_path is included if it exists in your DB schema/type
+        offline_path: (episode as any).offline_path || undefined 
+      }));
+
+      console.log("Episodes chargés:", formattedEpisodes.length);
+      
+      // Vérification et modification des URL si nécessaire
+      const validEpisodes = formattedEpisodes.map(episode => {
+        // S'assurer que les URL sont valides
+        if (episode.mp3Link && !episode.mp3Link.startsWith('http')) {
+          // Ajouter le protocole si manquant
+          episode.mp3Link = `https://${episode.mp3Link}`;
+        }
+        return episode;
+      });
+      
+      // Sauvegarder dans le cache
+      await AsyncStorage.setItem(EPISODES_CACHE_KEY, JSON.stringify(validEpisodes));
+      
+      setEpisodes(validEpisodes);
+      setError(null);
+
+      // Fetch playback positions AFTER episodes are loaded
+      await fetchPlaybackPositions();
+
+    } catch (err) {
+      console.error('Error fetching episodes:', err);
+      
+      // En cas d'erreur, essayer de charger depuis le cache
+      const cachedEpisodes = await loadCachedEpisodes();
+      if (cachedEpisodes.length > 0) {
+        setEpisodes(cachedEpisodes);
+        setError('Affichage des données en cache - Connexion limitée');
+        // Fetch positions even if showing cache
+        await fetchPlaybackPositions();
+      } else {
+        setError('Erreur lors du chargement des épisodes');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function markEpisodeAsWatched(episodeId: string) {
+    try {
+      // Vérifier si nous sommes en ligne
+      if (isOffline) {
+        // Stocker localement pour synchroniser plus tard
+        const watchedEpisodes = await AsyncStorage.getItem('offline_watched_episodes') || '[]';
+        const watchedList = JSON.parse(watchedEpisodes);
+        
+        if (!watchedList.includes(episodeId)) {
+          watchedList.push(episodeId);
+          await AsyncStorage.setItem('offline_watched_episodes', JSON.stringify(watchedList));
+        }
+        return;
+      }
+
+      // Si en ligne, marquer normalement
+      const userResponse = await supabase.auth.getUser();
+      const userId = userResponse.data.user?.id;
+      
+      if (!userId) {
+        console.warn("Utilisateur non connecté, impossible de marquer l'épisode comme vu");
+        return;
+      }
+      
+      const { error } = await supabase
+        .from('watched_episodes')
+        .upsert({ 
+          episode_id: episodeId,
+          user_id: userId,
+          watched_at: new Date().toISOString()
+        });
+
+      if (error) {
+        console.error("Erreur lors de l'insertion:", error);
+        throw error;
+      }
+      
+      console.log("Épisode marqué comme vu:", episodeId);
+    } catch (err) {
+      console.error('Error marking episode as watched:', err);
+    }
+  }
+
+  const handleNext = () => {
+    if (episodes.length === 0) return;
+    const nextIndex = (currentIndex + 1) % episodes.length;
+    // Don't set state directly, navigate or update params to trigger useEffect
+    const nextEpisode = episodes[nextIndex];
+    if (nextEpisode) {
+       currentEpisodeRef.current = null; // Allow reloading
+       // Navigate to the same screen with the new episodeId to trigger reload
+       router.setParams({ episodeId: nextEpisode.id, offlinePath: undefined });
+    }
+    // setCurrentIndex(nextIndex); // Let useEffect handle index update via params change
+  };
+
+  const handlePrevious = () => {
+    if (episodes.length === 0) return;
+    const prevIndex = (currentIndex - 1 + episodes.length) % episodes.length;
+    // Don't set state directly, navigate or update params to trigger useEffect
+    const prevEpisode = episodes[prevIndex];
+     if (prevEpisode) {
+       currentEpisodeRef.current = null; // Allow reloading
+       // Navigate to the same screen with the new episodeId to trigger reload
+       router.setParams({ episodeId: prevEpisode.id, offlinePath: undefined });
+    }
+    // setCurrentIndex(prevIndex); // Let useEffect handle index update via params change
+  };
+
+  // Affichage d'état de chargement
+  if (loading || currentIndex === -1 && episodes.length > 0) { // Show loading until an index is set
+    return (
+      <View style={[styles.container, {alignItems: 'center', justifyContent: 'center'}]}>
+        <ActivityIndicator size="large" color="#0ea5e9" />
+        <Text style={{color: 'white', marginTop: 10}}>Chargement du lecteur...</Text>
+      </View>
+    );
+  }
+
+  // Erreur de chargement
+  if (error) {
+    return (
+      <View style={[styles.container, {alignItems: 'center', justifyContent: 'center'}]}>
+        <Text style={{color: '#ef4444'}}>{error}</Text>
+      </View>
+    );
+  }
+
+  // Aucun épisode disponible
+  if (episodes.length === 0) {
+    return (
+      <View style={[styles.container, {alignItems: 'center', justifyContent: 'center'}]}>
+        <Text style={{color: 'white'}}>Aucun épisode disponible</Text>
+        {isOffline && (
+          <Text style={{color: '#888', marginTop: 8}}>Mode hors ligne - Connexion Internet requise</Text>
+        )}
+      </View>
+    );
+  }
+
+  // Vérifier si l'épisode courant est valide
+  const currentEpisode = episodes[currentIndex]; // Use state index
+  if (!currentEpisode || (!currentEpisode.mp3Link && !currentEpisode.offline_path)) {
+    return (
+      <View style={[styles.container, {alignItems: 'center', justifyContent: 'center'}]}>
+        <Text style={{color: 'white'}}>Problème avec l'épisode actuel</Text>
+        <Text style={{color: '#999', marginTop: 10}}>
+          {!currentEpisode ? "Épisode introuvable" : "Lien audio manquant"}
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      {/* Affichage pendant le chargement initial de l'écran */}
-      {loading && (
-          <View style={styles.centered}>
-              <ActivityIndicator size="large" color="#0ea5e9" />
-              <Text style={{ color: 'white', marginTop: 10 }}>Chargement...</Text>
-          </View>
-      )}
-      {/* Affichage si erreur majeure pendant l'initialisation */}
-      {!loading && error && !currentEpisode && ( // Afficher l'erreur seulement si aucun épisode n'a pu être chargé
-           <View style={styles.centered}>
-               <Text style={{ color: 'red', marginBottom: 10 }}>{error}</Text>
-           </View>
-       )}
-       {/* Affichage si aucun épisode disponible après chargement */}
-       {!loading && !error && episodes.length === 0 && (
-           <View style={styles.centered}>
-               <Text style={{ color: 'white' }}>Aucun épisode disponible.</Text>
-           </View>
-       )}
-
-      {/* Afficher le lecteur si le chargement est terminé, pas d'erreur bloquante, et un épisode est prêt */}
-      {!loading && currentEpisode && (
-        <AudioPlayer
-          key={currentEpisode.id} // Clé importante pour forcer le re-rendu si l'épisode change
-          episode={currentEpisode}
-          onNext={handlePrevious}
-          onPrevious={handleNext}
-          onRetry={handleRetryLoad} // handleRetryLoad gère maintenant la logique
-          onComplete={handlePlaybackComplete}
-        />
-      )}
-
-      {/* Affichage si chargement terminé mais épisode non trouvé (ex: ID invalide) */}
-      {!loading && !error && episodes.length > 0 && !currentEpisode && (
-        <View style={styles.centered}>
-          <Text style={{ color: 'white' }}>Épisode non trouvé.</Text>
+      {isOffline && (
+        <View style={styles.offlineBanner}>
+          <Text style={styles.offlineBannerText}>Mode hors ligne</Text>
         </View>
       )}
+      <AudioPlayer
+        episode={currentEpisode}
+        onNext={handlePrevious} // Corrected: Next button should go to previous date (older episode)
+        onPrevious={handleNext} // Corrected: Previous button should go to next date (newer episode)
+        onComplete={() => {
+          markEpisodeAsWatched(currentEpisode.id);
+          // Optionally auto-play next episode on completion
+          // handlePrevious(); // Auto-play older episode after completion
+        }}
+      />
     </View>
   );
 }
@@ -561,11 +543,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#121212',
     justifyContent: 'center',
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
     padding: 20,
   },
+  offlineBanner: {
+    backgroundColor: '#333',
+    padding: 8,
+    alignItems: 'center',
+    marginBottom: 16,
+    borderRadius: 8,
+  },
+  offlineBannerText: {
+    color: '#fff',
+    fontSize: 14,
+  }
 });

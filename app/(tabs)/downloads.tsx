@@ -34,18 +34,6 @@ const EPISODES_CACHE_KEY = 'cached_episodes';
 const CLEANUP_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 const MAX_DOWNLOAD_AGE_DAYS = 7;
 
-// Ajouter la fonction parseDuration (ou l'importer)
-function parseDuration(durationStr: string | number | null): number | null {
-  if (typeof durationStr === 'number') return durationStr;
-  if (typeof durationStr !== 'string' || !durationStr) return null;
-  const parts = durationStr.split(':').map(Number);
-  let seconds = 0;
-  if (parts.length === 3) seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
-  else if (parts.length === 2) seconds = parts[0] * 60 + parts[1];
-  else if (parts.length === 1 && !isNaN(parts[0])) seconds = parts[0];
-  return isNaN(seconds) ? null : seconds;
-}
-
 export default function DownloadsScreen() {
   // Main state management
   const [episodes, setEpisodes] = useState<Episode[]>([]);
@@ -232,7 +220,7 @@ export default function DownloadsScreen() {
   };
 
   // Retrieve downloaded episodes (for offline mode)
-  const getDownloadedEpisodes = async (): Promise<Episode[]> => {
+  const getDownloadedEpisodes = async () => {
     if (Platform.OS === 'web') return [];
     
     const metadata = await loadDownloadedEpisodesMetadata();
@@ -257,7 +245,7 @@ export default function DownloadsScreen() {
         description: meta.description || '',
         mp3Link: '',
         mp3_link: '',
-        duration: parseDuration(meta.duration),
+        duration: meta.duration || 0,
         publicationDate: meta.downloadDate || new Date().toISOString(),
         publication_date: meta.downloadDate || new Date().toISOString(),
         offline_path: meta.filePath

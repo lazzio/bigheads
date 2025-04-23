@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase'; // Ajustez le chemin si nécessaire
 import { AppState } from 'react-native';
 
-const PENDING_POSITIONS_KEY = 'pendingPlaybackPositions';
+export const PENDING_POSITIONS_KEY = 'pendingPlaybackPositions';
 
 // Interface pour les données stockées localement
 interface PendingPosition {

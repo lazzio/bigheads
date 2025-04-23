@@ -12,16 +12,16 @@ export default function HomeScreen() {
       style={styles.backgroundImage}
       />
       <View style={styles.overlay}>
-      <Text style={styles.title}>Les Grosses Têtes</Text>
-      <Text style={styles.subtitle}>Les intégrales</Text>
+        <Text style={styles.title}>Les Grosses Têtes</Text>
+        <Text style={styles.subtitle}>Les intégrales</Text>
 
-      <TouchableOpacity
-        style={styles.playButton}
-        onPress={() => router.push('/player')}
-      >
-        <Play size={24} color="#000" />
-        <Text style={styles.playText}>Écouter maintenant</Text>
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.playButton}
+          onPress={() => router.push('/player')}
+        >
+          <Play size={24} color="#000" />
+          <Text style={styles.playText}>Écouter le dernier épisode</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );

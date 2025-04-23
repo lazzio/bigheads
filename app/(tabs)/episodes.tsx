@@ -7,9 +7,10 @@ import { Database } from '../../types/supabase';
 import { Episode } from '../../types/episode';
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { formatTime } from '../../utils/OptimizedAudioService'; // Import formatTime
 
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
-type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row']; // Utiliser le type Row complet
+type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row'];
 
 const EPISODES_CACHE_KEY = 'cached_episodes';
 
@@ -97,13 +98,10 @@ export default function EpisodesScreen() {
         title: episode.title,
         description: episode.description,
         originalMp3Link: episode.original_mp3_link,
-        original_mp3_link: episode.original_mp3_link,
         mp3Link: episode.mp3_link,
-        mp3_link: episode.mp3_link,
         offline_path: episode.offline_path,
         duration: episode.duration,
         publicationDate: episode.publication_date,
-        publication_date: episode.publication_date
       }));
 
       setEpisodes(formattedEpisodes);
@@ -141,22 +139,26 @@ export default function EpisodesScreen() {
       const userResponse = await supabase.auth.getUser();
       const userId = userResponse.data.user?.id;
       if (!userId) {
-        console.log('Utilisateur non connecté, saut récupération épisodes vus');
-        setWatchedEpisodes(new Set()); // S'assurer que c'est vide si non connecté
+        // setWatchedEpisodes(new Set()); // S'assurer que c'est vide si non connecté
         return;
       }
 
       const { data, error } = await supabase
         .from('watched_episodes')
-        .select('episode_id') // Sélectionner seulement l'ID
+        .select('episode_id')
         .eq('user_id', userId)
-        .eq('is_finished', true); // <<< Ajouter ce filtre
+        .eq('is_finished', true);
 
       if (error) throw error;
 
-      // Utiliser WatchedEpisodeRow si on sélectionne plus, sinon juste { episode_id: string }
-      const watchedIds = new Set((data as { episode_id: string }[]).map(we => we.episode_id));
-      console.log(`Récupéré ${watchedIds.size} épisodes terminés`);
+      if (!data) {
+        console.log('No watched episodes found');
+        setWatchedEpisodes(new Set());
+        return;
+      }
+
+      const watchedIds = new Set((data as WatchedEpisodeRow[]).map(we => we.episode_id));
+      console.log(`Fetched ${watchedIds.size} watched episodes`);
       setWatchedEpisodes(watchedIds);
     } catch (err) {
       console.error('Erreur récupération épisodes vus:', err);
@@ -222,7 +224,8 @@ export default function EpisodesScreen() {
                 <Text style={styles.episodeDescription} numberOfLines={2}>
                   {item.description}
                 </Text>
-                <Text style={styles.episodeDuration}>{item.duration}</Text>
+                {/* Use formatTime with duration in seconds */}
+                <Text style={styles.episodeDuration}>{formatTime(item.duration)}</Text> 
               </View>
               {watchedEpisodes.has(item.id) ? (
                 <CheckCircle2 size={24} color="#0ea5e9" />
@@ -317,6 +320,7 @@ const styles = StyleSheet.create({
   episodeDuration: {
     fontSize: 12,
     color: '#666',
+    marginTop: 4, // Added margin for spacing
   },
   loadingText: {
     color: '#fff',

@@ -134,7 +134,6 @@ async function savePushTokenToSupabase(token: string): Promise<void> {
   }
 }
 
-// --- NOUVELLE FONCTION EXPORTÉE ---
 /**
  * Attempts to save the push token stored in AsyncStorage to Supabase.
  * Should be called after user login to ensure user_id is associated.
