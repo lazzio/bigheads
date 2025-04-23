@@ -8,20 +8,20 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <Image
-        source={{ uri: 'https://images.unsplash.com/photo-1478737270239-2f02b77fc618?q=80&w=1024' }}
-        style={styles.backgroundImage}
+      source={{ uri: 'https://images.unsplash.com/photo-1478737270239-2f02b77fc618?q=80&w=1024' }}
+      style={styles.backgroundImage}
       />
       <View style={styles.overlay}>
-        <Text style={styles.title}>Les Grosses Têtes</Text>
-        <Text style={styles.subtitle}>Les intégrales</Text>
-        
-        <TouchableOpacity
-          style={styles.playButton}
-          onPress={() => router.push('/player')}
-        >
-          <Play size={24} color="#000" />
-          <Text style={styles.playText}>Écouter maintenant</Text>
-        </TouchableOpacity>
+      <Text style={styles.title}>Les Grosses Têtes</Text>
+      <Text style={styles.subtitle}>Les intégrales</Text>
+
+      <TouchableOpacity
+        style={styles.playButton}
+        onPress={() => router.push('/player')}
+      >
+        <Play size={24} color="#000" />
+        <Text style={styles.playText}>Écouter maintenant</Text>
+      </TouchableOpacity>
       </View>
     </View>
   );

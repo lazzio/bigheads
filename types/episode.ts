@@ -4,7 +4,7 @@ export interface Episode {
   description: string;
   originalMp3Link?: string;
   mp3Link: string;
-  duration: string;
+  duration: number | null;
   publicationDate: string;
   offline_path?: string;
 }

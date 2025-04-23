@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Speaker, ListMusic, House, User, Download } from 'lucide-react-native';
+import MaterialIcons from '@react-native-vector-icons/material-icons';
 
 export default function TabLayout() {
   return (
@@ -18,7 +18,7 @@ export default function TabLayout() {
         options={{
           title: 'Accueil',
           tabBarIcon: ({ size, color }) => (
-            <House size={size} color={color} />
+            <MaterialIcons name="home" size={size} color={color} />
           ),
         }}
       />
@@ -27,7 +27,7 @@ export default function TabLayout() {
         options={{
           title: 'Lecture',
           tabBarIcon: ({ size, color }) => (
-            <Speaker size={size} color={color} />
+            <MaterialIcons name="radio" size={size} color={color} />
           ),
         }}
       />
@@ -36,7 +36,7 @@ export default function TabLayout() {
         options={{
           title: 'Episodes',
           tabBarIcon: ({ size, color }) => (
-            <ListMusic size={size} color={color} />
+            <MaterialIcons name="library-music" size={size} color={color} />
           ),
         }}
       />
@@ -45,7 +45,7 @@ export default function TabLayout() {
         options={{
           title: 'Téléchargements',
           tabBarIcon: ({ size, color }) => (
-            <Download size={size} color={color} />
+            <MaterialIcons name="download-for-offline" size={size} color={color} />
           ),
         }}
       />
@@ -54,7 +54,7 @@ export default function TabLayout() {
         options={{
           title: 'Profil',
           tabBarIcon: ({ size, color }) => (
-            <User size={size} color={color} />
+            <MaterialIcons name="person" size={size} color={color} />
           ),
         }}
       />

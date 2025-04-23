@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Alert } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { syncPushTokenAfterLogin } from '../../utils/EpisodeNotificationService'; // <<< Importer la nouvelle fonction
 
 export default function RegisterScreen() {
   const [email, setEmail] = useState('');
@@ -15,27 +16,46 @@ export default function RegisterScreen() {
       setLoading(true);
       setError(null);
 
-      const { error } = await supabase.auth.signUp({
+      const { error: signUpError, data } = await supabase.auth.signUp({
         email,
         password,
       });
 
-      if (error) throw error;
+      if (signUpError) throw signUpError;
 
-      router.replace('/(tabs)');
+      // Vérifier si l'inscription nécessite une confirmation par email
+      if (data.user && data.user.identities && data.user.identities.length === 0) {
+         Alert.alert("Vérification requise", "Veuillez vérifier votre email pour activer votre compte.");
+         // Ne pas rediriger immédiatement, l'utilisateur doit vérifier son email
+         // Optionnel: rediriger vers une page d'attente ou laisser sur l'écran d'inscription
+      } else if (data.session) {
+         // Connexion réussie (ou pas de vérification nécessaire)
+         console.log('Registration successful, attempting to sync push token...');
+         await syncPushTokenAfterLogin(); // <<< Appeler la synchro ici
+         router.replace('/(tabs)'); // Rediriger vers l'application principale
+      } else {
+         // Cas inattendu
+         throw new Error("Inscription terminée mais aucune session reçue.");
+      }
+
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue');
+      console.error("Registration error:", err);
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue lors de l\'inscription');
     } finally {
       setLoading(false);
     }
   }
 
+  // ... handleGoogleSignIn (ajouter syncPushTokenAfterLogin ici aussi si la redirection est immédiate) ...
   async function handleGoogleSignIn() {
     try {
       setLoading(true);
       setError(null);
 
-      const { error } = await supabase.auth.signInWithOAuth({
+      // Note: signInWithOAuth peut ne pas retourner de session immédiatement,
+      // l'état d'authentification est souvent géré par un listener global.
+      // Il est préférable d'appeler syncPushTokenAfterLogin depuis ce listener global.
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           queryParams: {
@@ -46,9 +66,14 @@ export default function RegisterScreen() {
         },
       });
 
-      if (error) throw error;
+      if (oauthError) throw oauthError;
+
+      // NE PAS appeler syncPushTokenAfterLogin ici si la session n'est pas garantie.
+      // Laissez le listener d'état d'authentification (dans _layout.tsx ?) le gérer.
+
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue');
+      console.error("Google Sign-In error:", err);
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue lors de la connexion Google');
     } finally {
       setLoading(false);
     }

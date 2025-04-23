@@ -1,9 +1,9 @@
 name: Build Android Preview
 
 on:
-    push:
-      tags:
-        - 'v*'
+  release:
+    types: [published] # Trigger when a release is published
+
 
 jobs:
   expo-build:
