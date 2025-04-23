@@ -25,6 +25,8 @@ export interface AudioStatus {
 class AudioManager {
   private static instance: AudioManager;
   private isPlayerReady = false;
+  private isSettingUp = false; // <-- Ajouter un drapeau pour l'initialisation en cours
+  private setupPromise: Promise<void> | null = null; // <-- Pour stocker la promesse d'initialisation
   private currentEpisode: Episode | null = null;
   private position = 0;
   private duration = 0;
@@ -44,51 +46,78 @@ class AudioManager {
   }
 
   public async setupAudio(): Promise<void> {
-    if (this.isPlayerReady) return; // Déjà initialisé
-
-    try {
-      console.log('[AudioManager] Setting up TrackPlayer...');
-      await TrackPlayer.setupPlayer({
-        autoHandleInterruptions: true,
-      });
-
-      await TrackPlayer.updateOptions({
-        capabilities: [
-          Capability.Play,
-          Capability.Pause,
-          Capability.Stop,
-          Capability.SeekTo,
-          Capability.SkipToPrevious,
-          Capability.SkipToNext,
-        ],
-        compactCapabilities: [
-          Capability.Play,
-          Capability.Pause,
-          Capability.SkipToPrevious,
-          Capability.SkipToNext,
-        ],
-        android: {
-          appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
-        },
-        notificationCapabilities: [
-          Capability.Play,
-          Capability.Pause,
-          Capability.SeekTo,
-          Capability.SkipToPrevious,
-          Capability.SkipToNext,
-        ],
-        icon: require('../assets/images/bh_opti.png'),
-        progressUpdateEventInterval: 1,
-        alwaysPauseOnInterruption: false,
-      });
-
-      this.isPlayerReady = true;
-      console.log('[AudioManager] TrackPlayer setup complete.');
-      this.setupEventListeners(); // Configurer les écouteurs après l'initialisation
-    } catch (error) {
-      console.error('[AudioManager] Error setting up TrackPlayer:', error);
-      this.isPlayerReady = false; // Marquer comme non prêt en cas d'erreur
+    // Si déjà prêt, retourner immédiatement
+    if (this.isPlayerReady) {
+      console.log('[AudioManager] setupAudio: Already ready.');
+      return;
     }
+
+    // Si une initialisation est déjà en cours, attendre sa fin
+    if (this.isSettingUp && this.setupPromise) {
+      console.log('[AudioManager] setupAudio: Setup already in progress, awaiting...');
+      return this.setupPromise; // Attendre la promesse existante
+    }
+
+    // Marquer le début de l'initialisation et créer la promesse
+    this.isSettingUp = true;
+    this.setupPromise = (async () => {
+      try {
+        console.log('[AudioManager] setupAudio: Starting setup...');
+        // --- Début de la logique d'initialisation réelle ---
+        await TrackPlayer.setupPlayer({
+          autoHandleInterruptions: true,
+        });
+        console.log('[AudioManager] setupAudio: setupPlayer complete.');
+
+        await TrackPlayer.updateOptions({
+          // ... tes options ...
+          capabilities: [
+            Capability.Play, Capability.Pause, Capability.Stop, Capability.SeekTo,
+            Capability.SkipToPrevious, Capability.SkipToNext,
+          ],
+          compactCapabilities: [
+            Capability.Play, Capability.Pause, Capability.SkipToPrevious, Capability.SkipToNext,
+          ],
+          android: {
+            appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
+          },
+          notificationCapabilities: [
+            Capability.Play, Capability.Pause, Capability.SeekTo,
+            Capability.SkipToPrevious, Capability.SkipToNext,
+          ],
+          icon: require('../assets/images/bh_opti.png'),
+          progressUpdateEventInterval: 1,
+          alwaysPauseOnInterruption: false,
+        });
+        console.log('[AudioManager] setupAudio: updateOptions complete.');
+        // --- Fin de la logique d'initialisation réelle ---
+
+        this.isPlayerReady = true; // Marquer comme prêt seulement si tout réussit
+        console.log('[AudioManager] setupAudio: Setup successful, player is ready.');
+        this.setupEventListeners(); // Configurer les écouteurs après l'initialisation réussie
+
+      } catch (error: any) {
+        // Gérer l'erreur "already initialized" spécifiquement
+        if (error.message?.includes('already been initialized')) {
+          console.warn('[AudioManager] setupAudio: Caught "already initialized" error, assuming player is ready.');
+          this.isPlayerReady = true; // Considérer comme prêt si c'est cette erreur spécifique
+          // Vérifier si les écouteurs sont déjà configurés pourrait être utile ici, mais pour l'instant on suppose que oui.
+          // Si les écouteurs ne sont pas configurés, il faudrait une logique plus complexe.
+        } else {
+          console.error('[AudioManager] setupAudio: CRITICAL ERROR during setup:', error);
+          this.isPlayerReady = false; // Marquer comme non prêt en cas d'autre erreur
+          throw error; // Relancer l'erreur pour que l'appelant (loadSound) puisse la gérer
+        }
+      } finally {
+        // Assurer que le drapeau et la promesse sont réinitialisés à la fin,
+        // que l'initialisation réussisse ou échoue.
+        this.isSettingUp = false;
+        this.setupPromise = null; // Nettoyer la promesse
+        console.log('[AudioManager] setupAudio: Finalizing setup attempt.');
+      }
+    })(); // Exécuter immédiatement la fonction async
+
+    return this.setupPromise; // Retourner la promesse pour que les appelants puissent attendre
   }
 
   // --- NOUVELLE MÉTHODE: Charger un son avec position initiale ---
@@ -98,19 +127,22 @@ class AudioManager {
    * @param initialPositionMillis Position initiale en millisecondes.
    */
   public async loadSound(episode: Episode, initialPositionMillis: number = 0): Promise<void> {
-    if (!this.isPlayerReady) {
-      console.warn('[AudioManager] Player not ready, attempting setup...');
+    try {
+      // Attendre la fin de l'initialisation si nécessaire.
+      // setupAudio gère maintenant la logique de "déjà prêt" ou "en cours".
       await this.setupAudio();
+
+      // Si après l'attente, le lecteur n'est toujours pas prêt, c'est une vraie erreur.
       if (!this.isPlayerReady) {
+        console.error("[AudioManager] loadSound: Player is not ready after setup attempt.");
         throw new Error("TrackPlayer setup failed, cannot load sound.");
       }
-    }
 
-    console.log(`[AudioManager] Loading sound for episode ${episode.id} at ${initialPositionMillis}ms`);
+      console.log(`[AudioManager] loadSound: Player ready, loading episode ${episode.id} at ${initialPositionMillis}ms`);
 
-    try {
+      // --- Reste de la logique de loadSound ---
       await TrackPlayer.reset();
-
+      // ... (gestion audioSourceUri) ...
       let audioSourceUri: string;
       const isLocal = !!episode.offline_path;
 
@@ -198,7 +230,8 @@ class AudioManager {
 
 
     } catch (error) {
-      console.error('[AudioManager] Error in loadSound:', error);
+      // Le catch ici attrapera les erreurs de setupAudio OU les erreurs de chargement/seek
+      console.error('[AudioManager] Error in loadSound (could be setup or loading error):', error);
       this.currentEpisode = null;
       this.position = 0;
       this.duration = 0;
@@ -206,7 +239,8 @@ class AudioManager {
       this.isBuffering = false;
       this.notifyListeners({ type: 'error', error: error instanceof Error ? error.message : String(error) });
       this.notifyListeners({ type: 'status', position: 0, duration: 0, isPlaying: false, isBuffering: false, isLoaded: false });
-      throw error;
+      // Ne pas relancer l'erreur ici pour éviter de crasher l'UI, mais l'erreur est loggée.
+      // throw error; // Décommenter si l'appelant DOIT savoir que loadSound a échoué.
     }
   }
 
@@ -322,26 +356,38 @@ class AudioManager {
 
   // seekTo prend maintenant des millisecondes pour la cohérence interne
   public async seekTo(positionMillis: number): Promise<void> {
-    if (!this.isPlayerReady) return;
-    const positionSeconds = positionMillis / 1000;
-    console.log(`[AudioManager] Seeking to absolute ${positionSeconds.toFixed(1)}s`);
+    if (!this.isPlayerReady || this.currentEpisode === null) return;
+    
+    // Ensure position is within bounds (slightly before duration if seeking to end)
+    const safePositionMillis = Math.max(0, this.duration > 0 ? Math.min(positionMillis, this.duration - 100) : positionMillis);
+    const positionSeconds = safePositionMillis / 1000;
+    
+    console.log(`[AudioManager] Seeking to ${positionSeconds}s (requested ${positionMillis}ms, safe ${safePositionMillis}ms)`);
+    
     try {
-      const duration = await TrackPlayer.getDuration(); // en secondes
-      // S'assurer que la position cible est valide
-      const targetPosition = duration ? Math.min(Math.max(0, positionSeconds), duration - 0.1) : Math.max(0, positionSeconds);
-
-      // Simplement demander à TrackPlayer de chercher la position
-      await TrackPlayer.seekTo(targetPosition);
-
-      // <<< Supprimer la mise à jour locale immédiate >>>
-      // await this.updateLocalStatus();
-      // La mise à jour se fera via l'événement PlaybackProgressUpdated
-
+        await TrackPlayer.seekTo(positionSeconds);
+        // DO NOT update this.position or notify here immediately.
+        // Let the PlaybackProgressUpdated event handle the state update.
+        // This prevents the slider from jumping back if the seek takes time.
+        console.log(`[AudioManager] TrackPlayer.seekTo(${positionSeconds}) called.`);
     } catch (error) {
-      console.error(`[AudioManager] Error seeking to ${positionSeconds}s:`, error);
-      // Optionnel: notifier une erreur de seek?
-      // this.notifyListeners({ type: 'error', error: 'Erreur lors du déplacement.' });
+        console.error(`[AudioManager] Error seeking to ${positionSeconds}s:`, error);
+        // Optionally notify an error, but avoid changing position state
+        this.notifyListeners({ type: 'error', error: `Erreur lors du déplacement à ${formatTime(safePositionMillis)}.` });
     }
+    /* 
+    // REMOVED: Immediate state update and notification
+    this.position = positionMillis; 
+    this.notifyListeners({
+      type: 'status',
+      position: this.position,
+      duration: this.duration,
+      isPlaying: this.isPlaying,
+      isBuffering: this.isBuffering, // Keep buffering state consistent? Or set to true?
+      isLoaded: true,
+      currentEpisodeId: this.currentEpisode.id,
+    });
+    */
   }
 
   // --- NOUVELLE MÉTHODE: Avancer/Reculer relativement ---
@@ -350,18 +396,21 @@ class AudioManager {
    * @param offsetSeconds Nombre de secondes à ajouter (positif pour avancer, négatif pour reculer).
    */
   public async seekRelative(offsetSeconds: number): Promise<void> {
-    if (!this.isPlayerReady) return;
+    if (!this.isPlayerReady || this.currentEpisode === null) { // Added check for currentEpisode
+        console.warn('[AudioManager] seekRelative called but player not ready or no episode loaded.');
+        return;
+    }
     console.log(`[AudioManager] Seeking relative by ${offsetSeconds}s`);
     try {
-      // Obtenir la position actuelle directement depuis TrackPlayer pour plus de précision
-      const currentPositionSeconds = await TrackPlayer.getPosition();
+      // Utiliser la position interne comme base pour le calcul relatif
+      const currentPositionSeconds = this.position / 1000;
       const newPositionSeconds = currentPositionSeconds + offsetSeconds;
       // Utiliser la méthode seekTo existante qui gère les limites et prend des millisecondes
-      await this.seekTo(newPositionSeconds * 1000); // seekTo ne met plus à jour immédiatement
+      // seekTo notifiera maintenant immédiatement les listeners
+      await this.seekTo(newPositionSeconds * 1000);
     } catch (error) {
       console.error(`[AudioManager] Error seeking relative by ${offsetSeconds}s:`, error);
-      // Optionnel: notifier une erreur de seek?
-      // this.notifyListeners({ type: 'error', error: 'Erreur lors du déplacement relatif.' });
+      // seekTo gère déjà la notification d'erreur si nécessaire
     }
   }
 
@@ -636,6 +685,7 @@ export async function requestBatteryOptimizationExemption(): Promise<boolean> {
       } catch (e) {
         try {
           // Méthode 2: Utiliser IntentLauncher
+          // L'argument 'data' doit être dans l'objet options
           await IntentLauncher.startActivityAsync(
             'android.settings.APPLICATION_DETAILS_SETTINGS',
             { data: intent }

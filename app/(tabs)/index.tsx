@@ -20,7 +20,7 @@ export default function HomeScreen() {
         onPress={() => router.push('/player')}
       >
         <Play size={24} color="#000" />
-        <Text style={styles.playText}>Écouter maintenant</Text>
+        <Text style={styles.playText}>Écouter le dernier épisode</Text>
       </TouchableOpacity>
       </View>
     </View>
@@ -52,7 +52,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   subtitle: {
-    fontSize: 18,
+    fontSize: 22,
     color: '#fff',
     textAlign: 'center',
     marginBottom: 40,

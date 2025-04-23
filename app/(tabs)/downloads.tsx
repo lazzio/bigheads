@@ -1,81 +1,139 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TouchableOpacity, 
-  Platform, 
-  ScrollView, 
-  Alert, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Platform,
+  ScrollView,
+  Alert,
   ActivityIndicator
 } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { supabase } from '../../lib/supabase';
-import { Download, Trash2, Play, Trash, WifiOff } from 'lucide-react-native';
+import { Download, Trash, WifiOff, Music, Check, AlertTriangle } from 'lucide-react-native';
 import * as FileSystem from 'expo-file-system';
-import { useRouter } from 'expo-router';
+// Importer useFocusEffect
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Episode } from '../../types/episode';
 import Svg, { Circle } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Progress from 'react-native-progress';
 
-// Types
 interface DownloadStatus {
   [key: string]: {
-    progress: number;
+    progress: number; // Garder progress comme nombre entre 0 et 1 (ou 0-100 selon l'implémentation)
     downloading: boolean;
     downloaded: boolean;
     filePath?: string;
+    error?: string | null;
   };
 }
 
-// Constants
 const DOWNLOADS_DIR = FileSystem.documentDirectory + 'downloads/';
 const EPISODES_CACHE_KEY = 'cached_episodes';
-const CLEANUP_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+const CLEANUP_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_DOWNLOAD_AGE_DAYS = 7;
 
-// Ajouter la fonction parseDuration (ou l'importer)
+// --- Fonctions parseDuration et formatDuration ---
 function parseDuration(durationStr: string | number | null): number | null {
-  if (typeof durationStr === 'number') return durationStr;
-  if (typeof durationStr !== 'string' || !durationStr) return null;
-  const parts = durationStr.split(':').map(Number);
-  let seconds = 0;
-  if (parts.length === 3) seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
-  else if (parts.length === 2) seconds = parts[0] * 60 + parts[1];
-  else if (parts.length === 1 && !isNaN(parts[0])) seconds = parts[0];
-  return isNaN(seconds) ? null : seconds;
+    if (typeof durationStr === 'number') return durationStr;
+    if (typeof durationStr !== 'string' || !durationStr) return null;
+    const parts = durationStr.split(':').map(Number);
+    let seconds = 0;
+    if (parts.length === 3) seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+    else if (parts.length === 2) seconds = parts[0] * 60 + parts[1];
+    else if (parts.length === 1 && !isNaN(parts[0])) seconds = parts[0];
+    return isNaN(seconds) ? null : seconds;
 }
 
+function formatDuration(seconds: number | null | undefined): string {
+    if (seconds === null || seconds === undefined || isNaN(seconds) || seconds <= 0) {
+      return '--:--';
+    }
+    const totalSeconds = Math.floor(seconds);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+
+    const minutesStr = String(minutes).padStart(2, '0');
+    const secsStr = String(secs).padStart(2, '0');
+
+    if (hours > 0) {
+      return `${hours}:${minutesStr}:${secsStr}`;
+    } else {
+      return `${minutesStr}:${secsStr}`;
+    }
+}
+
+const colors = {
+  background: '#121212',
+  cardBackground: '#1a1a1a',
+  textPrimary: '#ffffff',
+  textSecondary: '#b3b3b3',
+  textMuted: '#808080',
+  iconColor: '#ffffff',
+  iconColorDownloaded: '#0ea5e9', // Bleu pour téléchargé/progression
+  iconColorDelete: '#ef4444', // Rouge pour supprimer
+  errorText: '#ef4444',
+  offlineBackground: '#333333',
+  offlineText: '#aaaaaa',
+};
+
 export default function DownloadsScreen() {
-  // Main state management
+  // --- State Management (Ajouter 'error' au status) ---
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [downloadStatus, setDownloadStatus] = useState<DownloadStatus>({});
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null); // Erreur globale
   const [isLoading, setIsLoading] = useState(true);
   const [isOffline, setIsOffline] = useState(false);
-  
-  // References for optimization
+
+
   const isMounted = useRef(true);
   const router = useRouter();
 
-  // Initialization and cleanup
+  // --- Initial useEffect (inchangé, gère le premier chargement) ---
   useEffect(() => {
     if (Platform.OS === 'web') {
       setIsLoading(false);
       return;
     }
-
-    // Check connectivity
+    setIsLoading(true); // Définir le chargement initial ici
     checkNetworkStatus();
-
-    // Initialize downloads
-    setupDownloads();
+    setupDownloads(); // setupDownloads contient déjà le premier loadEpisodesWithCache et met isLoading à false dans finally
 
     // Cleanup function for component unmount
     return () => {
       isMounted.current = false;
     };
   }, []);
+
+  // --- NOUVEAU: useFocusEffect pour rafraîchissement automatique ---
+  useFocusEffect(
+    useCallback(() => {
+      // Ne pas remettre isLoading(true) ici pour éviter le loader à chaque focus
+      console.log("Downloads screen focused: Refreshing status...");
+
+      // Rafraîchir l'état réseau et vérifier les épisodes téléchargés
+      const refreshOnFocus = async () => {
+        if (Platform.OS === 'web' || !isMounted.current) return;
+        try {
+          await checkNetworkStatus(); // Met à jour isOffline
+          // Rafraîchir la liste des épisodes (fetchEpisodes gère offline/online)
+          await fetchEpisodes();
+          // Revérifier les statuts des fichiers téléchargés
+          await checkDownloadedEpisodes();
+        } catch (error) {
+          console.error("Error refreshing on focus:", error);
+          // Gérer l'erreur si nécessaire, peut-être afficher un toast discret
+        }
+        // Pas besoin de setIsLoading(false) ici, car on n'a pas mis à true
+      };
+
+      refreshOnFocus();
+
+    }, []) // Dépendances vides pour s'exécuter à chaque focus
+  );
 
   // Check network status
   const checkNetworkStatus = async () => {
@@ -402,24 +460,22 @@ export default function DownloadsScreen() {
     }
 
     try {
-      setError(null);
+      setError(null); // Clear global error
       await ensureDownloadsDirectory();
-      
       const filename = getFilename(episode.mp3_link);
       const fileUri = DOWNLOADS_DIR + filename;
 
-      // Update status
       setDownloadStatus(prev => ({
         ...prev,
         [episode.id]: {
           ...prev[episode.id],
           progress: 0,
           downloading: true,
-          downloaded: false
+          downloaded: false,
+          error: null
         }
       }));
 
-      // Create the download
       const downloadResumable = FileSystem.createDownloadResumable(
         episode.mp3_link,
         fileUri,
@@ -467,26 +523,28 @@ export default function DownloadsScreen() {
         setDownloadStatus(prev => ({
           ...prev,
           [episode.id]: {
-            progress: 1,
+            progress: 1, // Ou 100 si tu utilises 0-100
             downloading: false,
             downloaded: true,
-            filePath: result.uri
+            filePath: result.uri,
+            error: null
           }
         }));
       } else {
-        throw new Error('Download failed');
+        throw new Error('Download failed or was cancelled');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Download error:', error);
-      
       if (isMounted.current) {
-        setError('Error during download');
+        // Mettre l'erreur spécifique à l'épisode
         setDownloadStatus(prev => ({
           ...prev,
           [episode.id]: {
+            ...prev[episode.id],
             progress: 0,
             downloading: false,
-            downloaded: false
+            downloaded: false,
+            error: error.message || 'Download failed'
           }
         }));
       }
@@ -527,7 +585,9 @@ export default function DownloadsScreen() {
           [episode.id]: {
             progress: 0,
             downloading: false,
-            downloaded: false
+            downloaded: false,
+            filePath: undefined,
+            error: null
           }
         }));
         
@@ -556,11 +616,13 @@ export default function DownloadsScreen() {
       // Reset all statuses
       if (isMounted.current) {
         const newStatus: DownloadStatus = {};
-        episodes.forEach(episode => {
-          newStatus[episode.id] = {
+        Object.keys(downloadStatus).forEach(id => { // Utiliser les clés existantes
+          newStatus[id] = {
             progress: 0,
             downloading: false,
-            downloaded: false
+            downloaded: false,
+            filePath: undefined, // Nettoyer filePath
+            error: null
           };
         });
         
@@ -637,81 +699,70 @@ export default function DownloadsScreen() {
   }, [downloadStatus]);
 
   // Handler to play an episode
-  const playEpisode = useCallback((episode: Episode, index: number) => {
-    if (downloadStatus[episode.id]?.downloaded) {
-      const filePath = downloadStatus[episode.id]?.filePath;
-      
-      // For a downloaded episode, pass the local path
+  const playEpisode = useCallback((episode: Episode) => {
+    const status = downloadStatus[episode.id];
+    // Jouer uniquement si l'épisode est marqué comme téléchargé ET a un chemin de fichier valide
+    if (status?.downloaded && status.filePath) {
       router.push({
-        pathname: '/player',
-        params: { 
-          episodeId: episode.id,
-          offlinePath: filePath
+        pathname: '/(tabs)/player',
+        params: {
+          // Passer offlinePath pour indiquer au lecteur d'utiliser le fichier local
+          offlinePath: status.filePath,
+          // Optionnel: passer aussi l'ID si le lecteur en a besoin pour trouver d'autres infos
+          episodeId: episode.id
         }
       });
     } else {
-      // For an online episode, use the index
-      router.push({
-        pathname: '/player',
-        params: { episodeId: episode.id }
-      });
+      // Ne rien faire ou afficher un message si l'épisode n'est pas téléchargé
+      console.log("L'épisode n'est pas téléchargé ou le chemin est manquant.");
+      Alert.alert("Lecture impossible", "Cet épisode n'est pas disponible hors ligne.");
     }
   }, [router, downloadStatus]);
 
-  // Refresh data (forces complete reload)
-  const refreshData = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      await checkNetworkStatus();
-      await fetchEpisodes();
-      await checkDownloadedEpisodes();
-    } catch (error) {
-      console.error('Error refreshing data:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
   // Progress circle component
   const ProgressCircle = ({ progress }: { progress: number }) => {
-    const radius = 10;
-    const strokeWidth = 2;
-    const center = radius + strokeWidth;
-    const circumference = 2 * Math.PI * radius;
+    const strokeWidth = 2.5; // Légèrement plus épais pour la visibilité
+    const radius = 10; // Rayon du cercle intérieur (fond)
+    const outerRadius = radius + strokeWidth; // Rayon du cercle extérieur (progression)
+
+    // Le centre doit être calculé par rapport au cercle le plus extérieur
+    const center = outerRadius + strokeWidth / 2; // Centre de l'espace SVG
+    const size = center * 2; // Taille totale du SVG
+
+    // Circonférence pour le cercle de progression (extérieur)
+    const circumference = 2 * Math.PI * outerRadius;
     const strokeDashoffset = circumference * (1 - progress);
-    
+
     return (
+      // Le conteneur View n'a plus besoin de taille fixe, Svg la définit
       <View style={styles.progressCircleContainer}>
-        <Svg width={center * 2} height={center * 2}>
-          {/* Background circle */}
+        <Svg width={size} height={size}>
+          {/* Cercle de fond (intérieur) */}
           <Circle
             cx={center}
             cy={center}
-            r={radius}
-            stroke="#333333"
+            r={radius} // Rayon intérieur
+            stroke={colors.cardBackground} // Couleur de fond plus sombre
             strokeWidth={strokeWidth}
             fill="none"
           />
-          
-          {/* Progress circle */}
+
+          {/* Arc de progression (extérieur) */}
           <Circle
             cx={center}
             cy={center}
-            r={radius}
-            stroke="#0ea5e9"
+            r={outerRadius} // Rayon extérieur
+            stroke={colors.iconColorDownloaded} // Couleur de progression (bleu)
             strokeWidth={strokeWidth}
             fill="none"
             strokeDasharray={circumference}
             strokeDashoffset={strokeDashoffset}
-            strokeLinecap="round"
-            transform={`rotate(-90, ${center}, ${center})`}
+            strokeLinecap="round" // Extrémités arrondies
+            transform={`rotate(-90 ${center} ${center})`} // Rotation pour commencer en haut
           />
         </Svg>
-        
-        {/* Percentage */}
-        <Text style={styles.progressText}>
-          {Math.round(progress * 100)}%
-        </Text>
+        {/* Optionnel: Texte de pourcentage au centre */}
+        {/* <Text style={styles.progressText}>{Math.round(progress * 100)}%</Text> */}
       </View>
     );
   };
@@ -719,19 +770,14 @@ export default function DownloadsScreen() {
   // Message if no episodes are available
   const NoEpisodesMessage = () => (
     <View style={styles.emptyContainer}>
-      <Text style={styles.emptyText}>No episodes available</Text>
+      <Text style={styles.emptyText}>Aucun épisode disponible</Text>
       {isOffline && (
         <View style={styles.offlineMessageContainer}>
-          <WifiOff size={20} color="#888" />
-          <Text style={styles.offlineText}>Offline mode</Text>
+          <WifiOff size={20} color={colors.textMuted} />
+          <Text style={styles.offlineText}>Mode hors ligne</Text>
         </View>
       )}
-      <TouchableOpacity 
-        style={styles.refreshButton}
-        onPress={refreshData}
-      >
-        <Text style={styles.refreshButtonText}>Refresh</Text>
-      </TouchableOpacity>
+      {/* Bouton Refresh supprimé */}
     </View>
   );
 
@@ -756,16 +802,13 @@ export default function DownloadsScreen() {
   // Main display
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Downloads</Text>
+      <View style={styles.headerBar}>
+        <Text style={styles.headerTitle}>Téléchargements</Text>
         <View style={styles.headerActions}>
           {isOffline && <OfflineIndicator />}
           {Platform.OS !== 'web' && Object.values(downloadStatus).some(status => status.downloaded) && (
-            <TouchableOpacity
-              style={styles.deleteAllButton}
-              onPress={confirmDeleteAll}
-            >
-              <Trash size={20} color="#fff" />
+            <TouchableOpacity onPress={confirmDeleteAll}>
+              <Trash size={22} color={colors.textSecondary} />
             </TouchableOpacity>
           )}
         </View>
@@ -784,88 +827,90 @@ export default function DownloadsScreen() {
         {episodes.length === 0 ? (
           <NoEpisodesMessage />
         ) : (
-          episodes.map((episode, index) => (
-            <View key={episode.id} style={styles.episodeCard}>
-              <TouchableOpacity 
-                style={styles.episodeInfo}
-                onPress={() => playEpisode(episode, index)}
-                activeOpacity={0.7}
+          episodes.map((episode) => {
+            // Obtenir le statut spécifique à cet épisode
+            const status = downloadStatus[episode.id] || { downloaded: false, downloading: false, progress: 0, error: null };
+            const displayDuration = formatDuration(parseDuration(episode.duration));
+
+            // Déterminer l'action pour le bouton de droite
+            const handleDownloadAction = () => {
+              if (status.downloaded) {
+                Alert.alert( "Supprimer", `Supprimer "${episode.title}" ?`,
+                  [ { text: "Annuler", style: "cancel" },
+                    { text: "Supprimer", style: "destructive", onPress: () => deleteDownload(episode) } ]
+                );
+              } else if (status.downloading) {
+                // TODO: Implémenter la pause/annulation
+                console.log("Action Pause/Annuler à implémenter");
+              } else if (status.error) {
+                 console.log("Action Réessayer");
+                 downloadEpisode(episode); // Relancer le téléchargement
+              } else {
+                downloadEpisode(episode);
+              }
+            };
+
+            return (
+              <TouchableOpacity
+                key={episode.id}
+                style={styles.episodeItem}
+                // Appeler playEpisode seulement si téléchargé
+                onPress={() => status.downloaded && status.filePath ? playEpisode(episode) : Alert.alert("Non disponible", "Téléchargez l'épisode pour l'écouter.")}
+                activeOpacity={status.downloaded ? 0.7 : 1.0}
               >
-                <Text style={styles.episodeTitle}>{episode.title}</Text>
-                {episode.publication_date && (
-                  <Text style={styles.episodeDate}>
-                    {new Date(episode.publication_date).toLocaleDateString()}
+                {/* Placeholder Image */}
+                <View style={styles.episodeImagePlaceholder}>
+                  <Music size={28} color={colors.textSecondary} />
+                </View>
+
+                {/* Infos Texte */}
+                <View style={styles.episodeInfo}>
+                  <Text style={styles.episodeTitle} numberOfLines={2}>{episode.title}</Text>
+                  <Text style={styles.episodeDuration} numberOfLines={1}>
+                    {displayDuration}
                   </Text>
-                )}
-                {downloadStatus[episode.id]?.downloaded && (
-                  <Text style={styles.downloadedIndicator}>Downloaded</Text>
-                )}
-              </TouchableOpacity>
+                  {/* Afficher l'erreur spécifique à l'item */}
+                  {status.error && !status.downloading && (
+                     <Text style={styles.errorTextItem} numberOfLines={1}>Erreur: {status.error}</Text>
+                  )}
+                </View>
 
-              <View style={styles.actions}>
+                {/* Bouton/Indicateur de Téléchargement */}
                 <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={() => playEpisode(episode, index)}
+                  style={styles.downloadButtonContainer}
+                  onPress={handleDownloadAction}
+                  disabled={isOffline && !status.downloaded} // Désactiver si offline et non téléchargé
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <Play size={20} color="#fff" />
+                  {status.downloading ? (
+                    // Afficher la progression circulaire
+                    // <ProgressCircle progress={status.progress} />
+                    // Ou si tu utilises react-native-progress:
+                    <Progress.Circle size={30} progress={status.progress} indeterminate={status.progress === 0} color={colors.iconColorDownloaded} />
+                  ) : status.downloaded ? (
+                    // Afficher l'icône "Téléchargé"
+                    <Check size={28} color={colors.iconColorDownloaded} />
+                  ) : status.error ? (
+                     // Afficher l'icône "Erreur"
+                    <AlertTriangle size={26} color={colors.errorText} />
+                  ) : (
+                    // Afficher l'icône "Télécharger"
+                    <Download size={26} color={isOffline ? colors.textMuted : colors.iconColor} /> // Grisé si offline
+                  )}
                 </TouchableOpacity>
-
-                {Platform.OS !== 'web' ? (
-                  !isOffline && (
-                    downloadStatus[episode.id]?.downloaded ? (
-                      <TouchableOpacity
-                        style={[styles.actionButton, styles.deleteButton]}
-                        onPress={() => deleteDownload(episode)}
-                      >
-                        <Trash2 size={20} color="#fff" />
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        style={[
-                          styles.actionButton, 
-                          styles.downloadButton,
-                          downloadStatus[episode.id]?.downloading && styles.downloadingButton
-                        ]}
-                        onPress={() => downloadEpisode(episode)}
-                        disabled={downloadStatus[episode.id]?.downloading || isOffline}
-                      >
-                        {downloadStatus[episode.id]?.downloading ? (
-                          <ProgressCircle progress={downloadStatus[episode.id]?.progress || 0} />
-                        ) : (
-                          <Download size={20} color="#fff" />
-                        )}
-                      </TouchableOpacity>
-                    )
-                  )
-                ) : (
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.downloadButton]}
-                    onPress={() => downloadEpisode(episode)}
-                  >
-                    <Download size={20} color="#fff" />
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-          ))
+              </TouchableOpacity>
+            );
+          })
         )}
       </ScrollView>
-      
-      <TouchableOpacity 
-        style={styles.floatingRefreshButton}
-        onPress={refreshData}
-      >
-        <Text style={styles.refreshButtonText}>Refresh</Text>
-      </TouchableOpacity>
     </View>
   );
 }
 
-// Styles
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: colors.background,
   },
   loadingContainer: {
     flex: 1,
@@ -877,34 +922,39 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginTop: 16,
   },
-  header: {
+  headerBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 20,
-    marginTop: 20,
-    backgroundColor: '#1a1a1a',
+    marginTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingBottom: 15,
+    paddingHorizontal: 20,
+    backgroundColor: colors.background,
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
+    // borderBottomColor: colors.cardBackground,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 15, // Espace entre icônes
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
+  offlineIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#333',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 16,
+  },
+  offlineIndicatorText: {
     color: '#fff',
-  },
-  deleteAllButton: {
-    padding: 8,
-    backgroundColor: '#ef4444',
-    borderRadius: 8,
-  },
-  scrollView: {
-    flex: 1,
-    padding: 20,
+    fontSize: 12,
+    marginLeft: 4,
   },
   errorContainer: {
     backgroundColor: 'rgba(239, 68, 68, 0.2)',
@@ -936,6 +986,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
   },
+  scrollView: {
+    flex: 1,
+  },
+  listContentContainer: { // Ajouter si on passe à FlatList
+     paddingHorizontal: 15,
+     paddingBottom: 30,
+     paddingTop: 10,
+  },
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -956,108 +1014,69 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 16,
   },
+  // Styles pour les items de la liste
+  episodeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20, // Padding latéral
+    paddingVertical: 15, // Padding vertical
+    borderBottomWidth: 1, // Séparateur fin
+    borderBottomColor: colors.cardBackground, // Couleur du séparateur
+  },
+  episodeImagePlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 8,
+    backgroundColor: colors.cardBackground,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  episodeInfo: {
+    flex: 1, // Prend l'espace disponible
+    justifyContent: 'center',
+    marginRight: 10, // Espace avant le bouton de droite
+  },
+  episodeTitle: {
+    fontSize: 16,
+    fontWeight: '500', // Moins gras que bold
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  episodeDuration: { // Nouveau style pour la durée
+    fontSize: 13,
+    color: colors.textSecondary, // Couleur secondaire
+  },
+   errorTextItem: { // Erreur spécifique à l'item
+    fontSize: 12,
+    color: colors.errorText,
+    marginTop: 4,
+  },
+  // Conteneur pour le bouton/indicateur de droite
+  downloadButtonContainer: {
+    width: 44, // Zone cliquable fixe
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 10, // Espace à gauche
+  },
+  // Style pour le cercle de progression SVG
+  progressCircleContainer: {
+    // Plus besoin de width/height ici, Svg les définit
+    justifyContent: 'center',
+    alignItems: 'center',
+    // position: 'relative', // Pas nécessaire si le texte n'est pas superposé
+  },
+  progressText: { // Si tu veux afficher le % dans le cercle SVG
+     // position: 'absolute', // Décommenter si superposé
+     color: colors.textSecondary,
+     fontSize: 10,
+     fontWeight: '600',
+  },
+  // Styles pour les messages offline/refresh (inchangés)
   offlineText: {
     color: '#888',
     fontSize: 14,
     marginLeft: 8,
   },
-  refreshButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    backgroundColor: '#0ea5e9',
-    borderRadius: 8,
-    marginTop: 8,
-  },
-  refreshButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  floatingRefreshButton: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    backgroundColor: '#0ea5e9',
-    borderRadius: 8,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-  },
-  offlineIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#333',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 16,
-  },
-  offlineIndicatorText: {
-    color: '#fff',
-    fontSize: 12,
-    marginLeft: 4,
-  },
-  episodeCard: {
-    flexDirection: 'row',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 12,
-    alignItems: 'center',
-  },
-  episodeInfo: {
-    flex: 1,
-    marginRight: 10,
-  },
-  episodeTitle: {
-    fontSize: 16,
-    color: '#fff',
-    marginBottom: 4,
-  },
-  episodeDate: {
-    fontSize: 12,
-    color: '#888',
-  },
-  downloadedIndicator: {
-    fontSize: 10,
-    color: '#0ea5e9',
-    marginTop: 4,
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  actionButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    backgroundColor: '#333',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  downloadButton: {
-    backgroundColor: '#0ea5e9',
-  },
-  downloadingButton: {
-    backgroundColor: '#1d4ed8',
-  },
-  deleteButton: {
-    backgroundColor: '#ef4444',
-  },
-  progressCircleContainer: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  progressText: {
-    position: 'absolute',
-    color: '#fff',
-    fontSize: 8,
-    fontWeight: 'bold',
-  }
 });
