@@ -10,6 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PENDING_POSITIONS_KEY } from '../utils/PlaybackSyncService';
 import { supabase } from '../lib/supabase'; // Import supabase for user ID
 import throttle from 'lodash/throttle';
+import { theme } from '../styles/global';
 
 interface AudioPlayerProps {
   episode: Episode;
@@ -415,7 +416,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
   if (isLoading) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="large" color="#0ea5e9" />
+        <ActivityIndicator size="large" color={theme.colors.primary} />
         <Text style={styles.loadingText}>Chargement...</Text>
       </View>
     );
@@ -494,34 +495,34 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       {/* Contrôles de lecture */}
       <View style={styles.controls}>
         <TouchableOpacity onPress={onPrevious} style={styles.button}>
-          <MaterialIcons name="skip-previous" size={32} color="#fff" />
+          <MaterialIcons name="skip-previous" size={32} color={theme.colors.text} />
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => handleSeek(-30)} style={styles.button}>
-          <MaterialIcons name="replay-30" size={32} color="#fff" />
+          <MaterialIcons name="replay-30" size={32} color={theme.colors.text} />
         </TouchableOpacity>
         
         <TouchableOpacity onPress={handlePlayPause} style={[styles.button, styles.playButton]}>
           {isPlaying ? (
-            <MaterialIcons name="pause" size={52} color="#fff" />
+            <MaterialIcons name="pause" size={52} color={theme.colors.text} />
           ) : (
-            <MaterialIcons name="play-arrow" size={52} color="#fff" />
+            <MaterialIcons name="play-arrow" size={52} color={theme.colors.text} />
           )}
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => handleSeek(30)} style={styles.button}>
-          <MaterialIcons name="forward-30" size={32} color="#fff" />
+          <MaterialIcons name="forward-30" size={32} color={theme.colors.text} />
         </TouchableOpacity>
         
         <TouchableOpacity onPress={onNext} style={styles.button}>
-          <MaterialIcons name="skip-next" size={32} color="#fff" />
+          <MaterialIcons name="skip-next" size={32} color={theme.colors.text} />
         </TouchableOpacity>
       </View>
 
       <View style={styles.additionalControls}>
         {/* Bouton "Passer les auditeurs" */}
         <TouchableOpacity onPress={handleSkip10Minutes} style={styles.skipButton}>
-          <MaterialIcons name="next-plan" size={20} color="#fff" />
+          <MaterialIcons name="next-plan" size={20} color={theme.colors.text} />
           <Text style={styles.skipText}>Skip auditeurs</Text>
         </TouchableOpacity>
 
@@ -530,7 +531,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
           onPress={toggleSleepTimer} 
           style={[styles.sleepButton, sleepTimerActive && styles.sleepButtonActive]}
         >
-          <MaterialIcons name="timer" size={20} color={sleepTimerActive ? '#fff' : '#888'} />
+          <MaterialIcons name="timer" size={20} color={sleepTimerActive ? theme.colors.text : theme.colors.description} />
           <Text style={[styles.sleepText, sleepTimerActive && styles.sleepTextActive]}>
             {sleepTimerActive ? 'Sleep actif' : 'Sleep timer'}
           </Text>
@@ -540,7 +541,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       {/* Indicateur de mise en mémoire tampon */}
       {isBuffering && (
         <View style={styles.bufferingContainer}>
-          <ActivityIndicator size="small" color="#0ea5e9" />
+          <ActivityIndicator size="small" color={theme.colors.primary} />
           <Text style={styles.bufferingText}>Mise en mémoire tampon...</Text>
         </View>
       )}
@@ -551,35 +552,35 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: 15,
-    backgroundColor: '#121212',
+    // backgroundColor: theme.colors.primaryBackground,
     flex: 1,
     justifyContent: 'flex-end', // Main content aligns to bottom
     alignItems: 'center', // Center children horizontally by default
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-      },
-      android: {
-        elevation: 5,
-      },
-      web: {
-        boxShadow: '0 2px 4px rgba(0,0,0,0.25)',
-      },
-    }),
+    // ...Platform.select({
+    //   ios: {
+    //     shadowColor: theme.colors.shadowColor,
+    //     shadowOffset: { width: 0, height: 2 },
+    //     shadowOpacity: 0.25,
+    //     shadowRadius: 3.84,
+    //   },
+    //   android: {
+    //     elevation: 5,
+    //   },
+    //   web: {
+    //     boxShadow: '0 2px 4px rgba(0,0,0,0.25)',
+    //   },
+    // }),
   },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#fff',
+    color: theme.colors.text,
     textAlign: 'center',
     marginBottom: 8,
   },
   description: {
     fontSize: 16,
-    color: '#888',
+    color: theme.colors.description,
     marginBottom: 30,
     textAlign: 'center',
     width: '100%',
@@ -598,7 +599,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: '100%',
     height: 8,
-    backgroundColor: '#333',
+    backgroundColor: theme.colors.borderColor,
     borderRadius: 4,
     top: '50%',
     marginTop: -4,
@@ -606,7 +607,7 @@ const styles = StyleSheet.create({
   progressBar: {
     position: 'absolute',
     height: 8,
-    backgroundColor: '#0ea5e9',
+    backgroundColor: theme.colors.primary,
     borderRadius: 4,
     top: '50%',
     marginTop: -4,
@@ -615,15 +616,15 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 16,
     height: 16,
-    backgroundColor: '#0ea5e9',
+    backgroundColor: theme.colors.primary,
     borderRadius: 8,
     borderWidth: 3,
-    borderColor: '#fff',
+    borderColor: theme.colors.text,
     top: '50%',
     marginLeft: -8,
     marginTop: -8,
     elevation: 2,
-    shadowColor: '#000',
+    shadowColor: theme.colors.shadowColor,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 2,
@@ -641,7 +642,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   timeText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 14,
   },
   controls: {
@@ -656,7 +657,7 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   playButton: {
-    backgroundColor: '#0ea5e9',
+    backgroundColor: theme.colors.buttonBackground,
     width: 76,
     height: 76,
     borderRadius: 38, // Half of width/height for perfect circle
@@ -665,35 +666,35 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   loadingText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 16,
     marginTop: 10,
   },
   errorText: {
-    color: '#ef4444',
+    color: theme.colors.error,
     fontSize: 16,
     textAlign: 'center',
     marginBottom: 16,
   },
   retryButton: {
-    backgroundColor: '#333',
+    backgroundColor: theme.colors.borderColor,
     padding: 12,
     borderRadius: 8,
     marginBottom: 16,
   },
   retryText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 14,
   },
   debugContainer: {
     marginTop: 10,
     padding: 8,
-    backgroundColor: '#333',
+    backgroundColor: theme.colors.borderColor,
     borderRadius: 4,
     width: '100%',
   },
   debugUrl: {
-    color: '#888',
+    color: theme.colors.description,
     fontSize: 12,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
@@ -707,34 +708,34 @@ const styles = StyleSheet.create({
   skipButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#333',
+    backgroundColor: theme.colors.borderColor,
     padding: 10,
     borderRadius: 30,
     gap: 8,
   },
   skipText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 14,
   },
   sleepButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderColor: '#333',
+    borderColor: theme.colors.borderColor,
     padding: 10,
     borderRadius: 30,
     borderWidth: 1,
     gap: 8,
   },
   sleepButtonActive: {
-    backgroundColor: '#333',
-    borderColor: '#444',
+    backgroundColor: theme.colors.borderColor,
+    borderColor: theme.colors.borderColor,
   },
   sleepText: {
-    color: '#888',
+    color: theme.colors.description,
     fontSize: 14,
   },
   sleepTextActive: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 14,
   },
   bufferingContainer: {
@@ -751,7 +752,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   bufferingText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 12,
     marginLeft: 6,
   }

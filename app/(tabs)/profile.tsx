@@ -4,6 +4,8 @@ import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { storage } from '../../lib/storage';
+import { theme } from '../../styles/global';
+import { componentStyle } from '../../styles/componentStyle';
 
 export default function ProfileScreen() {
   // État
@@ -54,14 +56,16 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
+      <View style={componentStyle.container}>
         {/* En-tête */}
-        <Text style={styles.title}>Profil</Text>
+        <View style={componentStyle.header}>
+          <Text style={componentStyle.headerTitle}>Profil</Text>
+        </View>
         
         {/* Contenu principal */}
         <View style={styles.content}>
           <View style={styles.profileCard}>
-            <MaterialIcons name="account-circle" size={32} color="#0ea5e9" />
+            <MaterialIcons name="account-circle" size={32} color={theme.colors.primary} />
             <Text style={styles.profileText}>
               Paramètres du compte
             </Text>
@@ -74,9 +78,9 @@ export default function ProfileScreen() {
             disabled={isLoggingOut}
           >
             {isLoggingOut ? (
-              <ActivityIndicator size="small" color="#fff" style={styles.logoutIcon} />
+              <ActivityIndicator size="small" color={theme.colors.text} style={styles.logoutIcon} />
             ) : (
-              <MaterialIcons name="logout" size={24} color="#fff" style={styles.logoutIcon} />
+              <MaterialIcons name="logout" size={24} color={theme.colors.text} style={styles.logoutIcon} />
             )}
             <Text style={styles.logoutText}>
               {isLoggingOut ? 'Déconnexion...' : 'Se déconnecter'}
@@ -110,7 +114,7 @@ export default function ProfileScreen() {
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Déconnexion</Text>
                 <TouchableOpacity onPress={cancelLogout} style={styles.closeButton}>
-                  <MaterialIcons name="close" size={24} color="#888" />
+                  <MaterialIcons name="close" size={24} color={theme.colors.description} />
                 </TouchableOpacity>
               </View>
               
@@ -130,7 +134,7 @@ export default function ProfileScreen() {
                   style={styles.confirmButton} 
                   onPress={confirmLogout}
                 >
-                  <MaterialIcons name="logout" size={16} color="#fff" style={{ marginRight: 6 }} />
+                  <MaterialIcons name="logout" size={16} color={theme.colors.text} style={{ marginRight: 6 }} />
                   <Text style={styles.confirmButtonText}>Déconnexion</Text>
                 </TouchableOpacity>
               </View>
@@ -145,33 +149,34 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: theme.colors.primaryBackground,
   },
   container: {
     flex: 1,
     padding: 20,
-    backgroundColor: '#121212',
+    backgroundColor: theme.colors.primaryBackground,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#fff',
+    color: theme.colors.text,
     marginBottom: 20,
   },
   content: {
     flex: 1,
+    padding: 10,
   },
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1a1a1a',
+    backgroundColor: theme.colors.secondaryBackground,
     padding: 15,
     borderRadius: 8,
     marginBottom: 20,
     gap: 12,
   },
   profileText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 16,
     fontWeight: '500',
   },
@@ -179,7 +184,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ef4444',
+    backgroundColor: theme.colors.error,
     padding: 15,
     borderRadius: 8,
     gap: 8,
@@ -188,20 +193,20 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   logoutText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 16,
     fontWeight: '600',
   },
   stickyBottom: {
     padding: 16,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: theme.colors.secondaryBackground,
     borderRadius: 8,
     marginTop: 'auto',
     marginBottom: Platform.OS === 'ios' ? 0 : 16,
     // Ombre subtile
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
+        shadowColor: theme.colors.shadowColor,
         shadowOffset: { width: 0, height: -2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
@@ -228,12 +233,12 @@ const styles = StyleSheet.create({
     maxWidth: 400,
   },
   modalContent: {
-    backgroundColor: '#1e1e1e',
+    backgroundColor: theme.colors.modal,
     borderRadius: 16,
     overflow: 'hidden',
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
+        shadowColor: theme.colors.shadowColor,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
@@ -247,14 +252,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderBottomColor: '#333',
+    borderBottomColor: theme.colors.borderColor,
     borderBottomWidth: StyleSheet.hairlineWidth,
     padding: 16,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#fff',
+    color: theme.colors.text,
   },
   closeButton: {
     padding: 4,
@@ -268,31 +273,31 @@ const styles = StyleSheet.create({
   },
   modalButtons: {
     flexDirection: 'row',
-    borderTopColor: '#333',
+    borderTopColor: theme.colors.borderColor,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   cancelButton: {
     flex: 1,
     padding: 16,
     alignItems: 'center',
-    borderRightColor: '#333',
+    borderRightColor: theme.colors.borderColor,
     borderRightWidth: StyleSheet.hairlineWidth,
   },
   cancelButtonText: {
-    color: '#0ea5e9',
+    color: theme.colors.linkColor,
     fontSize: 16,
     fontWeight: '600',
   },
   confirmButton: {
     flex: 1,
     flexDirection: 'row',
-    backgroundColor: '#ef4444',
+    backgroundColor: theme.colors.error,
     padding: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
   confirmButtonText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 16,
     fontWeight: '600',
   },

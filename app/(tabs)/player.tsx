@@ -9,6 +9,8 @@ import { audioManager } from '../../utils/OptimizedAudioService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import NetInfo from '@react-native-community/netinfo';
+import { theme } from '../../styles/global';
+import { LinearGradient } from 'expo-linear-gradient';
 
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
 type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row']; // Added type
@@ -677,7 +679,7 @@ export default function PlayerScreen() {
   if (loading || currentIndex === -1 && episodes.length > 0) { // Show loading until an index is set
     return (
       <View style={[styles.container, {alignItems: 'center', justifyContent: 'center'}]}>
-        <ActivityIndicator size="large" color="#0ea5e9" />
+        <ActivityIndicator size="large" color={theme.colors.primary} />
         <Text style={{color: 'white', marginTop: 10}}>Chargement du lecteur...</Text>
       </View>
     );
@@ -687,7 +689,7 @@ export default function PlayerScreen() {
   if (error) {
     return (
       <View style={[styles.container, {alignItems: 'center', justifyContent: 'center'}]}>
-        <Text style={{color: '#ef4444'}}>{error}</Text>
+        <Text style={{color: theme.colors.error }}>{error}</Text>
       </View>
     );
   }
@@ -718,7 +720,10 @@ export default function PlayerScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <LinearGradient
+      colors={['#0b133b', '#000000']} // Example: Night blue to black
+      style={styles.container}
+    >
       {isOffline && (
         <View style={styles.offlineBanner}>
           <Text style={styles.offlineBannerText}>Mode hors ligne</Text>
@@ -734,19 +739,20 @@ export default function PlayerScreen() {
           // handlePrevious(); // Auto-play older episode after completion
         }}
       />
-    </View>
+    </LinearGradient>
   );
 }
 
+// --- Styles definition (modified) ---
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    // backgroundColor removed, LinearGradient handles it
     justifyContent: 'center',
     padding: 20,
   },
   offlineBanner: {
-    backgroundColor: '#333',
+    backgroundColor: theme.colors.borderColor,
     padding: 8,
     alignItems: 'center',
     marginBottom: 16,

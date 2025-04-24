@@ -7,6 +7,8 @@ import * as Linking from 'expo-linking';
 import { storage } from '../../lib/storage';
 import * as Sentry from '@sentry/react-native';
 import Constants from 'expo-constants';
+import { theme } from '../../styles/global';
+import { componentStyle } from '../../styles/componentStyle';
 
 // Import SVG components
 import Svg, { Path } from 'react-native-svg';
@@ -264,56 +266,60 @@ export default function LoginScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Connexion</Text>
+    <View style={componentStyle.container}>
+      <View style={componentStyle.header}>
+        <Text style={componentStyle.headerTitle}>Connexion</Text>
+      </View>
 
       {error && <Text style={styles.error}>{error}</Text>}
 
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        placeholderTextColor="#666"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        keyboardType="email-address"
-      />
+      <View style={styles.subContainer}>
+        <TextInput
+          style={styles.input}
+          placeholder="Email"
+          placeholderTextColor={theme.colors.secondaryDescription}
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+        />
 
-      <TextInput
-        style={styles.input}
-        placeholder="Mot de passe"
-        placeholderTextColor="#666"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
+        <TextInput
+          style={styles.input}
+          placeholder="Mot de passe"
+          placeholderTextColor={theme.colors.secondaryDescription}
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
 
-      <TouchableOpacity
-        style={[styles.button, loading && styles.buttonDisabled]}
-        onPress={handleLogin}
-        disabled={loading}>
-        <Text style={styles.buttonText}>
-          {loading ? 'Connexion...' : 'Se connecter'}
-        </Text>
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.button, loading && styles.buttonDisabled]}
+          onPress={handleLogin}
+          disabled={loading}>
+          <Text style={styles.buttonText}>
+            {loading ? 'Connexion...' : 'Se connecter'}
+          </Text>
+        </TouchableOpacity>
 
-      <View style={styles.divider}>
-        <View style={styles.dividerLine} />
-        <Text style={styles.dividerText}>ou</Text>
-        <View style={styles.dividerLine} />
+        <View style={styles.divider}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>ou</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        <TouchableOpacity
+          style={styles.googleButton}
+          onPress={handleGoogleSignIn}
+          disabled={loading}>
+          <GoogleIcon />
+          <Text style={styles.googleButtonText}>Se connecter avec Google</Text>
+        </TouchableOpacity>
+
+        <Link href="/auth/register" style={styles.link}>
+          <Text style={styles.linkText}>Pas encore de compte ? S'inscrire</Text>
+        </Link>
       </View>
-
-      <TouchableOpacity
-        style={styles.googleButton}
-        onPress={handleGoogleSignIn}
-        disabled={loading}>
-        <GoogleIcon />
-        <Text style={styles.googleButtonText}>Se connecter avec Google</Text>
-      </TouchableOpacity>
-
-      <Link href="/auth/register" style={styles.link}>
-        <Text style={styles.linkText}>Pas encore de compte ? S'inscrire</Text>
-      </Link>
     </View>
   );
 }
@@ -323,24 +329,22 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
     justifyContent: 'center',
-    backgroundColor: '#121212',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 20,
-    textAlign: 'center',
+    backgroundColor: theme.colors.primaryBackground,
   },
   input: {
-    backgroundColor: '#1a1a1a',
+    backgroundColor: theme.colors.secondaryBackground,
     borderRadius: 8,
     padding: 15,
     marginBottom: 10,
-    color: '#fff',
+    color: theme.colors.text,
+  },
+  subContainer: {
+    flex: 1,
+    padding: 15,
+    justifyContent: 'center',
   },
   button: {
-    backgroundColor: '#0ea5e9',
+    backgroundColor: theme.colors.buttonBackground,
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
@@ -350,7 +354,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   buttonText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontWeight: '600',
     fontSize: 16,
   },
@@ -359,11 +363,11 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   linkText: {
-    color: '#0ea5e9',
+    color: theme.colors.linkColor,
     fontSize: 16,
   },
   error: {
-    color: '#ef4444',
+    color: theme.colors.error,
     marginBottom: 10,
     textAlign: 'center',
   },
@@ -375,27 +379,27 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#333',
+    backgroundColor: theme.colors.borderColor,
   },
   dividerText: {
-    color: '#666',
+    color: theme.colors.secondaryDescription,
     paddingHorizontal: 10,
   },
   googleButton: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
+    backgroundColor: theme.colors.text,
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 1,
-    shadowColor: '#000',
+    shadowColor: theme.colors.shadowColor,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 1,
   },
   googleButtonText: {
-    color: '#757575',
+    color: theme.colors.secondaryDescription,
     fontSize: 15,
     fontWeight: '500',
   },

@@ -8,6 +8,8 @@ import { Episode } from '../../types/episode';
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { formatTime } from '../../utils/OptimizedAudioService'; // Import formatTime
+import { theme } from '../../styles/global';
+import { componentStyle } from '../../styles/componentStyle';
 
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
 type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row'];
@@ -168,19 +170,21 @@ export default function EpisodesScreen() {
 
   if (loading) {
     return (
-      <View style={styles.container}>
+      <View style={componentStyle.header}>
         <Text style={styles.loadingText}>Chargement des épisodes...</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>Episodes</Text>
+    <View style={componentStyle.container}>
+      <View style={componentStyle.header}>
+        <Text style={componentStyle.headerTitle}>Episodes</Text>
+      </View>
       
       {isOffline && (
         <View style={styles.offlineContainer}>
-          <MaterialIcons name="wifi-off" size={20} color="#888" />
+          <MaterialIcons name="wifi-off" size={20} color={theme.colors.description} />
           <Text style={styles.offlineText}>
             Mode hors-ligne - Seuls les épisodes en cache sont disponibles
           </Text>
@@ -228,9 +232,9 @@ export default function EpisodesScreen() {
                 <Text style={styles.episodeDuration}>{formatTime(item.duration)}</Text> 
               </View>
               {watchedEpisodes.has(item.id) ? (
-                <MaterialIcons name="check-circle" size={24} color="#0ea5e9" />
+                <MaterialIcons name="check-circle" size={24} color={theme.colors.primary} />
               ) : (
-                <MaterialIcons name="play-arrow" size={24} color="#fff" />
+                <MaterialIcons name="play-arrow" size={24} color={theme.colors.text} />
               )}
             </TouchableOpacity>
           )}
@@ -241,28 +245,16 @@ export default function EpisodesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#121212',
-    padding: 20,
-  },
-  header: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 20,
-    marginTop: 20,
-  },
   offlineContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#333',
+    backgroundColor: theme.colors.borderColor,
     padding: 12,
     borderRadius: 8,
     marginBottom: 16,
   },
   offlineText: {
-    color: '#aaa',
+    color: theme.colors.secondaryDescription,
     fontSize: 14,
     marginLeft: 8,
     flex: 1,
@@ -273,10 +265,10 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderRadius: 8,
     borderLeftWidth: 3,
-    borderLeftColor: '#ef4444',
+    borderLeftColor: theme.colors.error,
   },
   errorText: {
-    color: '#ff4444',
+    color: theme.colors.error,
     fontSize: 16,
   },
   emptyContainer: {
@@ -285,13 +277,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyText: {
-    color: '#888',
+    color: theme.colors.description,
     fontSize: 16,
     textAlign: 'center',
     marginBottom: 8,
   },
   hintText: {
-    color: '#666',
+    color: theme.colors.secondaryDescription,
     fontSize: 14,
     textAlign: 'center',
   },
@@ -299,7 +291,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 15,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: theme.colors.secondaryBackground,
     borderRadius: 10,
     marginBottom: 10,
   },
@@ -309,21 +301,21 @@ const styles = StyleSheet.create({
   episodeTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#fff',
+    color: theme.colors.text,
     marginBottom: 4,
   },
   episodeDescription: {
     fontSize: 14,
-    color: '#888',
+    color: theme.colors.description,
     marginBottom: 4,
   },
   episodeDuration: {
     fontSize: 12,
-    color: '#666',
+    color: theme.colors.secondaryDescription,
     marginTop: 4, // Added margin for spacing
   },
   loadingText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 16,
     textAlign: 'center',
   },

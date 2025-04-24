@@ -17,6 +17,8 @@ import { useRouter } from 'expo-router';
 import { Episode } from '../../types/episode';
 import Svg, { Circle } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { theme } from '../../styles/global';
+import { componentStyle } from '../../styles/componentStyle';
 
 // Types
 interface DownloadStatus {
@@ -676,7 +678,7 @@ export default function DownloadsScreen() {
             cx={center}
             cy={center}
             r={radius}
-            stroke="#333333"
+            stroke={theme.colors.borderColor}
             strokeWidth={strokeWidth}
             fill="none"
           />
@@ -686,7 +688,7 @@ export default function DownloadsScreen() {
             cx={center}
             cy={center}
             r={radius}
-            stroke="#0ea5e9"
+            stroke={theme.colors.primary}
             strokeWidth={strokeWidth}
             fill="none"
             strokeDasharray={circumference}
@@ -710,7 +712,7 @@ export default function DownloadsScreen() {
       <Text style={styles.emptyText}>No episodes available</Text>
       {isOffline && (
         <View style={styles.offlineMessageContainer}>
-          <MaterialIcons name="wifi-off" size={20} color="#888" />
+          <MaterialIcons name="wifi-off" size={20} color={theme.colors.description} />
           <Text style={styles.offlineText}>Offline mode</Text>
         </View>
       )}
@@ -726,7 +728,7 @@ export default function DownloadsScreen() {
   // Offline mode indicator
   const OfflineIndicator = () => (
     <View style={styles.offlineIndicator}>
-      <MaterialIcons name="wifi-off" size={16} color="#fff" />
+      <MaterialIcons name="wifi-off" size={16} color={theme.colors.text} />
       <Text style={styles.offlineIndicatorText}>Offline mode</Text>
     </View>
   );
@@ -735,7 +737,7 @@ export default function DownloadsScreen() {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0ea5e9" />
+        <ActivityIndicator size="large" color={theme.colors.primary} />
         <Text style={styles.loadingText}>Loading episodes...</Text>
       </View>
     );
@@ -743,9 +745,9 @@ export default function DownloadsScreen() {
 
   // Main display
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Downloads</Text>
+    <View style={componentStyle.container}>
+      <View style={componentStyle.header}>
+        <Text style={componentStyle.headerTitle}>Downloads</Text>
         <View style={styles.headerActions}>
           {isOffline && <OfflineIndicator />}
           {Platform.OS !== 'web' && Object.values(downloadStatus).some(status => status.downloaded) && (
@@ -753,7 +755,7 @@ export default function DownloadsScreen() {
               style={styles.deleteAllButton}
               onPress={confirmDeleteAll}
             >
-              <MaterialIcons name="delete" size={24} color="#fff" />
+              <MaterialIcons name="delete" size={24} color={theme.colors.text} />
             </TouchableOpacity>
           )}
         </View>
@@ -798,7 +800,7 @@ export default function DownloadsScreen() {
                         style={[styles.actionButton, styles.deleteButton]}
                         onPress={() => deleteDownload(episode)}
                       >
-                        <MaterialIcons name="delete" size={20} color="#fff" />
+                        <MaterialIcons name="delete" size={20} color={theme.colors.text} />
                       </TouchableOpacity>
                     ) : (
                       <TouchableOpacity
@@ -813,7 +815,7 @@ export default function DownloadsScreen() {
                         {downloadStatus[episode.id]?.downloading ? (
                           <ProgressCircle progress={downloadStatus[episode.id]?.progress || 0} />
                         ) : (
-                          <MaterialIcons name="cloud-download" size={20} color="#fff" />
+                          <MaterialIcons name="cloud-download" size={20} color={theme.colors.text} />
                         )}
                       </TouchableOpacity>
                     )
@@ -823,7 +825,7 @@ export default function DownloadsScreen() {
                     style={[styles.actionButton, styles.downloadButton]}
                     onPress={() => downloadEpisode(episode)}
                   >
-                    <MaterialIcons name="cloud-download" size={20} color="#fff" />
+                    <MaterialIcons name="cloud-download" size={20} color={theme.colors.text} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -846,46 +848,31 @@ export default function DownloadsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: theme.colors.primaryBackground,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#121212',
+    backgroundColor: theme.colors.primaryBackground,
   },
   loadingText: {
-    color: '#fff',
+    color: theme.colors.text,
     marginTop: 16,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 20,
-    marginTop: 20,
-    backgroundColor: '#1a1a1a',
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
   deleteAllButton: {
     padding: 8,
-    backgroundColor: '#ef4444',
+    backgroundColor: theme.colors.error,
     borderRadius: 8,
   },
   scrollView: {
     flex: 1,
-    padding: 20,
+    padding: 0,
   },
   errorContainer: {
     backgroundColor: 'rgba(239, 68, 68, 0.2)',
@@ -894,12 +881,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     borderRadius: 8,
     borderLeftWidth: 3,
-    borderLeftColor: '#ef4444',
+    borderLeftColor: theme.colors.error,
     flexDirection: 'row',
     alignItems: 'center',
   },
   errorText: {
-    color: '#ef4444',
+    color: theme.colors.error,
     fontSize: 14,
     flex: 1,
   },
@@ -913,7 +900,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dismissButtonText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 14,
     fontWeight: 'bold',
   },
@@ -923,7 +910,7 @@ const styles = StyleSheet.create({
     padding: 40,
   },
   emptyText: {
-    color: '#888',
+    color: theme.colors.description,
     fontSize: 16,
     textAlign: 'center',
     marginBottom: 16,
@@ -932,25 +919,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 8,
-    backgroundColor: '#333',
+    backgroundColor: theme.colors.borderColor,
     borderRadius: 16,
     marginTop: 12,
     marginBottom: 16,
   },
   offlineText: {
-    color: '#888',
+    color: theme.colors.description,
     fontSize: 14,
     marginLeft: 8,
   },
   refreshButton: {
     paddingVertical: 8,
     paddingHorizontal: 16,
-    backgroundColor: '#0ea5e9',
+    backgroundColor: theme.colors.buttonBackground,
     borderRadius: 8,
     marginTop: 8,
   },
   refreshButtonText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 14,
     fontWeight: 'bold',
   },
@@ -960,10 +947,10 @@ const styles = StyleSheet.create({
     right: 20,
     paddingVertical: 10,
     paddingHorizontal: 16,
-    backgroundColor: '#0ea5e9',
+    backgroundColor: theme.colors.buttonBackground,
     borderRadius: 8,
     elevation: 8,
-    shadowColor: '#000',
+    shadowColor: theme.colors.shadowColor,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 3,
@@ -971,19 +958,19 @@ const styles = StyleSheet.create({
   offlineIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#333',
+    backgroundColor: theme.colors.borderColor,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 16,
   },
   offlineIndicatorText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 12,
     marginLeft: 4,
   },
   episodeCard: {
     flexDirection: 'row',
-    backgroundColor: '#1a1a1a',
+    backgroundColor: theme.colors.secondaryBackground,
     borderRadius: 12,
     padding: 15,
     marginBottom: 12,
@@ -995,16 +982,16 @@ const styles = StyleSheet.create({
   },
   episodeTitle: {
     fontSize: 16,
-    color: '#fff',
+    color: theme.colors.text,
     marginBottom: 4,
   },
   episodeDate: {
     fontSize: 12,
-    color: '#888',
+    color: theme.colors.description,
   },
   downloadedIndicator: {
     fontSize: 10,
-    color: '#0ea5e9',
+    color: theme.colors.primary,
     marginTop: 4,
   },
   actions: {
@@ -1015,18 +1002,18 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 8,
-    backgroundColor: '#333',
+    backgroundColor: theme.colors.borderColor,
     justifyContent: 'center',
     alignItems: 'center',
   },
   downloadButton: {
-    backgroundColor: '#0ea5e9',
+    backgroundColor: theme.colors.buttonBackground,
   },
   downloadingButton: {
-    backgroundColor: '#1d4ed8',
+    backgroundColor: theme.colors.buttonBackground,
   },
   deleteButton: {
-    backgroundColor: '#ef4444',
+    backgroundColor: theme.colors.error,
   },
   progressCircleContainer: {
     width: '100%',
@@ -1037,7 +1024,7 @@ const styles = StyleSheet.create({
   },
   progressText: {
     position: 'absolute',
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 8,
     fontWeight: 'bold',
   }

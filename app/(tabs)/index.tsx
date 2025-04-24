@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
+import { theme } from '../../styles/global';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -19,7 +20,7 @@ export default function HomeScreen() {
           style={styles.playButton}
           onPress={() => router.push('/player')}
         >
-          <MaterialIcons name="play-arrow" size={24} color="#000" />
+          <MaterialIcons name="play-arrow" size={24} color={theme.colors.shadowColor} />
           <Text style={styles.playText}>Écouter le dernier épisode</Text>
         </TouchableOpacity>
       </View>
@@ -30,7 +31,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: theme.colors.primaryBackground,
   },
   backgroundImage: {
     width: '100%',
@@ -47,13 +48,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#fff',
+    color: theme.colors.text,
     textAlign: 'center',
     marginBottom: 10,
   },
   subtitle: {
     fontSize: 18,
-    color: '#fff',
+    color: theme.colors.text,
     textAlign: 'center',
     marginBottom: 40,
     opacity: 0.8,
@@ -61,7 +62,7 @@ const styles = StyleSheet.create({
   playButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: theme.colors.text,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 30,
@@ -70,6 +71,5 @@ const styles = StyleSheet.create({
   playText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000',
   },
 });
