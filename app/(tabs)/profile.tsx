@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Modal, SafeAreaView, Platform, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
-import { LogOut, User, X } from 'lucide-react-native';
+import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { storage } from '../../lib/storage';
 
 export default function ProfileScreen() {
@@ -61,7 +61,7 @@ export default function ProfileScreen() {
         {/* Contenu principal */}
         <View style={styles.content}>
           <View style={styles.profileCard}>
-            <User size={32} color="#0ea5e9" />
+            <MaterialIcons name="account-circle" size={32} color="#0ea5e9" />
             <Text style={styles.profileText}>
               Paramètres du compte
             </Text>
@@ -76,7 +76,7 @@ export default function ProfileScreen() {
             {isLoggingOut ? (
               <ActivityIndicator size="small" color="#fff" style={styles.logoutIcon} />
             ) : (
-              <LogOut size={24} color="#fff" style={styles.logoutIcon} />
+              <MaterialIcons name="logout" size={24} color="#fff" style={styles.logoutIcon} />
             )}
             <Text style={styles.logoutText}>
               {isLoggingOut ? 'Déconnexion...' : 'Se déconnecter'}
@@ -110,7 +110,7 @@ export default function ProfileScreen() {
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Déconnexion</Text>
                 <TouchableOpacity onPress={cancelLogout} style={styles.closeButton}>
-                  <X size={24} color="#888" />
+                  <MaterialIcons name="close" size={24} color="#888" />
                 </TouchableOpacity>
               </View>
               
@@ -130,7 +130,7 @@ export default function ProfileScreen() {
                   style={styles.confirmButton} 
                   onPress={confirmLogout}
                 >
-                  <LogOut size={16} color="#fff" style={{ marginRight: 6 }} />
+                  <MaterialIcons name="logout" size={16} color="#fff" style={{ marginRight: 6 }} />
                   <Text style={styles.confirmButtonText}>Déconnexion</Text>
                 </TouchableOpacity>
               </View>

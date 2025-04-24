@@ -194,7 +194,7 @@ class AudioManager {
   }
 
   // Charger un épisode
-  public async loadEpisode(episode: Episode): Promise<void> {
+  public async loadEpisode(episode: Episode, initialPositionSeconds?: number): Promise<void> {
     try {
       // Nettoyage du son précédent si existant
       await TrackPlayer.reset();
@@ -207,6 +207,9 @@ class AudioManager {
       console.log('- Title:', episodeToLoad.title);
       console.log('- offline_path:', episodeToLoad.offline_path || 'not available');
       console.log('- mp3Link:', episodeToLoad.mp3Link || 'not available');
+      if (initialPositionSeconds) {
+        console.log('- Initial position:', initialPositionSeconds, 'seconds');
+      }
       
       // Si nous avons un chemin hors ligne, l'utiliser en priorité absolue
       let audioSource: string;
@@ -259,6 +262,21 @@ class AudioManager {
 
       // Obtenir immédiatement l'état pour mise à jour
       await this.updatePlaybackStatus();
+      
+      // Si une position initiale est fournie, chercher cette position
+      if (initialPositionSeconds && initialPositionSeconds > 0) {
+        try {
+          // Petit délai pour s'assurer que le player est prêt
+          setTimeout(async () => {
+            console.log(`Seeking to initial position: ${initialPositionSeconds}s`);
+            await TrackPlayer.seekTo(initialPositionSeconds);
+            // Mettre à jour l'état après la recherche
+            await this.updatePlaybackStatus();
+          }, 500);
+        } catch (seekError) {
+          console.error('Error seeking to initial position:', seekError);
+        }
+      }
 
       this.notifyListeners({
         type: 'loaded',
@@ -299,8 +317,21 @@ class AudioManager {
   // Mettre en pause la lecture
   public async pause(): Promise<void> {
     try {
+      const currentPosition = await TrackPlayer.getPosition();
       await TrackPlayer.pause();
       this.isPlaying = false;
+      
+      // Make sure we have the accurate position at pause time
+      this.position = currentPosition * 1000;
+      
+      // Notify listeners specifically about pause event with accurate position
+      this.notifyListeners({
+        type: 'paused',
+        position: this.position,
+        duration: this.duration
+      });
+      
+      // Update status after pause
       await this.updatePlaybackStatus();
     } catch (error) {
       console.error('Error pausing playback:', error);

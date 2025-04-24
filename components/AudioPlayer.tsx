@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, BackHandler, Alert, PanResponder, GestureResponderEvent } from 'react-native';
-import { Play, Pause, SkipBack, SkipForward, Moon, Rewind, FastForward, Forward } from 'lucide-react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, BackHandler, Alert, PanResponder, GestureResponderEvent, AppState } from 'react-native';
+import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { Episode } from '../types/episode';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Application from 'expo-application';
@@ -118,7 +118,16 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
                  savePositionThrottled(episode.id, positionSeconds);
               }
             }
-
+          } else if (data.type === 'paused') {
+            // Explicitly save position when paused
+            if (currentUserId && episode?.id) {
+              const positionSeconds = Math.floor(data.position / 1000);
+              if (positionSeconds > 0) {
+                console.log(`[AudioPlayer] Saving position on pause: ${positionSeconds}s`);
+                savePositionThrottled.cancel(); // Cancel any pending throttled calls
+                savePosition(episode.id, positionSeconds);
+              }
+            }
           } else if (data.type === 'error') {
             setError(data.error);
             setIsLoading(false);
@@ -142,7 +151,13 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
         return () => {
           unsubscribe();
           // Ensure the last position is saved when the component unmounts or episode changes
-          savePositionThrottled.flush(); 
+          if (episode?.id && currentUserId) {
+            const currentPosition = Math.floor(position / 1000);
+            if (currentPosition > 0) {
+              console.log(`[AudioPlayer] Saving position on unmount: ${currentPosition}s`);
+              savePosition(episode.id, currentPosition);
+            }
+          }
         };
       } catch (err) {
         console.error("Error in audio setup:", err);
@@ -161,12 +176,38 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     };
   }, [episode, onComplete, onNext, onPrevious, sleepTimerActive, isSeeking]); // Add episode and isSeeking dependencies
 
-  // Charger le nouvel épisode quand il change
-  useEffect(() => {
-    if (episode?.mp3Link || episode?.offline_path) {
-      loadEpisode();
+  // Add non-throttled save function for immediate saves
+  const savePosition = async (episodeId: string, positionSeconds: number) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || !episodeId) return; // Need user and episode ID
+
+      const userId = user.id;
+      const timestamp = new Date().toISOString();
+
+      const pendingPositionsJSON = await AsyncStorage.getItem(PENDING_POSITIONS_KEY);
+      let pendingPositions: PendingPosition[] = pendingPositionsJSON ? JSON.parse(pendingPositionsJSON) : [];
+
+      // Find existing entry for this user and episode
+      const existingIndex = pendingPositions.findIndex(p => p.userId === userId && p.episodeId === episodeId);
+
+      const newPositionData: PendingPosition = { episodeId, positionSeconds, userId, timestamp };
+
+      if (existingIndex !== -1) {
+        // Update existing entry
+        pendingPositions[existingIndex] = newPositionData;
+      } else {
+        // Add new entry
+        pendingPositions.push(newPositionData);
+      }
+
+      await AsyncStorage.setItem(PENDING_POSITIONS_KEY, JSON.stringify(pendingPositions));
+      console.log(`[AudioPlayer] Position saved immediately for ${episodeId}: ${positionSeconds}s`);
+
+    } catch (error) {
+      console.error('[AudioPlayer] Error saving immediate playback position:', error);
     }
-  }, [episode]);
+  };
 
   // Mesurer la barre de progression après le rendu
   useEffect(() => {
@@ -176,35 +217,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       }, 300);
     }
   }, [isLoading]);
-
-  // Charger l'épisode
-  async function loadEpisode() {
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      // Journalisation détaillée pour le débogage
-      // console.log('========= CHARGEMENT ÉPISODE =========');
-      // console.log('Titre:', episode?.title);
-      // console.log('Mode hors-ligne:', isOffline ? 'OUI' : 'NON');
-      // console.log('Chemin local:', episode?.offline_path || 'NON DISPONIBLE');
-      // console.log('URL distante:', episode?.mp3Link || 'NON DISPONIBLE');
-      
-      // S'assurer que le chemin offline est prioritaire
-      const episodeToLoad = {
-        ...episode,
-        mp3Link: episode.offline_path || episode.mp3Link
-      };
-      
-      // Maintenant charger avec le chemin prioritaire
-      await audioManager.loadEpisode(episodeToLoad);
-      
-    } catch (err) {
-      console.error("Error loading episode:", err);
-      setError(`Impossible de charger l'audio: ${err instanceof Error ? err.message : 'erreur inconnue'}`);
-      setIsLoading(false);
-    }
-  }
 
   // Gestionnaire de glissement pour le curseur de progression
   const panResponder = PanResponder.create({
@@ -264,6 +276,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     try {
       if (isPlaying) {
         await audioManager.pause();
+        // Position is now saved via the 'paused' event listener
       } else {
         await audioManager.play();
       }
@@ -272,6 +285,59 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       setError(`Erreur de lecture: ${err instanceof Error ? err.message : 'erreur inconnue'}`);
     }
   }
+  
+  // Make a dedicated function to handle when paused to ensure position is always saved
+  useEffect(() => {
+    // If the episode changed or playback stopped, save the current position
+    if (!isPlaying && episode?.id && position > 0) {
+      // Delay slightly to ensure we have the latest position
+      const timer = setTimeout(() => {
+        const positionSeconds = Math.floor(position / 1000);
+        if (positionSeconds > 0) {
+          console.log(`[AudioPlayer] Saving position after pause: ${positionSeconds}s`);
+          savePosition(episode.id, positionSeconds);
+        }
+      }, 100);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [isPlaying, episode?.id]);
+
+  // Add useEffect to save position periodically more frequently
+  useEffect(() => {
+    if (!episode?.id || !isPlaying) return;
+    
+    // Save position more frequently (every 10 seconds)
+    const saveInterval = setInterval(() => {
+      const positionSeconds = Math.floor(position / 1000);
+      if (positionSeconds > 0) {
+        console.log(`[AudioPlayer] Saving position on interval: ${positionSeconds}s`);
+        // Use the non-throttled version for more reliability
+        savePosition(episode.id, positionSeconds);
+      }
+    }, 10000);
+    
+    return () => clearInterval(saveInterval);
+  }, [episode?.id, isPlaying, position]);
+
+  // Add useEffect to catch app background/foreground transitions
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        // App is going to background, save position immediately
+        if (episode?.id && isPlaying) {
+          const currentPosition = Math.floor(position / 1000);
+          if (currentPosition > 0) {
+            savePositionThrottled.flush(); // Execute any pending saves immediately
+          }
+        }
+      }
+    });
+    
+    return () => {
+      subscription.remove();
+    };
+  }, [episode, isPlaying, position]);
 
   // Avancer ou reculer
   async function handleSeek(seconds: number) {
@@ -362,7 +428,14 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity 
           style={styles.retryButton} 
-          onPress={loadEpisode}
+          onPress={() => {
+            setError(null);
+            setIsLoading(true);
+            // Notify parent to reload instead
+            if (onComplete) {
+              onComplete(); // Use onComplete to trigger a reload from parent
+            }
+          }}
         >
           <Text style={styles.retryText}>Réessayer</Text>
         </TouchableOpacity>
@@ -421,35 +494,35 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
       {/* Contrôles de lecture */}
       <View style={styles.controls}>
         <TouchableOpacity onPress={onPrevious} style={styles.button}>
-          <SkipBack size={24} color="#fff" />
+          <MaterialIcons name="skip-previous" size={32} color="#fff" />
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => handleSeek(-30)} style={styles.button}>
-          <Rewind size={24} color="#fff" />
+          <MaterialIcons name="replay-30" size={32} color="#fff" />
         </TouchableOpacity>
         
         <TouchableOpacity onPress={handlePlayPause} style={[styles.button, styles.playButton]}>
           {isPlaying ? (
-            <Pause size={32} color="#fff" />
+            <MaterialIcons name="pause" size={52} color="#fff" />
           ) : (
-            <Play size={32} color="#fff" />
+            <MaterialIcons name="play-arrow" size={52} color="#fff" />
           )}
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => handleSeek(30)} style={styles.button}>
-          <FastForward size={24} color="#fff" />
+          <MaterialIcons name="forward-30" size={32} color="#fff" />
         </TouchableOpacity>
         
         <TouchableOpacity onPress={onNext} style={styles.button}>
-          <SkipForward size={24} color="#fff" />
+          <MaterialIcons name="skip-next" size={32} color="#fff" />
         </TouchableOpacity>
       </View>
 
       <View style={styles.additionalControls}>
         {/* Bouton "Passer les auditeurs" */}
         <TouchableOpacity onPress={handleSkip10Minutes} style={styles.skipButton}>
-          <Forward size={20} color="#fff" />
-          <Text style={styles.skipText}>Passer les auditeurs</Text>
+          <MaterialIcons name="next-plan" size={20} color="#fff" />
+          <Text style={styles.skipText}>Skip auditeurs</Text>
         </TouchableOpacity>
 
         {/* Bouton minuteur de sommeil */}
@@ -457,9 +530,9 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
           onPress={toggleSleepTimer} 
           style={[styles.sleepButton, sleepTimerActive && styles.sleepButtonActive]}
         >
-          <Moon size={20} color={sleepTimerActive ? '#fff' : '#888'} />
+          <MaterialIcons name="timer" size={20} color={sleepTimerActive ? '#fff' : '#888'} />
           <Text style={[styles.sleepText, sleepTimerActive && styles.sleepTextActive]}>
-            {sleepTimerActive ? 'Minuteur actif' : 'Arrêt après cet épisode'}
+            {sleepTimerActive ? 'Sleep actif' : 'Sleep timer'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -477,10 +550,11 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
 
 const styles = StyleSheet.create({
   container: {
-    padding: 20,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 15,
-    alignItems: 'center',
+    paddingHorizontal: 15,
+    backgroundColor: '#121212',
+    flex: 1,
+    justifyContent: 'flex-end', // Main content aligns to bottom
+    alignItems: 'center', // Center children horizontally by default
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -506,7 +580,7 @@ const styles = StyleSheet.create({
   description: {
     fontSize: 16,
     color: '#888',
-    marginBottom: 20,
+    marginBottom: 30,
     textAlign: 'center',
     width: '100%',
   },
@@ -582,10 +656,13 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   playButton: {
-    backgroundColor: '#333',
-    borderRadius: 50,
-    padding: 15,
+    backgroundColor: '#0ea5e9',
+    width: 76,
+    height: 76,
+    borderRadius: 38, // Half of width/height for perfect circle
     marginHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   loadingText: {
     color: '#fff',
@@ -621,9 +698,9 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   additionalControls: {
-    flexDirection: 'column',
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-around',
     width: '100%',
     marginBottom: 16,
   },
@@ -632,9 +709,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#333',
     padding: 10,
-    borderRadius: 20,
+    borderRadius: 30,
     gap: 8,
-    marginBottom: 10,
   },
   skipText: {
     color: '#fff',
@@ -643,10 +719,10 @@ const styles = StyleSheet.create({
   sleepButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 10,
-    borderRadius: 20,
-    borderWidth: 1,
     borderColor: '#333',
+    padding: 10,
+    borderRadius: 30,
+    borderWidth: 1,
     gap: 8,
   },
   sleepButtonActive: {
@@ -659,16 +735,20 @@ const styles = StyleSheet.create({
   },
   sleepTextActive: {
     color: '#fff',
+    fontSize: 14,
   },
   bufferingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
     position: 'absolute',
-    bottom: 10,
+    bottom: 20,
+    alignSelf: 'center',
+    zIndex: 10,
   },
   bufferingText: {
     color: '#fff',

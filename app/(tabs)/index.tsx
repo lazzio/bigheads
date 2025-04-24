@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Play } from 'lucide-react-native';
+import MaterialIcons from '@react-native-vector-icons/material-icons';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -19,7 +19,7 @@ export default function HomeScreen() {
           style={styles.playButton}
           onPress={() => router.push('/player')}
         >
-          <Play size={24} color="#000" />
+          <MaterialIcons name="play-arrow" size={24} color="#000" />
           <Text style={styles.playText}>Écouter le dernier épisode</Text>
         </TouchableOpacity>
       </View>
@@ -64,7 +64,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 25,
+    borderRadius: 30,
     gap: 8,
   },
   playText: {

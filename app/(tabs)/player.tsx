@@ -15,6 +15,7 @@ type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row']
 
 // Constante pour la clé de cache
 const EPISODES_CACHE_KEY = 'cached_episodes';
+const PENDING_POSITIONS_KEY = 'pending_positions';
 
 export default function PlayerScreen() {
   const { episodeId, offlinePath } = useLocalSearchParams<{ episodeId: string, offlinePath: string }>();
@@ -262,9 +263,70 @@ export default function PlayerScreen() {
               }
            }
         } else {
-           setError("Could not load offline episode details.");
-           setLoading(false);
-           return;
+           console.log("[PlayerScreen] Could not load offline episode details. Attempting fallback...");
+           
+           let foundOnlineFallback = false;
+           
+           // 1. Try using episodeId from params first
+           if (episodeId) {
+             const onlineIndex = episodes.findIndex(ep => ep.id === episodeId);
+             if (onlineIndex !== -1) {
+               targetIndex = onlineIndex;
+               episodeToLoad = episodes[targetIndex];
+               console.log(`[PlayerScreen] Fallback successful: Found online episode using provided episodeId: ${episodeId}`);
+               foundOnlineFallback = true;
+             } else {
+               console.log(`[PlayerScreen] Provided episodeId ${episodeId} not found in online list. Trying metadata next.`);
+             }
+           } else {
+             console.log("[PlayerScreen] No episodeId provided in params. Trying metadata next.");
+           }
+           
+           // 2. If not found via episodeId, try extracting ID from metadata
+           if (!foundOnlineFallback) {
+             let fallbackIdFromMeta: string | null = null;
+             if (offlinePath) {
+               try {
+                 const metaPath = offlinePath + '.meta';
+                 const fileExists = await FileSystem.getInfoAsync(metaPath);
+                 if (fileExists.exists) {
+                   const metaContent = await FileSystem.readAsStringAsync(metaPath);
+                   const metadata = JSON.parse(metaContent);
+                   if (metadata && metadata.id) {
+                     fallbackIdFromMeta = metadata.id;
+                     console.log(`[PlayerScreen] Extracted ID ${fallbackIdFromMeta} from metadata`);
+                   }
+                 }
+               } catch (metaError) {
+                 console.error("[PlayerScreen] Error extracting ID from meta:", metaError);
+               }
+             }
+             
+             if (fallbackIdFromMeta) {
+               const onlineIndex = episodes.findIndex(ep => ep.id === fallbackIdFromMeta);
+               if (onlineIndex !== -1) {
+                 targetIndex = onlineIndex;
+                 episodeToLoad = episodes[targetIndex];
+                 console.log(`[PlayerScreen] Fallback successful: Found online episode using metadata ID: ${fallbackIdFromMeta}`);
+                 foundOnlineFallback = true;
+               } else {
+                 console.log(`[PlayerScreen] Metadata ID ${fallbackIdFromMeta} not found in online list.`);
+               }
+             }
+           }
+           
+           // 3. If still no fallback found, default to first episode or error
+           if (!foundOnlineFallback) {
+             if (episodes.length > 0) {
+               targetIndex = 0;
+               episodeToLoad = episodes[0];
+               console.log("[PlayerScreen] Fallback failed. Defaulting to first available episode.");
+             } else {
+               setError("Could not load offline episode and no online fallback available.");
+               setLoading(false);
+               return;
+             }
+           }
         }
       } else if (episodeId) {
         // Find by episode ID
@@ -291,8 +353,16 @@ export default function PlayerScreen() {
         }
         // Retrieve initial position for this episode
         const initialPosition = playbackPositions.get(episodeToLoad.id);
+        console.log(`Found saved position for ${episodeToLoad.id}: ${initialPosition || 0}s`);
+        
         // Load the episode with the initial position
-        await loadAndSeekEpisode(episodeToLoad, initialPosition);
+        try {
+          await audioManager.loadEpisode(episodeToLoad, initialPosition);
+        } catch (error) {
+          console.error('Error loading episode with saved position:', error);
+          // Fallback to loading without position if there's an error
+          await audioManager.loadEpisode(episodeToLoad);
+        }
       } else if (!loading && episodes.length > 0) {
          // If loading is done but no episode determined, maybe default to first?
          // This case might indicate an issue if episodeId was expected but not found.
@@ -433,7 +503,11 @@ export default function PlayerScreen() {
         .upsert({ 
           episode_id: episodeId,
           user_id: userId,
-          watched_at: new Date().toISOString()
+          watched_at: new Date().toISOString(),
+          is_finished: true, // Add this field with value true
+          playback_position: null // Add this field with null value when marking as watched
+        }, {
+          onConflict: 'user_id, episode_id'
         });
 
       if (error) {
@@ -447,31 +521,157 @@ export default function PlayerScreen() {
     }
   }
 
+  // Add helper function to save the current position
+  const saveCurrentPosition = async (episodeId: string, positionSeconds: number) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
+      const userId = user.id;
+      const timestamp = new Date().toISOString();
+      
+      // Save to local state immediately to ensure we have the updated position
+      // This is important so that we can resume properly when navigating
+      const newPlaybackPositions = new Map(playbackPositions);
+      newPlaybackPositions.set(episodeId, positionSeconds);
+      setPlaybackPositions(newPlaybackPositions);
+      
+      // First, save to AsyncStorage for offline support
+      const pendingPositionsJSON = await AsyncStorage.getItem(PENDING_POSITIONS_KEY);
+      let pendingPositions = pendingPositionsJSON ? JSON.parse(pendingPositionsJSON) : [];
+      
+      const existingIndex = pendingPositions.findIndex(
+        (p: any) => p.userId === userId && p.episodeId === episodeId
+      );
+      
+      const newPositionData = { 
+        episodeId, 
+        positionSeconds, 
+        userId, 
+        timestamp 
+      };
+      
+      if (existingIndex !== -1) {
+        pendingPositions[existingIndex] = newPositionData;
+      } else {
+        pendingPositions.push(newPositionData);
+      }
+      
+      await AsyncStorage.setItem(PENDING_POSITIONS_KEY, JSON.stringify(pendingPositions));
+      console.log(`[PlayerScreen] Position saved for ${episodeId}: ${positionSeconds}s`);
+      
+      // Also try to update Supabase directly if online
+      try {
+        const netInfo = await NetInfo.fetch();
+        if (netInfo.isConnected) {
+          const { error } = await supabase
+            .from('watched_episodes')
+            .upsert({
+              user_id: userId,
+              episode_id: episodeId,
+              playback_position: positionSeconds,
+              watched_at: timestamp,
+              is_finished: false
+            }, {
+              onConflict: 'user_id, episode_id'
+            });
+            
+          if (error) {
+            console.error('[PlayerScreen] Error updating position in Supabase:', error);
+          } else {
+            console.log(`[PlayerScreen] Position updated in Supabase: ${positionSeconds}s`);
+          }
+        }
+      } catch (e) {
+        console.error('[PlayerScreen] Error during direct Supabase update:', e);
+      }
+      
+    } catch (error) {
+      console.error('[PlayerScreen] Error saving position:', error);
+    }
+  };
+
+  // Modify handleNext and handlePrevious to ensure position is saved synchronously
   const handleNext = () => {
     if (episodes.length === 0) return;
-    const nextIndex = (currentIndex + 1) % episodes.length;
-    // Don't set state directly, navigate or update params to trigger useEffect
-    const nextEpisode = episodes[nextIndex];
-    if (nextEpisode) {
-       currentEpisodeRef.current = null; // Allow reloading
-       // Navigate to the same screen with the new episodeId to trigger reload
-       router.setParams({ episodeId: nextEpisode.id, offlinePath: undefined });
+    
+    // Save current position before switching episodes
+    if (currentEpisodeRef.current?.id) {
+      const currentState = audioManager.getState();
+      if (currentState.position > 0) {
+        // Save position and wait for it to complete before navigating
+        saveCurrentPosition(currentEpisodeRef.current.id, currentState.position);
+      }
     }
-    // setCurrentIndex(nextIndex); // Let useEffect handle index update via params change
+    
+    // Short delay to ensure save completes
+    setTimeout(() => {
+      const nextIndex = (currentIndex + 1) % episodes.length;
+      const nextEpisode = episodes[nextIndex];
+      if (nextEpisode) {
+        currentEpisodeRef.current = null; // Allow reloading
+        router.setParams({ episodeId: nextEpisode.id, offlinePath: undefined });
+      }
+    }, 100);
   };
 
   const handlePrevious = () => {
     if (episodes.length === 0) return;
-    const prevIndex = (currentIndex - 1 + episodes.length) % episodes.length;
-    // Don't set state directly, navigate or update params to trigger useEffect
-    const prevEpisode = episodes[prevIndex];
-     if (prevEpisode) {
-       currentEpisodeRef.current = null; // Allow reloading
-       // Navigate to the same screen with the new episodeId to trigger reload
-       router.setParams({ episodeId: prevEpisode.id, offlinePath: undefined });
+    
+    // Save current position before switching episodes
+    if (currentEpisodeRef.current?.id) {
+      const currentState = audioManager.getState();
+      if (currentState.position > 0) {
+        // Save position and wait for it to complete before navigating
+        saveCurrentPosition(currentEpisodeRef.current.id, currentState.position);
+      }
     }
-    // setCurrentIndex(prevIndex); // Let useEffect handle index update via params change
+    
+    // Short delay to ensure save completes
+    setTimeout(() => {
+      const prevIndex = (currentIndex - 1 + episodes.length) % episodes.length;
+      const prevEpisode = episodes[prevIndex];
+      if (prevEpisode) {
+        currentEpisodeRef.current = null; // Allow reloading
+        router.setParams({ episodeId: prevEpisode.id, offlinePath: undefined });
+      }
+    }, 100);
   };
+
+  // Add an effect to listen for app state changes - Fix dependency array
+  useEffect(() => {
+    const currentEpisode = currentEpisodeRef.current;
+    const episodeId = currentEpisode?.id;
+    
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      // When app is going to background, save position
+      if (
+        (appStateRef.current === 'active' && 
+        (nextAppState === 'background' || nextAppState === 'inactive')) &&
+        currentEpisode
+      ) {
+        const currentState = audioManager.getState();
+        if (currentState.position > 0 && episodeId) {
+          console.log(`[PlayerScreen] Saving position on app state change: ${currentState.position}s`);
+          saveCurrentPosition(episodeId, currentState.position);
+        }
+      }
+      
+      appStateRef.current = nextAppState;
+    });
+    
+    return () => {
+      // Save position when component unmounts
+      if (episodeId) {
+        const currentState = audioManager.getState();
+        if (currentState.position > 0) {
+          console.log(`[PlayerScreen] Saving position on unmount: ${currentState.position}s`);
+          saveCurrentPosition(episodeId, currentState.position);
+        }
+      }
+      subscription.remove();
+    };
+  }, [currentEpisodeRef.current]); // Use the ref itself for tracking changes
 
   // Affichage d'état de chargement
   if (loading || currentIndex === -1 && episodes.length > 0) { // Show loading until an index is set

@@ -1,6 +1,6 @@
 import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Play, CircleCheck as CheckCircle2, WifiOff } from 'lucide-react-native';
+import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Database } from '../../types/supabase';
@@ -180,7 +180,7 @@ export default function EpisodesScreen() {
       
       {isOffline && (
         <View style={styles.offlineContainer}>
-          <WifiOff size={20} color="#888" />
+          <MaterialIcons name="wifi-off" size={20} color="#888" />
           <Text style={styles.offlineText}>
             Mode hors-ligne - Seuls les épisodes en cache sont disponibles
           </Text>
@@ -228,9 +228,9 @@ export default function EpisodesScreen() {
                 <Text style={styles.episodeDuration}>{formatTime(item.duration)}</Text> 
               </View>
               {watchedEpisodes.has(item.id) ? (
-                <CheckCircle2 size={24} color="#0ea5e9" />
+                <MaterialIcons name="check-circle" size={24} color="#0ea5e9" />
               ) : (
-                <Play size={24} color="#fff" />
+                <MaterialIcons name="play-arrow" size={24} color="#fff" />
               )}
             </TouchableOpacity>
           )}

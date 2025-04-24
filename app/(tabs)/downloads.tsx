@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { supabase } from '../../lib/supabase';
-import { Download, Trash2, Play, Trash, WifiOff } from 'lucide-react-native';
+import MaterialIcons from '@react-native-vector-icons/material-icons';
 import * as FileSystem from 'expo-file-system';
 import { useRouter } from 'expo-router';
 import { Episode } from '../../types/episode';
@@ -710,7 +710,7 @@ export default function DownloadsScreen() {
       <Text style={styles.emptyText}>No episodes available</Text>
       {isOffline && (
         <View style={styles.offlineMessageContainer}>
-          <WifiOff size={20} color="#888" />
+          <MaterialIcons name="wifi-off" size={20} color="#888" />
           <Text style={styles.offlineText}>Offline mode</Text>
         </View>
       )}
@@ -726,7 +726,7 @@ export default function DownloadsScreen() {
   // Offline mode indicator
   const OfflineIndicator = () => (
     <View style={styles.offlineIndicator}>
-      <WifiOff size={16} color="#fff" />
+      <MaterialIcons name="wifi-off" size={16} color="#fff" />
       <Text style={styles.offlineIndicatorText}>Offline mode</Text>
     </View>
   );
@@ -753,7 +753,7 @@ export default function DownloadsScreen() {
               style={styles.deleteAllButton}
               onPress={confirmDeleteAll}
             >
-              <Trash size={20} color="#fff" />
+              <MaterialIcons name="delete" size={24} color="#fff" />
             </TouchableOpacity>
           )}
         </View>
@@ -791,13 +791,6 @@ export default function DownloadsScreen() {
               </TouchableOpacity>
 
               <View style={styles.actions}>
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={() => playEpisode(episode, index)}
-                >
-                  <Play size={20} color="#fff" />
-                </TouchableOpacity>
-
                 {Platform.OS !== 'web' ? (
                   !isOffline && (
                     downloadStatus[episode.id]?.downloaded ? (
@@ -805,7 +798,7 @@ export default function DownloadsScreen() {
                         style={[styles.actionButton, styles.deleteButton]}
                         onPress={() => deleteDownload(episode)}
                       >
-                        <Trash2 size={20} color="#fff" />
+                        <MaterialIcons name="delete" size={20} color="#fff" />
                       </TouchableOpacity>
                     ) : (
                       <TouchableOpacity
@@ -820,7 +813,7 @@ export default function DownloadsScreen() {
                         {downloadStatus[episode.id]?.downloading ? (
                           <ProgressCircle progress={downloadStatus[episode.id]?.progress || 0} />
                         ) : (
-                          <Download size={20} color="#fff" />
+                          <MaterialIcons name="cloud-download" size={20} color="#fff" />
                         )}
                       </TouchableOpacity>
                     )
@@ -830,7 +823,7 @@ export default function DownloadsScreen() {
                     style={[styles.actionButton, styles.downloadButton]}
                     onPress={() => downloadEpisode(episode)}
                   >
-                    <Download size={20} color="#fff" />
+                    <MaterialIcons name="cloud-download" size={20} color="#fff" />
                   </TouchableOpacity>
                 )}
               </View>
