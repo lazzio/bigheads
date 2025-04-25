@@ -8,14 +8,14 @@ import { theme } from '../../styles/global';
 import { componentStyle } from '../../styles/componentStyle';
 
 export default function ProfileScreen() {
-  // État
+  // State
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   
-  // Hooks
+  // Hook for navigation
   const router = useRouter();
 
-  // Gérer la déconnexion avec mémoïsation pour éviter les recréations inutiles
+  // Manage logout with memoization to avoid unnecessary re-creations
   const handleLogout = useCallback(async () => {
     if (isLoggingOut) return; // Éviter les déconnexions multiples
     
@@ -27,14 +27,14 @@ export default function ProfileScreen() {
       setIsLoggingOut(true);
       setShowLogoutModal(false);
       
-      // Déconnexion optimisée pour éviter les opérations inutiles
+      // Unconnecting the user
       const { data } = await supabase.auth.getSession();
       
       if (data.session) {
-        // Utiliser la méthode signOut qui gère déjà le nettoyage des tokens
+        // Use signOut method which already handles token cleanup
         await supabase.auth.signOut();
         
-        // Nettoyage supplémentaire par sécurité (asynchrone mais pas besoin d'attendre)
+        // Additional cleanup in case signOut doesn't clear local storage
         storage.removeItem('supabase.auth.token').catch(() => {});
         storage.removeItem('supabase.auth.refreshToken').catch(() => {});
         storage.removeItem('supabase.auth.user').catch(() => {});
@@ -217,7 +217,7 @@ const styles = StyleSheet.create({
     }),
   },
   stickyText: {
-    color: '#888',
+    color: theme.colors.description,
     fontSize: 14,
     textAlign: 'center',
   },

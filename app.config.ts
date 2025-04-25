@@ -13,7 +13,6 @@ const config: ExpoConfig = {
   scheme: "xyz.myops.bigheads",
   backgroundColor: "#121212", // Changed from #F6F6F6 to match app theme
   icon: "./assets/images/bh_opti.png",
-  newArchEnabled: true,
   platforms: ["android", "ios"],
 
   splash: {

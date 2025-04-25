@@ -9,11 +9,8 @@ import * as Sentry from '@sentry/react-native';
 import Constants from 'expo-constants';
 import { theme } from '../../styles/global';
 import { componentStyle } from '../../styles/componentStyle';
-
-// Import SVG components
 import Svg, { Path } from 'react-native-svg';
 
-// Fixed GoogleIcon implementation using react-native-svg
 function GoogleIcon() {
   return (
     <Svg width={18} height={18} viewBox="0 0 18 18" style={{ marginRight: 24 }}>
@@ -50,32 +47,28 @@ export default function LoginScreen() {
   ? Constants.expoConfig.scheme 
   : 'xyz.myops.bigheads';
   const redirectUrl = Linking.createURL('/(tabs)', {
-    // S'assurer que c'est un schéma deeplink et non une URL web
     scheme: appScheme
   });
 
-  // Nettoyage du cache des sessions OAuth précédentes
+  // Cleanup of previous OAuth sessions
   useEffect(() => {
     if (Platform.OS !== 'web') {
       WebBrowser.maybeCompleteAuthSession();
     }
     
-    // Vérifions s'il y a déjà une session active au chargement
+    // Verify if there is an active session on load
     const checkExistingSession = async () => {
       const { data } = await supabase.auth.getSession();
       console.log('Checking existing session on load:', data.session ? 'Session exists' : 'No session');
       
       if (data.session) {
-        // Si une session existe déjà, rediriger vers l'app
+        // If a session exists, redirect to the app
         router.replace('/(tabs)');
       }
     };
     
     checkExistingSession();
   }, [router]);
-
-  // Journal pour le débogage
-  console.log('Login screen rendered, redirectUrl:', redirectUrl);
 
   async function handleLogin() {
     try {
@@ -93,7 +86,6 @@ export default function LoginScreen() {
       router.replace('/(tabs)');
     } catch (err) {
       console.error('Login error:', err);
-      // Capture d'exception pour Sentry
       Sentry.captureException(err);
       setError(err instanceof Error ? err.message : 'Une erreur est survenue');
     } finally {
@@ -103,7 +95,6 @@ export default function LoginScreen() {
 
   async function handleGoogleSignIn() {
     try {
-      // Ajout d'un breadcrumb pour Sentry
       Sentry.addBreadcrumb({
         category: 'auth',
         message: 'Starting Google OAuth flow',
@@ -116,9 +107,8 @@ export default function LoginScreen() {
 
       setLoading(true);
       setError(null);
-      console.log('Starting Google OAuth flow');
 
-      // Nettoyage des anciens tokens avant de commencer
+      // Cleanup of previous tokens to avoid conflicts
       await storage.removeItem('supabase.auth.token');
       await storage.removeItem('supabase.auth.refreshToken');
       await storage.removeItem('supabase.auth.user');
@@ -155,7 +145,6 @@ export default function LoginScreen() {
         if (data?.url) {
           console.log('Opening auth URL in browser:', data.url);
           
-          // Utiliser openAuthSessionAsync avec les bons paramètres
           const result = await WebBrowser.openAuthSessionAsync(
             data.url, 
             redirectUrl,
@@ -172,11 +161,11 @@ export default function LoginScreen() {
             console.log('OAuth redirect success, processing URL:', url);
             
             try {
-              // Essayer de traiter l'URL de redirection et d'extraire les tokens
+              // Check if the URL contains access_token or code
               if (url.includes('access_token') || url.includes('code=')) {
                 console.log('URL contains auth params, extracting...');
                 
-                // Essayer d'extraire les paramètres de l'URL
+                // Extract tokens from the URL
                 let params: URLSearchParams;
                 if (url.includes('#')) {
                   // Format fragment
@@ -223,7 +212,9 @@ export default function LoginScreen() {
                 }
               } else {
                 console.log('No auth params in URL, checking session directly');
-                // Vérifier directement si une session existe
+                
+                // If no tokens, check session directly
+                // This is a fallback in case the URL doesn't contain tokens
                 const { data: { session } } = await supabase.auth.getSession();
                 if (session) {
                   console.log('Session exists, redirecting');
@@ -234,7 +225,10 @@ export default function LoginScreen() {
               }
             } catch (parseError) {
               console.error('Error parsing OAuth redirect:', parseError);
-              // Essayer une approche différente - obtenir la session actuelle
+              
+              // Try to get session in case of parse error
+              // This is a fallback to ensure we handle any unexpected cases
+              // and still redirect the user if a session exists
               const { data: { session } } = await supabase.auth.getSession();
               if (session) {
                 console.log('Session exists despite parse error, redirecting');
@@ -245,18 +239,20 @@ export default function LoginScreen() {
             }
           } else if (result.type === 'cancel') {
             console.log('User canceled OAuth flow');
-            // L'utilisateur a annulé, afficher un message
+            // Handle user cancellation
+            // This could be a user action or an error in the flow
+            // You can show an alert or a message to inform the user
             Alert.alert('Connexion annulée', 'Vous avez annulé la connexion Google.');
           }
         }
       }
     } catch (err) {
       console.error('Google sign-in error:', err);
-      // Capture d'exception pour Sentry
       Sentry.captureException(err);
       setError(err instanceof Error ? err.message : 'Une erreur est survenue lors de la connexion Google');
       
-      // Effacer les données d'auth partielles en cas d'erreur
+      // Cleanup of tokens in case of error
+      // This ensures that any previous tokens are removed to avoid conflicts
       await storage.removeItem('supabase.auth.token');
       await storage.removeItem('supabase.auth.refreshToken');
       await storage.removeItem('supabase.auth.user');

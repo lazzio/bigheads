@@ -1,5 +1,16 @@
 import { useEffect, useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, BackHandler, Alert, PanResponder, GestureResponderEvent, AppState } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Platform,
+  ActivityIndicator,
+  BackHandler,
+  Alert,
+  PanResponder,
+  GestureResponderEvent,
+  AppState } from 'react-native';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { Episode } from '../types/episode';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -8,7 +19,7 @@ import * as IntentLauncher from 'expo-intent-launcher';
 import { audioManager, formatTime } from '../utils/OptimizedAudioService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PENDING_POSITIONS_KEY } from '../utils/PlaybackSyncService';
-import { supabase } from '../lib/supabase'; // Import supabase for user ID
+import { supabase } from '../lib/supabase';
 import throttle from 'lodash/throttle';
 import { theme } from '../styles/global';
 
@@ -24,7 +35,7 @@ interface PendingPosition {
   episodeId: string;
   positionSeconds: number;
   userId: string;
-  timestamp: string; // ISO string date
+  timestamp: string;
 }
 
 // Throttle the save function to run at most once every 5 seconds
@@ -61,7 +72,7 @@ const savePositionThrottled = throttle(async (episodeId: string, positionSeconds
   } catch (error) {
     console.error('[AudioPlayer] Error saving playback position:', error);
   }
-}, 5000, { leading: false, trailing: true }); // Throttle options
+}, 5000, { leading: false, trailing: true });
 
 
 export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }: AudioPlayerProps) {
@@ -591,7 +602,7 @@ const styles = StyleSheet.create({
   },
   progressBarContainer: {
     width: '100%',
-    height: 20, // Plus grand pour faciliter le toucher
+    height: 20,
     justifyContent: 'center',
     backgroundColor: 'transparent', // Transparent pour capter les touches sur une plus grande surface
   },

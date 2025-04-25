@@ -1,4 +1,4 @@
-import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { useEffect, useState, useCallback } from 'react';
@@ -7,7 +7,7 @@ import { Database } from '../../types/supabase';
 import { Episode } from '../../types/episode';
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { formatTime } from '../../utils/OptimizedAudioService'; // Import formatTime
+import { formatTime } from '../../utils/OptimizedAudioService';
 import { theme } from '../../styles/global';
 import { componentStyle } from '../../styles/componentStyle';
 
@@ -36,22 +36,32 @@ export default function EpisodesScreen() {
     }
   };
 
-  // Utiliser useFocusEffect pour rafraîchir la liste des épisodes vus à chaque fois que l'écran est affiché
+  // Utiliser useFocusEffect pour rafraîchir les données lorsque l'écran est affiché
   useFocusEffect(
     useCallback(() => {
-      fetchWatchedEpisodes();
-    }, [])
-  );
+      const loadScreenData = async () => {
+        setLoading(true);
+        setError(null); // Reset error on focus
+        try {
+          await checkNetworkStatus(); // Check network first
+          await fetchEpisodes(); // Fetch episodes (handles cache internally)
+          await fetchWatchedEpisodes(); // Fetch watched status
+        } catch (err) {
+           console.error('[EpisodesScreen] Error loading data on focus:', err);
+           // Error state is likely already set by fetchEpisodes if it failed
+           if (!error) { // Set a generic error if fetchEpisodes didn't set one
+              setError(err instanceof Error ? err.message : 'Failed to load episodes');
+           }
+        } finally {
+           setLoading(false);
+        }
+      };
+      loadScreenData();
 
-  useEffect(() => {
-    const initialize = async () => {
-      await checkNetworkStatus();
-      fetchEpisodes();
-      fetchWatchedEpisodes();
-    };
-    
-    initialize();
-  }, []);
+      // Optional: Return cleanup function if needed
+      return () => {};
+    }, []) // Empty dependency array means it runs on focus
+  );
 
   // Charger les épisodes depuis le cache
   const loadCachedEpisodes = async (): Promise<Episode[]> => {
@@ -69,32 +79,34 @@ export default function EpisodesScreen() {
   };
 
   async function fetchEpisodes() {
+    // setLoading(true); // Handled by useFocusEffect
+    // setError(null); // Handled by useFocusEffect
     try {
-      // Vérifier d'abord si nous sommes hors-ligne
+      // Check network status again within fetch in case it changed
       const offline = await checkNetworkStatus();
-      
+
       if (offline) {
-        // En mode hors-ligne, essayer de charger depuis le cache
         const cachedEpisodes = await loadCachedEpisodes();
         if (cachedEpisodes.length > 0) {
           setEpisodes(cachedEpisodes);
-          // Message informatif, pas d'erreur
-          setError(null);
+          // setError(null); // Don't clear potential existing errors, maybe just info?
         } else {
-          // Pas de cache disponible, afficher un message informatif
-          setError(null); // Pas d'erreur, juste une info
+          setEpisodes([]); // Clear episodes if cache is empty
+          // setError('Aucun épisode en cache disponible en mode hors-ligne'); // Informative message
         }
-        setLoading(false);
-        return;
+        // setLoading(false); // Handled by useFocusEffect
+        return; // Return early in offline mode
       }
 
-      const { data, error } = await supabase
+      // Online: Fetch from Supabase
+      const { data, error: apiError } = await supabase
         .from('episodes')
         .select('*')
         .order('publication_date', { ascending: false });
 
-      if (error) throw error;
+      if (apiError) throw apiError; // Throw error to be caught by caller
 
+      // ... existing episode formatting ...
       const formattedEpisodes: Episode[] = (data as SupabaseEpisode[]).map(episode => ({
         id: episode.id,
         title: episode.title,
@@ -107,42 +119,44 @@ export default function EpisodesScreen() {
       }));
 
       setEpisodes(formattedEpisodes);
-      
-      // Sauvegarder dans le cache
+
+      // Save to cache
       try {
         await AsyncStorage.setItem(EPISODES_CACHE_KEY, JSON.stringify(formattedEpisodes));
       } catch (cacheError) {
         console.error('Error saving episodes to cache:', cacheError);
+        // Non-critical error, proceed
       }
     } catch (err) {
-      const offline = await checkNetworkStatus();
-      
-      if (offline) {
-        // En mode hors-ligne, essayer d'abord de charger depuis le cache
-        const cachedEpisodes = await loadCachedEpisodes();
-        if (cachedEpisodes.length > 0) {
-          setEpisodes(cachedEpisodes);
-          setError(null); // Pas d'erreur en mode hors-ligne
-        } else {
-          // Message informatif pour le mode hors-ligne sans cache
-          setError(null);
-        }
+      console.error('[EpisodesScreen] fetchEpisodes failed:', err);
+      // Try loading from cache as fallback ONLY if episodes aren't already set
+      if (episodes.length === 0) {
+         const cachedEpisodes = await loadCachedEpisodes();
+         if (cachedEpisodes.length > 0) {
+           setEpisodes(cachedEpisodes);
+           setError('Affichage des données en cache - Erreur réseau'); // Informative error
+         } else {
+           setEpisodes([]); // Ensure episodes are empty on error
+           setError(err instanceof Error ? err.message : 'Une erreur est survenue'); // Set specific error
+         }
       } else {
-        // Une vraie erreur s'est produite alors qu'on est en ligne
-        setError(err instanceof Error ? err.message : 'Une erreur est survenue');
+         // If episodes are already loaded (e.g., from previous cache), keep them but show error
+         setError(err instanceof Error ? err.message : 'Erreur lors de la mise à jour');
       }
-    } finally {
-      setLoading(false);
+      // Re-throw error to be caught by useFocusEffect if needed
+      throw err;
     }
   }
 
+
   async function fetchWatchedEpisodes() {
     try {
+      // ... existing fetch logic ...
       const userResponse = await supabase.auth.getUser();
       const userId = userResponse.data.user?.id;
       if (!userId) {
-        // setWatchedEpisodes(new Set()); // S'assurer que c'est vide si non connecté
-        return;
+         setWatchedEpisodes(new Set()); // Clear watched if not logged in
+         return;
       }
 
       const { data, error } = await supabase
@@ -162,54 +176,79 @@ export default function EpisodesScreen() {
       const watchedIds = new Set((data as WatchedEpisodeRow[]).map(we => we.episode_id));
       console.log(`Fetched ${watchedIds.size} watched episodes`);
       setWatchedEpisodes(watchedIds);
+
     } catch (err) {
       console.error('Erreur récupération épisodes vus:', err);
       setWatchedEpisodes(new Set()); // Réinitialiser en cas d'erreur
     }
   }
 
+  // Loading state display
   if (loading) {
     return (
-      <View style={componentStyle.header}>
+      <View style={[componentStyle.container, styles.centered]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
         <Text style={styles.loadingText}>Chargement des épisodes...</Text>
       </View>
     );
   }
 
+  // Error state display
+  if (error && episodes.length === 0) { // Only show full screen error if no episodes are displayed
+     return (
+       <View style={[componentStyle.container, styles.centered]}>
+         <MaterialIcons name="error-outline" size={48} color={theme.colors.error} />
+         <Text style={styles.errorText}>{error}</Text>
+          {/* Optional: Add a retry button */}
+         <TouchableOpacity onPress={() => { /* Trigger reload via focus effect? Or call loadScreenData directly? */ }} style={styles.retryButton}>
+            <Text style={styles.retryButtonText}>Réessayer</Text>
+         </TouchableOpacity>
+       </View>
+     );
+  }
+
+
   return (
     <View style={componentStyle.container}>
+      {/* ... existing header ... */}
       <View style={componentStyle.header}>
         <Text style={componentStyle.headerTitle}>Episodes</Text>
       </View>
-      
+
+      {/* Display offline banner */}
       {isOffline && (
         <View style={styles.offlineContainer}>
           <MaterialIcons name="wifi-off" size={20} color={theme.colors.description} />
           <Text style={styles.offlineText}>
-            Mode hors-ligne - Seuls les épisodes en cache sont disponibles
+            Mode hors-ligne
+            {episodes.length > 0 ? " - Affichage des épisodes en cache" : " - Aucun épisode en cache"}
           </Text>
         </View>
       )}
-      
-      {error && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
+
+      {/* Display non-blocking error if episodes are already shown */}
+      {error && episodes.length > 0 && (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorBannerText}>{error}</Text>
         </View>
       )}
-      
+
+      {/* Empty state or FlatList */}
       {episodes.length === 0 ? (
         <View style={styles.emptyContainer}>
-          {isOffline ? (
-            <>
-              <Text style={styles.emptyText}>Aucun épisode disponible en mode hors-ligne</Text>
-              <Text style={styles.hintText}>Connectez-vous à Internet pour accéder aux épisodes</Text>
-            </>
-          ) : (
-            <Text style={styles.emptyText}>Aucun épisode disponible</Text>
+          <MaterialIcons name="hourglass-empty" size={48} color={theme.colors.description} />
+          <Text style={styles.emptyText}>
+             {isOffline ? "Aucun épisode disponible en mode hors-ligne" : "Aucun épisode disponible"}
+          </Text>
+          {!isOffline && (
+             <TouchableOpacity onPress={() => { /* Trigger reload */ }} style={styles.retryButton}>
+                <Text style={styles.retryButtonText}>Actualiser</Text>
+             </TouchableOpacity>
           )}
         </View>
       ) : (
         <FlatList
+          // ... existing FlatList props ...
           data={episodes}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
@@ -259,18 +298,6 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     flex: 1,
   },
-  errorContainer: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-    padding: 12,
-    marginBottom: 16,
-    borderRadius: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: theme.colors.error,
-  },
-  errorText: {
-    color: theme.colors.error,
-    fontSize: 16,
-  },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -312,11 +339,49 @@ const styles = StyleSheet.create({
   episodeDuration: {
     fontSize: 12,
     color: theme.colors.secondaryDescription,
-    marginTop: 4, // Added margin for spacing
+    marginTop: 4,
   },
   loadingText: {
     color: theme.colors.text,
     fontSize: 16,
     textAlign: 'center',
+    marginTop: 15,
+  },
+  errorText: {
+    color: theme.colors.error,
+    fontSize: 16,
+    textAlign: 'center',
+    marginTop: 15,
+    marginBottom: 20,
+  },
+  errorBanner: {
+     backgroundColor: theme.colors.primaryBackground,
+     padding: 10,
+     marginHorizontal: 15,
+     marginBottom: 10,
+     borderRadius: 8,
+     borderLeftWidth: 3,
+     borderLeftColor: theme.colors.error,
+  },
+  errorBannerText: {
+     color: theme.colors.error,
+     fontSize: 14,
+  },
+  retryButton: {
+    marginTop: 20,
+    backgroundColor: theme.colors.borderColor,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: theme.colors.text,
+    fontSize: 16,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
 });

@@ -1,5 +1,6 @@
 import { Link, Stack } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
+import { theme } from '../styles/global';
 
 export default function NotFoundScreen() {
   return (
@@ -25,6 +26,7 @@ const styles = StyleSheet.create({
   text: {
     fontSize: 20,
     fontWeight: 600,
+    color: theme.colors.text,
   },
   link: {
     marginTop: 15,

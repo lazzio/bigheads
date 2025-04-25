@@ -30,7 +30,7 @@ class AudioManager {
     return AudioManager.instance;
   }
 
-  // Configurer le player pour la lecture en arrière-plan
+  // Configure TrackPlayer
   public async setupAudio(): Promise<void> {
     try {
       console.log('Setting up TrackPlayer');
@@ -55,11 +55,9 @@ class AudioManager {
             Capability.SkipToPrevious,
             Capability.SkipToNext,
           ],
-          // Support de la lecture en arrière-plan
           android: {
             appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
           },
-          // Notification pour iOS et Android
           notificationCapabilities: [
             Capability.Play,
             Capability.Pause,
@@ -73,7 +71,6 @@ class AudioManager {
         this.isPlayerReady = true;
         console.log('TrackPlayer setup complete');
         
-        // Configuration des événements
         this.setupEventListeners();
       }
     } catch (error) {
@@ -82,7 +79,6 @@ class AudioManager {
     }
   }
 
-  // Configurer les écouteurs d'événements
   private setupEventListeners(): void {
     TrackPlayer.addEventListener(Event.PlaybackState, (event) => {
       console.log('Playback state changed:', event.state);
@@ -124,10 +120,9 @@ class AudioManager {
       });
     });
     
-    // Écouter les mises à jour de progression
     TrackPlayer.addEventListener(Event.PlaybackProgressUpdated, async (event) => {
-      this.position = event.position * 1000; // Convertir en ms
-      this.duration = event.duration * 1000; // Convertir en ms
+      this.position = event.position * 1000; // Convert in ms
+      this.duration = event.duration * 1000; // Convert in ms
       
       this.notifyListeners({
         type: 'status',
@@ -138,7 +133,7 @@ class AudioManager {
       });
     });
 
-    // Ajouter ces événements pour gérer les commandes de notification
+    // Add these events to handle notification commands
     TrackPlayer.addEventListener(Event.RemotePlay, () => {
       console.log('Remote Play event received');
       this.play().catch(err => console.error('Error in remote play:', err));
@@ -170,12 +165,14 @@ class AudioManager {
     });
   }
   
-  // Mise à jour manuelle du statut
+  // Manually update the playback status
   private async updatePlaybackStatus(): Promise<void> {
     try {
-      const state = await TrackPlayer.getState();
-      const position = await TrackPlayer.getPosition();
-      const duration = await TrackPlayer.getDuration();
+      const playbackState = await TrackPlayer.getPlaybackState();
+      const state = playbackState.state;
+      const progress = await TrackPlayer.getProgress();
+      const position = progress.position;
+      const duration = progress.duration;
       
       this.isPlaying = state === State.Playing;
       this.position = position * 1000; // Convertir en ms
@@ -193,25 +190,29 @@ class AudioManager {
     }
   }
 
-  // Charger un épisode
   public async loadEpisode(episode: Episode, initialPositionSeconds?: number): Promise<void> {
     try {
-      // Nettoyage du son précédent si existant
+      // Cleanup of previous episode
+      if (this.currentEpisode) {
+        console.log('Cleaning up previous episode:', this.currentEpisode.title);
+        await TrackPlayer.stop();
+      }
+
       await TrackPlayer.reset();
   
-      // Créer une copie modifiée de l'épisode
+      // Create a modified copy of the episode
       const episodeToLoad = { ...episode };
       
-      // Vérification et journalisation des propriétés importantes
-      console.log('Episode loading details:');
-      console.log('- Title:', episodeToLoad.title);
-      console.log('- offline_path:', episodeToLoad.offline_path || 'not available');
-      console.log('- mp3Link:', episodeToLoad.mp3Link || 'not available');
+      // Verification and logging of important properties
+      // console.log('Episode loading details:');
+      // console.log('- Title:', episodeToLoad.title);
+      // console.log('- offline_path:', episodeToLoad.offline_path || 'not available');
+      // console.log('- mp3Link:', episodeToLoad.mp3Link || 'not available');
       if (initialPositionSeconds) {
         console.log('- Initial position:', initialPositionSeconds, 'seconds');
       }
       
-      // Si nous avons un chemin hors ligne, l'utiliser en priorité absolue
+      // If we have an offline path, use it as the absolute priority
       let audioSource: string;
       
       if (episodeToLoad.offline_path) {
@@ -226,21 +227,23 @@ class AudioManager {
   
       this.currentEpisode = episodeToLoad;
       
-      // Vérifier si le fichier existe (pour les fichiers locaux)
+      // Verify if the file exists (for local files)
+      // Note: This is a placeholder. Ideally, you would check the file existence here.
       if (audioSource.startsWith('file:')) {
         console.log('Vérification du fichier local:', audioSource);
-        // Note: idéalement ajouter une vérification d'existence de fichier ici
       }
       
-      // Déterminer la source audio finale
+      // Determine the audio source
       let source: { uri: string };
       
       if (audioSource.startsWith('file:')) {
-        // C'est un fichier local
+        // This is a local file
+        // Remove the 'file://' prefix if it exists
         source = { uri: audioSource };
         console.log('✅ Utilisation confirmée du FICHIER LOCAL:', audioSource.substring(0, 50) + '...');
       } else {
-        // Normaliser l'URL pour les sources distantes
+        // Normalize the URL
+        // Check if the URL starts with 'http' or 'https'
         const normalizedUri = audioSource.startsWith('http') 
           ? audioSource 
           : `https://${audioSource}`;
@@ -249,7 +252,7 @@ class AudioManager {
         console.log('✅ Utilisation confirmée de L\'URL DISTANTE:', normalizedUri.substring(0, 50) + '...');
       }
       
-      // Ajouter la piste à TrackPlayer
+      // Add the track to TrackPlayer
       await TrackPlayer.add({
         id: String(episodeToLoad.id),
         url: source.uri,
@@ -260,17 +263,29 @@ class AudioManager {
         type: TrackType.Default,
       });
 
-      // Obtenir immédiatement l'état pour mise à jour
+      // Obtain the track to ensure it's loaded
       await this.updatePlaybackStatus();
       
-      // Si une position initiale est fournie, chercher cette position
+      // If an initial position is provided, seek to that position
+      // Note: TrackPlayer.seekTo() requires seconds, not milliseconds
       if (initialPositionSeconds && initialPositionSeconds > 0) {
         try {
-          // Petit délai pour s'assurer que le player est prêt
+          // Little delay to ensure the player is ready
           setTimeout(async () => {
             console.log(`Seeking to initial position: ${initialPositionSeconds}s`);
             await TrackPlayer.seekTo(initialPositionSeconds);
-            // Mettre à jour l'état après la recherche
+            // Update the playback status after seeking
+            this.position = initialPositionSeconds * 1000; // Convert to milliseconds
+            this.duration = episodeToLoad.duration ? Number(episodeToLoad.duration) * 1000 : 0; // Convert to milliseconds
+            this.isPlaying = true; // Set to true if you want to start playing immediately
+            this.notifyListeners({
+              type: 'status',
+              position: this.position,
+              duration: this.duration,
+              isPlaying: this.isPlaying,
+              isBuffering: false
+            });
+            // Update the playback status
             await this.updatePlaybackStatus();
           }, 500);
         } catch (seekError) {
@@ -317,7 +332,8 @@ class AudioManager {
   // Mettre en pause la lecture
   public async pause(): Promise<void> {
     try {
-      const currentPosition = await TrackPlayer.getPosition();
+      const progress = await TrackPlayer.getProgress(); // Use getProgress
+      const currentPosition = progress.position; // Access position property
       await TrackPlayer.pause();
       this.isPlaying = false;
       
@@ -328,7 +344,7 @@ class AudioManager {
       this.notifyListeners({
         type: 'paused',
         position: this.position,
-        duration: this.duration
+        duration: this.duration // Use existing duration state
       });
       
       // Update status after pause
@@ -366,8 +382,9 @@ class AudioManager {
   public async seekRelative(seconds: number): Promise<void> {
     try {
       // Obtenir la position et la durée actuelles
-      const position = await TrackPlayer.getPosition();
-      const duration = await TrackPlayer.getDuration();
+      const progress = await TrackPlayer.getProgress(); // Use getProgress
+      const position = progress.position; // Access position property
+      const duration = progress.duration; // Access duration property
       
       if (position === undefined || duration === undefined) {
         console.warn('Cannot seek: Position or duration is undefined');
