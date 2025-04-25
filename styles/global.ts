@@ -13,9 +13,15 @@ export const theme = {
         modal: '#1a1a1a',
         error: '#ef4444',
         shadowColor: '#000000',
+        gradientStart: '#0b133b',
+        gradientEnd: '#000000',
     },
     fonts: {
         main: 'Arial, sans-serif',
         heading: 'Georgia, serif',
     },
+};
+
+export const generalData = {
+    skipAudtorsTime: 480, // in seconds
 };

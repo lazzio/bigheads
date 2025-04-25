@@ -861,7 +861,7 @@ export default function PlayerScreen() {
 
   return (
     <LinearGradient
-      colors={['#0b133b', '#000000']}
+      colors={[theme.colors.gradientStart, theme.colors.gradientEnd]}
       style={styles.container}
     >
       {isOffline && (

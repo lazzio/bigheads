@@ -21,7 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PENDING_POSITIONS_KEY } from '../utils/PlaybackSyncService';
 import { supabase } from '../lib/supabase';
 import throttle from 'lodash/throttle';
-import { theme } from '../styles/global';
+import { theme, generalData } from '../styles/global';
 
 interface AudioPlayerProps {
   episode: Episode;
@@ -360,10 +360,10 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
     }
   }
 
-  // Fonction pour sauter 10 minutes (600 secondes)
-  async function handleSkip10Minutes() {
+  // Skip auditeurs function
+  async function handleSkipAuditors() {
     try {
-      await audioManager.seekRelative(600);
+      await audioManager.seekRelative(generalData.skipAudtorsTime);
       console.log("Skipped 10 minutes forward");
     } catch (err) {
       console.error("Error skipping 10 minutes:", err);
@@ -532,7 +532,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete }:
 
       <View style={styles.additionalControls}>
         {/* Bouton "Passer les auditeurs" */}
-        <TouchableOpacity onPress={handleSkip10Minutes} style={styles.skipButton}>
+        <TouchableOpacity onPress={handleSkipAuditors} style={styles.skipButton}>
           <MaterialIcons name="next-plan" size={20} color={theme.colors.text} />
           <Text style={styles.skipText}>Skip auditeurs</Text>
         </TouchableOpacity>
