@@ -157,10 +157,83 @@ export default function PlayerScreen() {
     // Only run if episodes are loaded and we have params or default target
     // OR if audioManager already has an episode loaded (app coming to foreground)
     const audioState = audioManager.getState();
-    if (episodes.length > 0 || offlinePath || audioState.currentEpisode) {
+    // Ajout d'un guard pour éviter boucle infinie si episodes.length === 0 et audioState.currentEpisode existe
+    if (
+      (episodes.length > 0 || offlinePath || audioState.currentEpisode) &&
+      !loading // Ne pas relancer si déjà en cours de chargement
+    ) {
       determineAndLoadCurrentEpisode();
     }
-  }, [episodeId, offlinePath, episodes, playbackPositions, source]); // Add source to dependencies
+    // Si on a un épisode actif dans l'audioManager mais pas d'épisodes chargés, on doit forcer la fin du loading
+    if (
+      episodes.length === 0 &&
+      !offlinePath &&
+      audioState.currentEpisode &&
+      loading
+    ) {
+      console.log("[PlayerScreen] Active episode in AudioManager detected but no episodes loaded. Forcing loading = false.");
+      setLoading(false);
+      // Special case: Show just the currently playing episode
+      setEpisodes([audioState.currentEpisode]);
+      setCurrentIndex(0);
+      currentEpisodeRef.current = audioState.currentEpisode;
+    }
+  }, [episodeId, offlinePath, episodes, playbackPositions, source, loading]); // Ajout de loading dans les deps
+
+  // Ajout d'un effet pour détecter le retour au premier plan et relancer la logique si besoin
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        console.log("[PlayerScreen] App returned to foreground. Current state:", { 
+          loading, 
+          episodeCount: episodes.length, 
+          currentIndex,
+          hasAudioEpisode: !!audioManager.getState().currentEpisode
+        });
+        
+        // Si le player est actif mais que rien n'est chargé, relancer la logique
+        const audioState = audioManager.getState();
+        if (
+          audioState.currentEpisode &&
+          (episodes.length === 0 || currentIndex === -1)
+        ) {
+          // Force loading to false and show the active episode
+          setLoading(false);
+          setEpisodes([audioState.currentEpisode]);
+          setCurrentIndex(0);
+          currentEpisodeRef.current = audioState.currentEpisode;
+          console.log("[PlayerScreen] Restored player state from AudioManager after returning to foreground");
+        }
+      }
+    });
+    return () => sub.remove();
+  }, [episodes.length, currentIndex]);
+
+  // Add loading timeout failsafe
+  useEffect(() => {
+    // Safety timeout to prevent indefinite loading
+    let timeoutId: NodeJS.Timeout | null = null;
+    
+    if (loading) {
+      timeoutId = setTimeout(() => {
+        console.log("[PlayerScreen] Loading timeout triggered! Forcing loading = false");
+        const audioState = audioManager.getState();
+        
+        if (audioState.currentEpisode) {
+          // If we have an active episode in AudioManager, show it
+          setEpisodes([audioState.currentEpisode]);
+          setCurrentIndex(0);
+          currentEpisodeRef.current = audioState.currentEpisode;
+        }
+        
+        setLoading(false);
+      }, 5000); // 5 seconds timeout
+    }
+    
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [loading]);
 
   // Function for initial data loading
   const loadData = async () => {
@@ -304,7 +377,6 @@ export default function PlayerScreen() {
      
      // Original check to prevent unnecessary reloads if the ref matches
      if (!episode || currentEpisodeRef.current?.id === episode.id) {
-       // console.log("[PlayerScreen] Skipping load: Episode already loaded or invalid.");
        // If the ref matches but AudioManager has nothing, we might need to load
        if (!audioState.currentEpisode) {
          console.log("[PlayerScreen] Ref matches but AudioManager empty, proceeding with load.");
@@ -319,6 +391,7 @@ export default function PlayerScreen() {
      currentEpisodeRef.current = episode; // Track the episode being loaded
 
      try {
+       console.log("[PlayerScreen] Starting loadEpisode call to AudioManager");
        await audioManager.loadEpisode(episode, initialPositionSeconds);
        console.log("[PlayerScreen] loadAndSeekEpisode: audioManager.loadEpisode finished.");
      } catch (loadError) {
@@ -805,7 +878,7 @@ export default function PlayerScreen() {
   // Display loading state
   if (loading) {
     return (
-      <View style={[styles.container, {alignItems: 'center', justifyContent: 'center'}]}>
+      <View style={[styles.container, {alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.primaryBackground}]}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
         <Text style={{color: 'white', marginTop: 10}}>Chargement du lecteur...</Text>
       </View>
@@ -886,7 +959,6 @@ export default function PlayerScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    // backgroundColor removed, LinearGradient handles it
     justifyContent: 'center',
     padding: 20,
   },

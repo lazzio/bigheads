@@ -58,7 +58,7 @@ class AudioManager {
       
       await TrackPlayer.updateOptions({
         icon: require('../assets/images/bh_opti.png'),
-        color: webColorToArgbNumber('#b48d7b'),
+        color: 0xFFb48d7b, // webColorToArgbNumber('#b48d7b'),
         capabilities: [
           Capability.Play,
           Capability.Pause,
