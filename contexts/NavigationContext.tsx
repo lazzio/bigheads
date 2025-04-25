@@ -2,61 +2,48 @@ import React, { createContext, useContext, useEffect, ReactNode } from 'react';
 import { AppState } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { audioManager } from '../utils/OptimizedAudioService'; // Ajustez le chemin si nécessaire
 
-// Définir le type du contexte
-type NavigationContextType = null; // ou remplacez par une interface si vous avez des valeurs à partager
+// Type du contexte (peut être étendu si besoin)
+type NavigationContextType = null;
 
-// Créer le contexte avec un type défini
 const NavigationContext = createContext<NavigationContextType>(null);
 
-// Définir l'interface pour les props du provider
 interface NavigationProviderProps {
   children: ReactNode;
 }
 
 export function NavigationProvider({ children }: NavigationProviderProps) {
   const router = useRouter();
-  
-  useEffect(() => {
-    // Gestionnaire pour les événements d'état de l'application
-    const appStateSubscription = AppState.addEventListener('change', async (nextAppState) => {
-      if (nextAppState === 'active') {
-        // L'application revient au premier plan
-        try {
-          // Appeler la méthode pour préserver la lecture
-          await audioManager.handleAppReactivation();
-          } catch (error) {
-            console.error('Erreur lors de la réactivation de l\'audio:', error);
-          }
-        }
-      });
 
-    // Écouteur pour les interactions avec l'AudioManager
-    const unsubscribe = audioManager.addListener((data) => {
-      if (data.type === 'notification-interaction') {
-        console.log('Interaction avec la notification détectée, navigation vers le player');
-        router.navigate('/(tabs)/player');
-      }
-    });
-    
-    // Vérifier au démarrage si un épisode est en cours
+  useEffect(() => {
+    // Vérifie au démarrage si une navigation vers le player est demandée (ex: notification)
     const checkInitialState = async () => {
       const shouldNavigate = await AsyncStorage.getItem('navigateToPlayer');
       if (shouldNavigate === 'true') {
-        AsyncStorage.removeItem('navigateToPlayer');
+        await AsyncStorage.removeItem('navigateToPlayer');
         router.navigate('/(tabs)/player');
       }
     };
-    
+
     checkInitialState();
-    
+
+    // Écouteur AppState pour d'autres besoins de navigation globale
+    const appStateSubscription = AppState.addEventListener('change', () => {
+      // Ajoutez ici des comportements globaux si besoin
+    });
+
+    // --- Correction du bug de sélection d'épisode ---
+    // À chaque navigation vers le player avec un nouvel épisode, on force la mise à jour de l'URL (et donc des params)
+    // Cela permet à PlayerScreen de détecter le changement et de charger le bon épisode.
+    // À utiliser dans la liste d'épisodes : router.push({ pathname: '/(tabs)/player', params: { episodeId: ... } })
+    // Ici, on écoute les changements de navigation pour forcer la réinitialisation si besoin (optionnel, sécurité)
+    // (Rien à ajouter ici côté provider, la correction est côté navigation dans la liste d'épisodes.)
+
     return () => {
       appStateSubscription.remove();
-      unsubscribe();
     };
   }, [router]);
-  
+
   return (
     <NavigationContext.Provider value={null}>
       {children}
@@ -64,7 +51,7 @@ export function NavigationProvider({ children }: NavigationProviderProps) {
   );
 }
 
-// Hook optionnel pour utiliser le contexte
+// Hook optionnel pour utiliser le contexte (à étendre si besoin)
 export function useNavigation() {
   return useContext(NavigationContext);
 }

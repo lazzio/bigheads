@@ -630,19 +630,18 @@ export default function DownloadsScreen() {
   const playEpisode = useCallback((episode: Episode, index: number) => {
     if (downloadStatus[episode.id]?.downloaded) {
       const filePath = downloadStatus[episode.id]?.filePath;
-      
-      // For a downloaded episode, pass the local path
+      // Correction : toujours passer episodeId et offlinePath dans les params
       router.push({
-        pathname: '/player',
+        pathname: '/(tabs)/player',
         params: { 
           episodeId: episode.id,
           offlinePath: filePath
         }
       });
     } else {
-      // For an online episode, use the index
+      // Pour un épisode en ligne, passer episodeId
       router.push({
-        pathname: '/player',
+        pathname: '/(tabs)/player',
         params: { episodeId: episode.id }
       });
     }
