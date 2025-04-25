@@ -6,8 +6,10 @@ import TrackPlayer, {
   AppKilledPlaybackBehavior
 } from 'react-native-track-player';
 import { Episode } from '../types/episode';
-import { Platform, PermissionsAndroid, NativeModules, Linking } from 'react-native';
+import { Platform, PermissionsAndroid, Linking } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as IntentLauncher from 'expo-intent-launcher';
+import { webColorToArgbNumber } from './commons/colorUtils';
 
 // Classe singleton pour gérer l'état audio global
 class AudioManager {
@@ -35,50 +37,95 @@ class AudioManager {
     try {
       console.log('Setting up TrackPlayer');
       
-      if (!this.isPlayerReady) {
-        await TrackPlayer.setupPlayer({
-          autoHandleInterruptions: true,
-        });
-        
-        await TrackPlayer.updateOptions({
-          capabilities: [
-            Capability.Play,
-            Capability.Pause,
-            Capability.Stop,
-            Capability.SeekTo,
-            Capability.SkipToPrevious,
-            Capability.SkipToNext,
-          ],
-          compactCapabilities: [
-            Capability.Play, 
-            Capability.Pause,
-            Capability.SkipToPrevious,
-            Capability.SkipToNext,
-          ],
-          android: {
-            appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
-          },
-          notificationCapabilities: [
-            Capability.Play,
-            Capability.Pause,
-            Capability.SeekTo,
-            Capability.SkipToPrevious,
-            Capability.SkipToNext,
-          ],
-          progressUpdateEventInterval: 1,
-        });
-        
-        this.isPlayerReady = true;
-        console.log('TrackPlayer setup complete');
-        
-        this.setupEventListeners();
+      // Check if already set up
+      // Note: TrackPlayer.isServiceRunning() might be useful on Android
+      // For simplicity, we rely on our internal flag.
+      if (this.isPlayerReady) {
+        console.log('TrackPlayer already initialized.');
+        return;
       }
+
+      // Check if setup is already in progress (simple lock)
+      if ((this as any)._isSettingUp) {
+        console.log('TrackPlayer setup already in progress.');
+        return;
+      }
+      (this as any)._isSettingUp = true;
+
+      await TrackPlayer.setupPlayer({
+        autoHandleInterruptions: true,
+      });
+      
+      await TrackPlayer.updateOptions({
+        icon: require('../assets/images/bh_opti.png'),
+        color: webColorToArgbNumber('#b48d7b'),
+        capabilities: [
+          Capability.Play,
+          Capability.Pause,
+          Capability.Stop,
+          Capability.SeekTo,
+          Capability.SkipToPrevious,
+          Capability.SkipToNext,
+        ],
+        compactCapabilities: [
+          Capability.Play, 
+          Capability.Pause,
+          Capability.SkipToPrevious,
+          Capability.SkipToNext,
+        ],
+        android: {
+          appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
+        },
+        notificationCapabilities: [
+          Capability.Play,
+          Capability.Pause,
+          // Capability.SeekTo, // Consider removing if causing issues or not used
+          Capability.SkipToPrevious,
+          Capability.SkipToNext,
+        ],
+        progressUpdateEventInterval: 1,
+      });
+      
+      this.isPlayerReady = true;
+      console.log('TrackPlayer setup complete');
+      
+      this.setupEventListeners();
+
     } catch (error) {
       console.error('Error setting up TrackPlayer:', error);
-      // Continuer même en cas d'erreur pour permettre au moins la lecture de base
+      this.isPlayerReady = false; // Ensure flag is false on error
+      // Optionally re-throw or handle differently
+    } finally {
+      (this as any)._isSettingUp = false; // Release lock
     }
   }
 
+  public async handleAppReactivation(): Promise<void> {
+    try {
+      // Vérifier si un épisode était en cours de lecture
+      const currentState = this.getState();
+      
+      if (currentState.currentEpisode) {
+        console.log('Restauration de la lecture après réactivation');
+        
+        // Si la lecture était en cours, assurez-vous qu'elle continue
+        if (this.isPlaying) {
+          // Si déjà en lecture, ne rien faire
+          console.log('La lecture est déjà en cours, aucune action nécessaire');
+        } else {
+          // Sinon, reprendre la lecture
+          console.log('Reprise de la lecture');
+          await this.play();
+        }
+        
+        // Mettre à jour l'interface utilisateur avec l'état actuel
+        this.updatePlaybackStatus();
+      }
+    } catch (error) {
+      console.error('Erreur lors de la restauration de la lecture:', error);
+    }
+  }
+  
   private setupEventListeners(): void {
     TrackPlayer.addEventListener(Event.PlaybackState, (event) => {
       console.log('Playback state changed:', event.state);
@@ -137,11 +184,16 @@ class AudioManager {
     TrackPlayer.addEventListener(Event.RemotePlay, () => {
       console.log('Remote Play event received');
       this.play().catch(err => console.error('Error in remote play:', err));
+
+      // Say that the user interacted with the notification
+      AsyncStorage.setItem('notificationInteraction', 'true');
     });
 
     TrackPlayer.addEventListener(Event.RemotePause, () => {
       console.log('Remote Pause event received');
       this.pause().catch(err => console.error('Error in remote pause:', err));
+
+      AsyncStorage.setItem('notificationInteraction', 'true');
     });
 
     TrackPlayer.addEventListener(Event.RemoteStop, () => {
@@ -163,10 +215,41 @@ class AudioManager {
       console.log('Remote Seek event received:', event.position);
       this.seekTo(event.position * 1000).catch(err => console.error('Error in remote seek:', err));
     });
+
+    // Ajouter un événement pour détecter lorsque l'utilisateur a cliqué sur la notification
+    // même s'il n'interagit pas avec les boutons
+    const checkNotificationInteraction = setInterval(async () => {
+      try {
+        const state = await TrackPlayer.getPlaybackState();
+        
+        // Si l'application est visible et qu'il y a eu une interaction avec la notification
+        const notificationInteraction = await AsyncStorage.getItem('notificationInteraction');
+        if (notificationInteraction === 'true') {
+          // Réinitialiser l'indicateur
+          AsyncStorage.removeItem('notificationInteraction');
+          
+          // Notifier qu'il y a eu une interaction avec la notification
+          this.notifyListeners({
+            type: 'notification-interaction'
+          });
+        }
+      } catch (error) {
+        console.error('Error checking notification interaction:', error);
+      }
+    }, 1000); // Vérifier toutes les secondes
+
+    // Nettoyer l'intervalle si nécessaire (vous pouvez stocker la référence dans une propriété de classe)
+    //this.cleanupFunctions.push(() => clearInterval(checkNotificationInteraction));
   }
   
   // Manually update the playback status
   private async updatePlaybackStatus(): Promise<void> {
+    // Add check here
+    if (!this.isPlayerReady) {
+      // console.log('updatePlaybackStatus skipped: Player not ready.');
+      return; 
+    }
+    
     try {
       const playbackState = await TrackPlayer.getPlaybackState();
       const state = playbackState.state;
@@ -186,7 +269,13 @@ class AudioManager {
         isBuffering: state === State.Buffering || state === State.Connecting
       });
     } catch (err) {
-      console.error('Error updating playback status:', err);
+      // Check if the error is specifically about initialization
+      if (err instanceof Error && err.message.includes('player is not initialized')) {
+        console.warn('updatePlaybackStatus failed: Player not initialized (likely race condition). Setting isPlayerReady=false.');
+        this.isPlayerReady = false; // Reset flag if TrackPlayer says it's not ready
+      } else {
+        console.error('Error updating playback status:', err);
+      }
     }
   }
 
@@ -426,8 +515,19 @@ class AudioManager {
   public addListener(callback: (data: any) => void): () => void {
     this.listeners.add(callback);
     
-    // Envoyer l'état actuel immédiatement
-    this.updatePlaybackStatus();
+    // Envoyer l'état actuel immédiatement ONLY if ready
+    if (this.isPlayerReady) {
+      this.updatePlaybackStatus(); // Send current status if player is ready
+    } else {
+      // Optionally send a default "not ready" state or just wait for setup
+      callback({
+        type: 'status',
+        position: 0,
+        duration: 0,
+        isPlaying: false,
+        isBuffering: false
+      });
+    }
     
     // Retourner une fonction de nettoyage
     return () => {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import { Slot, SplashScreen, useRouter } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -8,6 +9,9 @@ import { initializePlaybackSync } from '../utils/PlaybackSyncService';
 import NetInfo from '@react-native-community/netinfo';
 import * as Sentry from '@sentry/react-native';
 import { StatusBar } from 'expo-status-bar';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { audioManager } from '@/utils/OptimizedAudioService';
+import { NavigationProvider } from '../contexts/NavigationContext';
 
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
@@ -22,6 +26,22 @@ export default function RootLayout() {
   useEffect(() => {
     const initializeApp = async () => {
       try {
+        // Vérifier s'il y a eu une interaction avec le player pendant que l'app était fermée
+        const playerInteraction = await AsyncStorage.getItem('playerInteraction');
+        if (playerInteraction === 'true') {
+          // Réinitialiser le flag
+          AsyncStorage.removeItem('playerInteraction');
+          
+          // Vérifier si un épisode est en cours de lecture
+          const state = audioManager.getState();
+          if (state.currentEpisode) {
+            console.log('Interaction player détectée au démarrage, navigation vers player');
+            setTimeout(() => {
+              router.replace('/(tabs)/player');
+            }, 500); // Délai un peu plus long au démarrage
+          }
+        }
+
         // Écouter les changements d'état d'authentification
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
           console.log('Auth state changed:', event);
@@ -115,12 +135,74 @@ export default function RootLayout() {
     // Nettoyage au démontage
     return () => {
       appMounted.current = false;
-      // Désinscription des écouteurs (si nécessaire, géré par les services eux-mêmes?)
-      // subscription?.unsubscribe(); // Supabase auth listener
-      // unsubscribeNetInfo?.(); // NetInfo listener
-      // cleanupSync(); // Playback sync listener
     };
-  }, []); // Exécuter une seule fois au montage
+  }, []); 
+
+  useEffect(() => {
+    // Marquer que l'application est en cours d'exécution
+    AsyncStorage.setItem('appIsRunning', 'true');
+
+    // Nettoyer lors de la désactivation
+    const cleanup = () => {
+      AsyncStorage.removeItem('appIsRunning');
+    };
+
+    // Détecter les changements d'état de l'application
+    const subscription = AppState.addEventListener('change', async (nextAppState) => {
+      // Lorsque l'application revient au premier plan
+      if (nextAppState === 'active') {
+        const wasRunning = await AsyncStorage.getItem('appIsRunning');
+        
+        // Si l'application n'était pas en cours d'exécution, cela signifie
+        // qu'elle a été lancée depuis la notification ou un autre moyen externe
+        if (!wasRunning) {
+          AsyncStorage.setItem('appIsRunning', 'true');
+          
+          // Vérifier si un épisode est en cours de lecture
+          const state = audioManager.getState();
+          if (state.currentEpisode) {
+            // Naviguer vers l'écran du lecteur
+            setTimeout(() => {
+              router.replace('/(tabs)/player');
+            }, 300);
+          }
+        }
+      } else if (nextAppState === 'background' || nextAppState === 'inactive') {
+        // L'application va en arrière-plan
+        AsyncStorage.setItem('appIsRunning', 'false');
+
+        // Record the current playback position to restore it later
+        const state = audioManager.getState();
+        if (state.currentEpisode && state.position) {
+          await AsyncStorage.setItem('lastPlaybackPosition', state.position.toString());
+          console.log(`Sauvegarde position lecture: ${state.position}s`);
+        }
+      }
+    });
+
+    // Ajouter un écouteur spécifique pour les interactions avec la notification audio
+    const unsubscribeAudioManager = audioManager.addListener((data) => {
+      if (data.type === 'remote-play' || data.type === 'remote-pause' || 
+          data.type === 'remote-next' || data.type === 'remote-previous') {
+        console.log('Interaction avec les contrôles audio detectée:', data.type);
+        
+        // Marquer qu'il y a eu une interaction avec le lecteur
+        AsyncStorage.setItem('playerInteraction', 'true');
+        
+        // Si l'application est visible, naviguer vers le player
+        if (AppState.currentState === 'active') {
+          console.log('App active, navigation vers le player suite à interaction contrôles');
+          router.navigate('/(tabs)/player');
+        }
+      }
+    });
+
+    return () => {
+      subscription.remove();
+      unsubscribeAudioManager(); // N'oubliez pas de nettoyer l'écouteur
+      cleanup();
+    };
+  }, [router]);
 
   // Afficher Slot seulement quand l'app est prête pour éviter les flashs
   if (!isAppReady) {
@@ -131,10 +213,12 @@ export default function RootLayout() {
   console.log('[RootLayout] App is ready, rendering Slot.');
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <StatusBar style="light" />
-        <Slot />
-      </SafeAreaProvider>
+      <NavigationProvider>
+        <SafeAreaProvider>
+          <StatusBar style="light" />
+          <Slot />
+        </SafeAreaProvider>
+      </NavigationProvider>
     </GestureHandlerRootView>
   );
 }
