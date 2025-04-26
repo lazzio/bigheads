@@ -26,7 +26,7 @@ export async function initEpisodeNotificationService(): Promise<void> {
 }
 
 // Set up a handler for received notifications
-export function setupNotificationListener(onNotificationReceived: (episodeId: string) => void): () => void {
+export function setupNotificationListener(onNotificationReceived: (episodeId: string, position: number) => void): () => void {
   // Make sure to set the correct behavior for foreground notifications
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
@@ -43,9 +43,10 @@ export function setupNotificationListener(onNotificationReceived: (episodeId: st
     
     // Get episodeId from the notification
     const episodeId = response.notification.request.content.data?.episodeId;
+    const position = response.notification.request.content.data?.position;
     if (episodeId) {
       console.log(`[NotificationService] Processing notification tap for episode ${episodeId}`);
-      onNotificationReceived(episodeId);
+      onNotificationReceived(episodeId, position || 0);
     }
   });
 

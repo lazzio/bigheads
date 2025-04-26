@@ -5,7 +5,8 @@ import {
   StyleSheet, 
   TouchableOpacity, 
   Platform, 
-  ScrollView, 
+  FlatList, 
+  RefreshControl, 
   Alert, 
   ActivityIndicator
 } from 'react-native';
@@ -769,76 +770,78 @@ export default function DownloadsScreen() {
         </View>
       )}
 
-      <ScrollView style={styles.scrollView}>
-        {episodes.length === 0 ? (
-          <NoEpisodesMessage />
-        ) : (
-          episodes.map((episode, index) => (
-            <View key={episode.id} style={styles.episodeCard}>
-              <TouchableOpacity 
-                style={styles.episodeInfo}
-                onPress={() => playEpisode(episode, index)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.episodeTitle}>{episode.title}</Text>
-                {episode.publication_date && (
-                  <Text style={styles.episodeDate}>
-                    {new Date(episode.publication_date).toLocaleDateString()}
-                  </Text>
-                )}
-                {downloadStatus[episode.id]?.downloaded && (
-                  <Text style={styles.downloadedIndicator}>Downloaded</Text>
-                )}
-              </TouchableOpacity>
+      <FlatList
+        data={episodes}
+        keyExtractor={item => item.id}
+        contentContainerStyle={episodes.length === 0 ? { flex: 1 } : undefined}
+        renderItem={({ item: episode, index }) => (
+          <View key={episode.id} style={styles.episodeCard}>
+            <TouchableOpacity 
+              style={styles.episodeInfo}
+              onPress={() => playEpisode(episode, index)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.episodeTitle}>{episode.title}</Text>
+              {episode.publication_date && (
+                <Text style={styles.episodeDate}>
+                  {new Date(episode.publication_date).toLocaleDateString()}
+                </Text>
+              )}
+              {downloadStatus[episode.id]?.downloaded && (
+                <Text style={styles.downloadedIndicator}>Downloaded</Text>
+              )}
+            </TouchableOpacity>
 
-              <View style={styles.actions}>
-                {Platform.OS !== 'web' ? (
-                  !isOffline && (
-                    downloadStatus[episode.id]?.downloaded ? (
-                      <TouchableOpacity
-                        style={[styles.actionButton, styles.deleteButton]}
-                        onPress={() => deleteDownload(episode)}
-                      >
-                        <MaterialIcons name="delete" size={20} color={theme.colors.text} />
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        style={[
-                          styles.actionButton, 
-                          styles.downloadButton,
-                          downloadStatus[episode.id]?.downloading && styles.downloadingButton
-                        ]}
-                        onPress={() => downloadEpisode(episode)}
-                        disabled={downloadStatus[episode.id]?.downloading || isOffline}
-                      >
-                        {downloadStatus[episode.id]?.downloading ? (
-                          <ProgressCircle progress={downloadStatus[episode.id]?.progress || 0} />
-                        ) : (
-                          <MaterialIcons name="cloud-download" size={20} color={theme.colors.text} />
-                        )}
-                      </TouchableOpacity>
-                    )
+            <View style={styles.actions}>
+              {Platform.OS !== 'web' ? (
+                !isOffline && (
+                  downloadStatus[episode.id]?.downloaded ? (
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.deleteButton]}
+                      onPress={() => deleteDownload(episode)}
+                    >
+                      <MaterialIcons name="delete" size={20} color={theme.colors.text} />
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={[
+                        styles.actionButton, 
+                        styles.downloadButton,
+                        downloadStatus[episode.id]?.downloading && styles.downloadingButton
+                      ]}
+                      onPress={() => downloadEpisode(episode)}
+                      disabled={downloadStatus[episode.id]?.downloading || isOffline}
+                    >
+                      {downloadStatus[episode.id]?.downloading ? (
+                        <ProgressCircle progress={downloadStatus[episode.id]?.progress || 0} />
+                      ) : (
+                        <MaterialIcons name="cloud-download" size={20} color={theme.colors.text} />
+                      )}
+                    </TouchableOpacity>
                   )
-                ) : (
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.downloadButton]}
-                    onPress={() => downloadEpisode(episode)}
-                  >
-                    <MaterialIcons name="cloud-download" size={20} color={theme.colors.text} />
-                  </TouchableOpacity>
-                )}
-              </View>
+                )
+              ) : (
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.downloadButton]}
+                  onPress={() => downloadEpisode(episode)}
+                >
+                  <MaterialIcons name="cloud-download" size={20} color={theme.colors.text} />
+                </TouchableOpacity>
+              )}
             </View>
-          ))
+          </View>
         )}
-      </ScrollView>
-      
-      <TouchableOpacity 
-        style={styles.floatingRefreshButton}
-        onPress={refreshData}
-      >
-        <Text style={styles.refreshButtonText}>Refresh</Text>
-      </TouchableOpacity>
+        ListEmptyComponent={<NoEpisodesMessage />}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={refreshData}
+            tintColor={theme.colors.primary}
+            colors={[theme.colors.primary]}
+            progressBackgroundColor={theme.colors.secondaryBackground}
+          />
+        }
+      />
     </View>
   );
 }
@@ -868,10 +871,6 @@ const styles = StyleSheet.create({
     padding: 8,
     backgroundColor: theme.colors.error,
     borderRadius: 8,
-  },
-  scrollView: {
-    flex: 1,
-    padding: 0,
   },
   errorContainer: {
     backgroundColor: 'rgba(239, 68, 68, 0.2)',
@@ -940,20 +939,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
   },
-  floatingRefreshButton: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    backgroundColor: theme.colors.buttonBackground,
-    borderRadius: 8,
-    elevation: 8,
-    shadowColor: theme.colors.shadowColor,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-  },
   offlineIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -969,10 +954,11 @@ const styles = StyleSheet.create({
   },
   episodeCard: {
     flexDirection: 'row',
-    backgroundColor: theme.colors.secondaryBackground,
-    borderRadius: 12,
+    //backgroundColor: theme.colors.secondaryBackground,
+    // borderRadius: 12,
     padding: 15,
-    marginBottom: 12,
+    marginHorizontal: 15,
+    // marginBottom: 12,
     alignItems: 'center',
   },
   episodeInfo: {

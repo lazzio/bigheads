@@ -59,18 +59,17 @@ export default function ProfileScreen() {
       <View style={componentStyle.container}>
         {/* En-tête */}
         <View style={componentStyle.header}>
-          <Text style={componentStyle.headerTitle}>Profil</Text>
+          <MaterialIcons name="account-circle" size={32} color={theme.colors.primary} style={{marginRight: 8}} />
+          <Text style={componentStyle.headerTitle}>
+            Paramètres du compte
+          </Text>
         </View>
         
         {/* Contenu principal */}
         <View style={styles.content}>
-          <View style={styles.profileCard}>
-            <MaterialIcons name="account-circle" size={32} color={theme.colors.primary} />
-            <Text style={styles.profileText}>
-              Paramètres du compte
-            </Text>
-          </View>
-          
+        </View>
+        
+        <View style={styles.stickyBottom}>
           {/* Bouton de déconnexion */}
           <TouchableOpacity 
             style={styles.logoutButton} 
@@ -86,18 +85,6 @@ export default function ProfileScreen() {
               {isLoggingOut ? 'Déconnexion...' : 'Se déconnecter'}
             </Text>
           </TouchableOpacity>
-        </View>
-        
-        {/* Bloc personnalisable en bas d'écran */}
-        <View style={styles.stickyBottom}>
-          {/* 
-            Bloc personnalisable à compléter
-            Exemples d'utilisation :
-            - Bannière promotionnelle
-            - Informations de version
-            - Liens vers mentions légales
-          */}
-          <Text style={styles.stickyText}>Zone personnalisable</Text>
         </View>
       </View>
 

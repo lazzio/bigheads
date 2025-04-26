@@ -1,22 +1,57 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { theme } from '../styles/global';
-import { MaterialIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function NotFoundScreen() {
   const router = useRouter();
 
+  useEffect(() => {
+    const redirectToPlayer = async () => {
+      try {
+        console.log('[NotFound] Tentative de redirection automatique vers le player...');
+        
+        // Récupérer les données de lecture sauvegardées
+        const lastEpisodeId = await AsyncStorage.getItem('lastPlayedEpisodeId');
+        const lastPosition = await AsyncStorage.getItem('lastPlayedPosition');
+        const wasPlaying = await AsyncStorage.getItem('wasPlaying');
+        
+        if (lastEpisodeId) {
+          console.log(`[NotFound] Redirection avec l'épisode ${lastEpisodeId} à la position ${lastPosition || 0}`);
+          // Navigue vers le player avec l'épisode courant, la position et l'état de lecture
+          router.replace({
+            pathname: '/(tabs)/player',
+            params: {
+              episodeId: lastEpisodeId,
+              position: lastPosition ? Number(lastPosition) : undefined,
+              autoplay: wasPlaying === 'true' ? '1' : '0',
+              fromNotFound: '1',
+              timestamp: Date.now().toString() // Force le rechargement
+            }
+          });
+        } else {
+          console.log('[NotFound] Aucun épisode en cours trouvé, redirection vers le player par défaut');
+          router.replace('/(tabs)/player');
+        }
+      } catch (error) {
+        console.error('[NotFound] Erreur lors de la redirection:', error);
+        router.replace('/(tabs)/player');
+      }
+    };
+
+    // Rediriger automatiquement après un court délai
+    const timeout = setTimeout(() => {
+      redirectToPlayer();
+    }, 500); // Délai court pour permettre à l'écran de s'afficher brièvement
+
+    return () => clearTimeout(timeout);
+  }, [router]);
+
   return (
     <View style={styles.container}>
-      <MaterialIcons name="error-outline" size={64} color={theme.colors.error} />
-      <Text style={styles.title}>Page introuvable</Text>
-      <Text style={styles.description}>
-        Oups, la page demandée n'existe pas ou a été déplacée.
-      </Text>
-      <TouchableOpacity style={styles.button} onPress={() => router.replace('/(tabs)')}>
-        <Text style={styles.buttonText}>Retour à l'accueil</Text>
-      </TouchableOpacity>
+      <ActivityIndicator size="large" color={theme.colors.primary} />
+      <Text style={styles.text}>Redirection en cours...</Text>
     </View>
   );
 }
@@ -29,29 +64,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 32,
   },
-  title: {
-    fontSize: 24,
-    color: theme.colors.text,
-    fontWeight: 'bold',
-    marginTop: 24,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  description: {
-    color: theme.colors.description,
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 32,
-  },
-  button: {
-    backgroundColor: theme.colors.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 32,
-    borderRadius: 8,
-  },
-  buttonText: {
+  text: {
     color: theme.colors.text,
     fontSize: 16,
-    fontWeight: '600',
-  },
+    marginTop: 16,
+    textAlign: 'center',
+  }
 });

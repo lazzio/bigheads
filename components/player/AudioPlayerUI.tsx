@@ -159,7 +159,7 @@ export const AudioPlayerUI: React.FC<AudioPlayerUIProps> = ({
        {/* <Image source={artworkSource} style={styles.artwork} /> */}
 
       {/* Titre et description */}
-      <Text style={styles.title} numberOfLines={1}>{episode.title}</Text>
+      <Text style={styles.title} numberOfLines={2}>{episode.title}</Text>
       <Text style={styles.description} numberOfLines={2} ellipsizeMode="tail">
         {episode.description}
       </Text>

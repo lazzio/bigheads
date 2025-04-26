@@ -10,15 +10,15 @@ export const componentStyle = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     paddingLeft: 20,
     paddingRight: 20,
     paddingTop: 10,
     paddingBottom: 10,
     marginTop: 25,
     marginBottom: 10,
-    //backgroundColor: theme.colors.secondaryBackground,
-    borderBottomWidth: 1,
+    backgroundColor: theme.colors.darkBackground,
+    borderBottomWidth: 0.7,
     borderBottomColor: theme.colors.borderColor,
   },
   headerTitle: {

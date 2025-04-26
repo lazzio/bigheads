@@ -13,10 +13,17 @@ import { theme } from '../../styles/global';
 import { triggerSync } from '../../services/PlaybackSyncService';
 import NetInfo from '@react-native-community/netinfo';
 import TrackPlayer from 'react-native-track-player';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Main component wrapped with Provider
 const PlayerScreenContent: React.FC = () => {
-  const { episodeId, offlinePath } = useLocalSearchParams<{ episodeId?: string; offlinePath?: string }>();
+  const { episodeId, offlinePath, position: positionParam, autoplay } =
+    useLocalSearchParams<{ 
+      episodeId?: string; 
+      offlinePath?: string; 
+      position?: string;
+      autoplay?: string; 
+    }>();
   const router = useRouter();
 
   // Get state and actions from context
@@ -52,14 +59,57 @@ const PlayerScreenContent: React.FC = () => {
   const appStateRef = useRef(AppState.currentState);
   const isInitialLoadRef = useRef(true);
 
-  // --- Effect for Initial Episode Determination and Loading ---
+  // Ajout d'un ref pour savoir si on a déjà traité les params de notification
+  const notificationParamsConsumedRef = useRef(false);
+
+  // 1. Sauvegarde l'épisode courant, la position et l'état de lecture à chaque changement
   useEffect(() => {
-    // Correction : toujours exécuter la logique de sélection d'épisode si episodeId ou offlinePath changent
+    if (currentEpisode && typeof position === 'number') {
+      AsyncStorage.setItem('lastPlayedEpisodeId', currentEpisode.id);
+      AsyncStorage.setItem('lastPlayedPosition', position.toString());
+      AsyncStorage.setItem('wasPlaying', isPlaying ? 'true' : 'false');
+    }
+  }, [currentEpisode?.id, position, isPlaying]);
+
+  // 2. Applique la position demandée par la notification (si différente de la position actuelle)
+  useEffect(() => {
+    if (
+      !notificationParamsConsumedRef.current &&
+      currentEpisode &&
+      positionParam &&
+      !isLoadingContext &&
+      !isBuffering
+    ) {
+      const requestedPosition = Number(positionParam);
+      if (
+        !isNaN(requestedPosition) &&
+        Math.abs(requestedPosition - position) > 1 // Tolérance 1s
+      ) {
+        seekTo(requestedPosition);
+      }
+    }
+  }, [currentEpisode?.id, positionParam, isLoadingContext, isBuffering, seekTo, position]);
+
+  // 3. Relance la lecture automatiquement si demandé par la notification
+  useEffect(() => {
+    if (
+      !notificationParamsConsumedRef.current &&
+      currentEpisode &&
+      autoplay === '1' &&
+      !isPlaying &&
+      !isLoadingContext &&
+      !isBuffering
+    ) {
+      playAudio();
+    }
+  }, [currentEpisode?.id, autoplay, isPlaying, isLoadingContext, isBuffering, playAudio]);
+
+  // 4. Logique de sélection d'épisode : priorise l'ID passé en paramètre
+  useEffect(() => {
     const determineAndLoad = async () => {
       let episodeToLoad = null;
       let targetIndex = -1;
       let initialPosition = 0;
-      let isStandaloneOffline = false;
 
       // Priority 1: Offline Path
       if (offlinePath) {
@@ -74,12 +124,11 @@ const PlayerScreenContent: React.FC = () => {
             episodeToLoad = offlineEpisode;
             targetIndex = 0;
             actions.setEpisodes([offlineEpisode]);
-            isStandaloneOffline = true;
           }
         }
       }
 
-      // Priority 2: Episode ID from params (if no offline path selected)
+      // Priority 2: Episode ID from params (si pas d'offlinePath)
       if (!episodeToLoad && episodeId) {
         targetIndex = episodes.findIndex((ep: Episode) => ep.id === episodeId);
         if (targetIndex !== -1) {
@@ -93,10 +142,9 @@ const PlayerScreenContent: React.FC = () => {
         episodeToLoad = episodes[0];
       }
 
-      // Correction : toujours charger l'épisode si episodeId ou offlinePath changent, même si currentEpisode est déjà défini
+      // Toujours charger l'épisode si episodeId ou offlinePath changent, même si currentEpisode est déjà défini
       if (episodeToLoad) {
-        isInitialLoadRef.current = false;
-        // Toujours changer d'épisode si l'id diffère ou si offlinePath diffère
+        // Si on change d'épisode ou de offlinePath, on recharge
         const shouldForceChange =
           !currentEpisode ||
           currentEpisode.id !== episodeToLoad.id ||
@@ -104,19 +152,28 @@ const PlayerScreenContent: React.FC = () => {
 
         if (shouldForceChange) {
           actions.setCurrentEpisode(episodeToLoad, targetIndex);
-          initialPosition = playbackPositions.get(episodeToLoad.id) || 0;
+          // Si position demandée en paramètre, on la prend, sinon on prend la dernière connue
+          initialPosition =
+            positionParam && !isNaN(Number(positionParam))
+              ? Number(positionParam)
+              : playbackPositions.get(episodeToLoad.id) || 0;
           await loadTrack(episodeToLoad, initialPosition);
+
+          // Marquer les params de notification comme "consommés" après le premier vrai chargement
+          if (!notificationParamsConsumedRef.current && (episodeId || positionParam || autoplay)) {
+            notificationParamsConsumedRef.current = true;
+            // Optionnel : nettoyer l'URL pour éviter de repasser les params (si possible)
+            // router.replace('/(tabs)/player');
+          }
         } else {
           actions.setPlaybackState({ isLoading: false });
         }
       } else if (!isLoadingData) {
-        isInitialLoadRef.current = false;
         if (!error) actions.setError("Aucun épisode à charger.");
         actions.setPlaybackState({ isLoading: false });
       }
     };
 
-    // Correction : déclencher à chaque changement de episodeId, offlinePath, episodes, ou currentEpisode
     determineAndLoad();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -130,6 +187,8 @@ const PlayerScreenContent: React.FC = () => {
     getOfflineEpisodeDetails,
     currentEpisode,
     error,
+    positionParam, // Ajouté pour forcer le rechargement si la position change
+    autoplay,
   ]);
 
    // --- Effect for Handling Episode Change via Context ---
@@ -303,8 +362,8 @@ const PlayerScreenContent: React.FC = () => {
         onPlayPause={handlePlayPause}
         onSeek={seekTo}
         onSeekRelative={seekRelative}
-        onNext={handleNext}
-        onPrevious={handlePrevious}
+        onNext={handlePrevious}
+        onPrevious={handleNext}
         onToggleSleepTimer={actions.toggleSleepTimer}
         onRetry={handleRetry} // Pass retry for UI-level errors
       />

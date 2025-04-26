@@ -2,8 +2,9 @@ export const theme = {
     colors: {
         primary: '#0ea5e9',
         secondary: '#6c757d',
-        primaryBackground: '#121212',
-        secondaryBackground: '#1a1a1a',
+        primaryBackground: '#000000', // '#121212',
+        secondaryBackground: '#000000', // '#1a1a1a',
+        darkBackground: '#000000',
         text: '#ffffff',
         description: '#888888',
         secondaryDescription: '#666666',
@@ -20,8 +21,4 @@ export const theme = {
         main: 'Arial, sans-serif',
         heading: 'Georgia, serif',
     },
-};
-
-export const generalData = {
-    skipAudtorsTime: 480, // in seconds
 };

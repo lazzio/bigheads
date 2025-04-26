@@ -1,11 +1,12 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { theme } from '../../styles/global'; // Assuming global styles
+import { theme } from '../../styles/global';
+import { componentStyle } from '../../styles/componentStyle';
 
 const EpisodeListHeader = () => {
   return (
-    <View style={styles.header}>
-      <Text style={styles.headerTitle}>Épisodes</Text>
+    <View style={componentStyle.header}>
+      <Text style={componentStyle.headerTitle}>Épisodes</Text>
       {/* Placeholder for potential future actions like search/filter */}
     </View>
   );

@@ -53,7 +53,6 @@ const EpisodeList = ({
         data={episodes}
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl
             refreshing={loading} // Use loading state for refresh indicator
@@ -92,9 +91,6 @@ const EpisodeList = ({
 };
 
 const styles = StyleSheet.create({
-  listContent: {
-    paddingBottom: 20, // Add padding at the bottom of the list
-  },
   centered: {
     flex: 1,
     justifyContent: 'center',

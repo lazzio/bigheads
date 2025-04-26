@@ -8,7 +8,7 @@ import { initEpisodeNotificationService, setupNotificationListener, syncPushToke
 import { triggerSync } from '../services/PlaybackSyncService';
 import NetInfo from '@react-native-community/netinfo';
 import * as Sentry from '@sentry/react-native';
-import { StatusBar } from 'expo-status-bar';
+import { setStatusBarBackgroundColor, StatusBar } from 'expo-status-bar';
 import { NavigationProvider } from '../contexts/NavigationContext';
 import TrackPlayer from 'react-native-track-player';
 import { PlaybackService } from '../services/PlaybackService';
@@ -40,12 +40,13 @@ export default function RootLayout() {
         // Notification service
         try {
           await initEpisodeNotificationService();
-          setupNotificationListener((episodeId) => {
+          setupNotificationListener((episodeId, position) => {
             const navigateToPlayer = () => {
               router.navigate({
                 pathname: '/(tabs)/player',
                 params: {
                   episodeId,
+                  position,
                   source: 'notification',
                   timestamp: Date.now()
                 }
@@ -120,10 +121,10 @@ export default function RootLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'black' }}>
       <NavigationProvider>
         <SafeAreaProvider>
-          <StatusBar style="light" />
+          <StatusBar style="light" backgroundColor="#000000" />
           <Slot />
         </SafeAreaProvider>
       </NavigationProvider>
