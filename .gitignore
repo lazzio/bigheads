@@ -45,3 +45,4 @@ worker/.venv
 worker/sa.json
 
 .env.local
+/android/

@@ -1,10 +1,9 @@
-// filepath: /Users/mathieuandroz/code/mathieu/github/bigheads/utils/PlaybackSyncService.ts
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase'; // Ajustez le chemin si nécessaire
 import { AppState } from 'react-native';
 
-const PENDING_POSITIONS_KEY = 'pendingPlaybackPositions';
+export const PENDING_POSITIONS_KEY = 'pendingPlaybackPositions';
 
 // Interface pour les données stockées localement
 interface PendingPosition {
@@ -116,6 +115,60 @@ export async function syncPlaybackPositions() {
   } finally {
     isSyncing = false;
     console.log('[SyncService] Sync process finished.');
+  }
+}
+
+/**
+ * Force synchronize a specific position to Supabase immediately
+ * @param episodeId - The episode ID to sync
+ * @param positionSeconds - The position in seconds
+ * @returns Promise<boolean> - Whether the sync was successful
+ */
+export async function forcePositionSync(episodeId: string, positionSeconds: number): Promise<boolean> {
+  try {
+    if (!episodeId || positionSeconds <= 0) {
+      console.log('[SyncService] Invalid position data for force sync');
+      return false;
+    }
+    
+    // Check network connectivity
+    const netInfoState = await NetInfo.fetch();
+    if (!netInfoState.isConnected || !netInfoState.isInternetReachable) {
+      console.log('[SyncService] Force sync skipped: No internet connection');
+      return false;
+    }
+    
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.log('[SyncService] Force sync skipped: No user logged in');
+      return false;
+    }
+    
+    // Send position to Supabase
+    const timestamp = new Date().toISOString();
+    const { error } = await supabase
+      .from('watched_episodes')
+      .upsert({
+        user_id: user.id,
+        episode_id: episodeId,
+        playback_position: positionSeconds,
+        watched_at: timestamp,
+        is_finished: false
+      }, {
+        onConflict: 'user_id, episode_id'
+      });
+      
+    if (error) {
+      console.error('[SyncService] Error during force sync:', error);
+      return false;
+    }
+    
+    console.log(`[SyncService] Force synced position for ${episodeId}: ${positionSeconds}s`);
+    return true;
+  } catch (err) {
+    console.error('[SyncService] Exception during force sync:', err);
+    return false;
   }
 }
 

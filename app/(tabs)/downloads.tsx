@@ -5,18 +5,21 @@ import {
   StyleSheet, 
   TouchableOpacity, 
   Platform, 
-  ScrollView, 
+  FlatList, 
+  RefreshControl, 
   Alert, 
   ActivityIndicator
 } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { supabase } from '../../lib/supabase';
-import { Download, Trash2, Play, Trash, WifiOff } from 'lucide-react-native';
+import MaterialIcons from '@react-native-vector-icons/material-icons';
 import * as FileSystem from 'expo-file-system';
 import { useRouter } from 'expo-router';
 import { Episode } from '../../types/episode';
 import Svg, { Circle } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { theme } from '../../styles/global';
+import { componentStyle } from '../../styles/componentStyle';
 
 // Types
 interface DownloadStatus {
@@ -33,18 +36,6 @@ const DOWNLOADS_DIR = FileSystem.documentDirectory + 'downloads/';
 const EPISODES_CACHE_KEY = 'cached_episodes';
 const CLEANUP_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 const MAX_DOWNLOAD_AGE_DAYS = 7;
-
-// Ajouter la fonction parseDuration (ou l'importer)
-function parseDuration(durationStr: string | number | null): number | null {
-  if (typeof durationStr === 'number') return durationStr;
-  if (typeof durationStr !== 'string' || !durationStr) return null;
-  const parts = durationStr.split(':').map(Number);
-  let seconds = 0;
-  if (parts.length === 3) seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
-  else if (parts.length === 2) seconds = parts[0] * 60 + parts[1];
-  else if (parts.length === 1 && !isNaN(parts[0])) seconds = parts[0];
-  return isNaN(seconds) ? null : seconds;
-}
 
 export default function DownloadsScreen() {
   // Main state management
@@ -232,7 +223,7 @@ export default function DownloadsScreen() {
   };
 
   // Retrieve downloaded episodes (for offline mode)
-  const getDownloadedEpisodes = async (): Promise<Episode[]> => {
+  const getDownloadedEpisodes = async () => {
     if (Platform.OS === 'web') return [];
     
     const metadata = await loadDownloadedEpisodesMetadata();
@@ -257,7 +248,7 @@ export default function DownloadsScreen() {
         description: meta.description || '',
         mp3Link: '',
         mp3_link: '',
-        duration: parseDuration(meta.duration),
+        duration: meta.duration || 0,
         publicationDate: meta.downloadDate || new Date().toISOString(),
         publication_date: meta.downloadDate || new Date().toISOString(),
         offline_path: meta.filePath
@@ -640,19 +631,18 @@ export default function DownloadsScreen() {
   const playEpisode = useCallback((episode: Episode, index: number) => {
     if (downloadStatus[episode.id]?.downloaded) {
       const filePath = downloadStatus[episode.id]?.filePath;
-      
-      // For a downloaded episode, pass the local path
+      // Correction : toujours passer episodeId et offlinePath dans les params
       router.push({
-        pathname: '/player',
+        pathname: '/(tabs)/player',
         params: { 
           episodeId: episode.id,
           offlinePath: filePath
         }
       });
     } else {
-      // For an online episode, use the index
+      // Pour un épisode en ligne, passer episodeId
       router.push({
-        pathname: '/player',
+        pathname: '/(tabs)/player',
         params: { episodeId: episode.id }
       });
     }
@@ -688,7 +678,7 @@ export default function DownloadsScreen() {
             cx={center}
             cy={center}
             r={radius}
-            stroke="#333333"
+            stroke={theme.colors.borderColor}
             strokeWidth={strokeWidth}
             fill="none"
           />
@@ -698,7 +688,7 @@ export default function DownloadsScreen() {
             cx={center}
             cy={center}
             r={radius}
-            stroke="#0ea5e9"
+            stroke={theme.colors.primary}
             strokeWidth={strokeWidth}
             fill="none"
             strokeDasharray={circumference}
@@ -722,7 +712,7 @@ export default function DownloadsScreen() {
       <Text style={styles.emptyText}>No episodes available</Text>
       {isOffline && (
         <View style={styles.offlineMessageContainer}>
-          <WifiOff size={20} color="#888" />
+          <MaterialIcons name="wifi-off" size={20} color={theme.colors.description} />
           <Text style={styles.offlineText}>Offline mode</Text>
         </View>
       )}
@@ -738,7 +728,7 @@ export default function DownloadsScreen() {
   // Offline mode indicator
   const OfflineIndicator = () => (
     <View style={styles.offlineIndicator}>
-      <WifiOff size={16} color="#fff" />
+      <MaterialIcons name="wifi-off" size={16} color={theme.colors.text} />
       <Text style={styles.offlineIndicatorText}>Offline mode</Text>
     </View>
   );
@@ -747,7 +737,7 @@ export default function DownloadsScreen() {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0ea5e9" />
+        <ActivityIndicator size="large" color={theme.colors.primary} />
         <Text style={styles.loadingText}>Loading episodes...</Text>
       </View>
     );
@@ -755,9 +745,9 @@ export default function DownloadsScreen() {
 
   // Main display
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Downloads</Text>
+    <View style={componentStyle.container}>
+      <View style={componentStyle.header}>
+        <Text style={componentStyle.headerTitle}>Downloads</Text>
         <View style={styles.headerActions}>
           {isOffline && <OfflineIndicator />}
           {Platform.OS !== 'web' && Object.values(downloadStatus).some(status => status.downloaded) && (
@@ -765,7 +755,7 @@ export default function DownloadsScreen() {
               style={styles.deleteAllButton}
               onPress={confirmDeleteAll}
             >
-              <Trash size={20} color="#fff" />
+              <MaterialIcons name="delete" size={24} color={theme.colors.text} />
             </TouchableOpacity>
           )}
         </View>
@@ -780,83 +770,78 @@ export default function DownloadsScreen() {
         </View>
       )}
 
-      <ScrollView style={styles.scrollView}>
-        {episodes.length === 0 ? (
-          <NoEpisodesMessage />
-        ) : (
-          episodes.map((episode, index) => (
-            <View key={episode.id} style={styles.episodeCard}>
-              <TouchableOpacity 
-                style={styles.episodeInfo}
-                onPress={() => playEpisode(episode, index)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.episodeTitle}>{episode.title}</Text>
-                {episode.publication_date && (
-                  <Text style={styles.episodeDate}>
-                    {new Date(episode.publication_date).toLocaleDateString()}
-                  </Text>
-                )}
-                {downloadStatus[episode.id]?.downloaded && (
-                  <Text style={styles.downloadedIndicator}>Downloaded</Text>
-                )}
-              </TouchableOpacity>
+      <FlatList
+        data={episodes}
+        keyExtractor={item => item.id}
+        contentContainerStyle={episodes.length === 0 ? { flex: 1 } : undefined}
+        renderItem={({ item: episode, index }) => (
+          <View key={episode.id} style={styles.episodeCard}>
+            <TouchableOpacity 
+              style={styles.episodeInfo}
+              onPress={() => playEpisode(episode, index)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.episodeTitle}>{episode.title}</Text>
+              {episode.publication_date && (
+                <Text style={styles.episodeDate}>
+                  {new Date(episode.publication_date).toLocaleDateString()}
+                </Text>
+              )}
+              {downloadStatus[episode.id]?.downloaded && (
+                <Text style={styles.downloadedIndicator}>Downloaded</Text>
+              )}
+            </TouchableOpacity>
 
-              <View style={styles.actions}>
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={() => playEpisode(episode, index)}
-                >
-                  <Play size={20} color="#fff" />
-                </TouchableOpacity>
-
-                {Platform.OS !== 'web' ? (
-                  !isOffline && (
-                    downloadStatus[episode.id]?.downloaded ? (
-                      <TouchableOpacity
-                        style={[styles.actionButton, styles.deleteButton]}
-                        onPress={() => deleteDownload(episode)}
-                      >
-                        <Trash2 size={20} color="#fff" />
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        style={[
-                          styles.actionButton, 
-                          styles.downloadButton,
-                          downloadStatus[episode.id]?.downloading && styles.downloadingButton
-                        ]}
-                        onPress={() => downloadEpisode(episode)}
-                        disabled={downloadStatus[episode.id]?.downloading || isOffline}
-                      >
-                        {downloadStatus[episode.id]?.downloading ? (
-                          <ProgressCircle progress={downloadStatus[episode.id]?.progress || 0} />
-                        ) : (
-                          <Download size={20} color="#fff" />
-                        )}
-                      </TouchableOpacity>
-                    )
+            <View style={styles.actions}>
+              {Platform.OS !== 'web' ? (
+                !isOffline && (
+                  downloadStatus[episode.id]?.downloaded ? (
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.deleteButton]}
+                      onPress={() => deleteDownload(episode)}
+                    >
+                      <MaterialIcons name="delete" size={20} color={theme.colors.text} />
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={[
+                        styles.actionButton, 
+                        styles.downloadButton,
+                        downloadStatus[episode.id]?.downloading && styles.downloadingButton
+                      ]}
+                      onPress={() => downloadEpisode(episode)}
+                      disabled={downloadStatus[episode.id]?.downloading || isOffline}
+                    >
+                      {downloadStatus[episode.id]?.downloading ? (
+                        <ProgressCircle progress={downloadStatus[episode.id]?.progress || 0} />
+                      ) : (
+                        <MaterialIcons name="cloud-download" size={20} color={theme.colors.text} />
+                      )}
+                    </TouchableOpacity>
                   )
-                ) : (
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.downloadButton]}
-                    onPress={() => downloadEpisode(episode)}
-                  >
-                    <Download size={20} color="#fff" />
-                  </TouchableOpacity>
-                )}
-              </View>
+                )
+              ) : (
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.downloadButton]}
+                  onPress={() => downloadEpisode(episode)}
+                >
+                  <MaterialIcons name="cloud-download" size={20} color={theme.colors.text} />
+                </TouchableOpacity>
+              )}
             </View>
-          ))
+          </View>
         )}
-      </ScrollView>
-      
-      <TouchableOpacity 
-        style={styles.floatingRefreshButton}
-        onPress={refreshData}
-      >
-        <Text style={styles.refreshButtonText}>Refresh</Text>
-      </TouchableOpacity>
+        ListEmptyComponent={<NoEpisodesMessage />}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={refreshData}
+            tintColor={theme.colors.primary}
+            colors={[theme.colors.primary]}
+            progressBackgroundColor={theme.colors.secondaryBackground}
+          />
+        }
+      />
     </View>
   );
 }
@@ -865,46 +850,27 @@ export default function DownloadsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: theme.colors.primaryBackground,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#121212',
+    backgroundColor: theme.colors.primaryBackground,
   },
   loadingText: {
-    color: '#fff',
+    color: theme.colors.text,
     marginTop: 16,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 20,
-    marginTop: 20,
-    backgroundColor: '#1a1a1a',
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
   deleteAllButton: {
     padding: 8,
-    backgroundColor: '#ef4444',
+    backgroundColor: theme.colors.error,
     borderRadius: 8,
-  },
-  scrollView: {
-    flex: 1,
-    padding: 20,
   },
   errorContainer: {
     backgroundColor: 'rgba(239, 68, 68, 0.2)',
@@ -913,12 +879,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     borderRadius: 8,
     borderLeftWidth: 3,
-    borderLeftColor: '#ef4444',
+    borderLeftColor: theme.colors.error,
     flexDirection: 'row',
     alignItems: 'center',
   },
   errorText: {
-    color: '#ef4444',
+    color: theme.colors.error,
     fontSize: 14,
     flex: 1,
   },
@@ -932,7 +898,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dismissButtonText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 14,
     fontWeight: 'bold',
   },
@@ -942,7 +908,7 @@ const styles = StyleSheet.create({
     padding: 40,
   },
   emptyText: {
-    color: '#888',
+    color: theme.colors.description,
     fontSize: 16,
     textAlign: 'center',
     marginBottom: 16,
@@ -951,61 +917,48 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 8,
-    backgroundColor: '#333',
+    backgroundColor: theme.colors.borderColor,
     borderRadius: 16,
     marginTop: 12,
     marginBottom: 16,
   },
   offlineText: {
-    color: '#888',
+    color: theme.colors.description,
     fontSize: 14,
     marginLeft: 8,
   },
   refreshButton: {
     paddingVertical: 8,
     paddingHorizontal: 16,
-    backgroundColor: '#0ea5e9',
+    backgroundColor: theme.colors.buttonBackground,
     borderRadius: 8,
     marginTop: 8,
   },
   refreshButtonText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 14,
     fontWeight: 'bold',
-  },
-  floatingRefreshButton: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    backgroundColor: '#0ea5e9',
-    borderRadius: 8,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
   },
   offlineIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#333',
+    backgroundColor: theme.colors.borderColor,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 16,
   },
   offlineIndicatorText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 12,
     marginLeft: 4,
   },
   episodeCard: {
     flexDirection: 'row',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
+    //backgroundColor: theme.colors.secondaryBackground,
+    // borderRadius: 12,
     padding: 15,
-    marginBottom: 12,
+    marginHorizontal: 15,
+    // marginBottom: 12,
     alignItems: 'center',
   },
   episodeInfo: {
@@ -1014,16 +967,16 @@ const styles = StyleSheet.create({
   },
   episodeTitle: {
     fontSize: 16,
-    color: '#fff',
+    color: theme.colors.text,
     marginBottom: 4,
   },
   episodeDate: {
     fontSize: 12,
-    color: '#888',
+    color: theme.colors.description,
   },
   downloadedIndicator: {
     fontSize: 10,
-    color: '#0ea5e9',
+    color: theme.colors.primary,
     marginTop: 4,
   },
   actions: {
@@ -1034,18 +987,18 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 8,
-    backgroundColor: '#333',
+    backgroundColor: theme.colors.borderColor,
     justifyContent: 'center',
     alignItems: 'center',
   },
   downloadButton: {
-    backgroundColor: '#0ea5e9',
+    backgroundColor: theme.colors.buttonBackground,
   },
   downloadingButton: {
-    backgroundColor: '#1d4ed8',
+    backgroundColor: theme.colors.buttonBackground,
   },
   deleteButton: {
-    backgroundColor: '#ef4444',
+    backgroundColor: theme.colors.error,
   },
   progressCircleContainer: {
     width: '100%',
@@ -1056,7 +1009,7 @@ const styles = StyleSheet.create({
   },
   progressText: {
     position: 'absolute',
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 8,
     fontWeight: 'bold',
   }
