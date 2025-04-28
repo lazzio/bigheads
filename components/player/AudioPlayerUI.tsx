@@ -348,10 +348,14 @@ const styles = StyleSheet.create({
     padding: 10, // Add padding for easier touch
   },
   playButton: {
-    // backgroundColor: theme.colors.primary, // Optional: highlight play button
-    borderRadius: 40, // Make it circular
-    padding: 15,
-    marginHorizontal: 10, // Add horizontal margin
+    backgroundColor: theme.colors.buttonBackground,
+    width: 76,
+    height: 76,
+    borderRadius: 38, // Half of width/height for perfect circle
+    marginHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 10,
   },
   additionalControls: {
     flexDirection: 'row',
