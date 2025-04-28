@@ -146,7 +146,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   input: {
-    backgroundColor: theme.colors.secondaryBackground,
+    backgroundColor: theme.colors.inputBackground,
     borderRadius: 8,
     padding: 15,
     marginBottom: 10,

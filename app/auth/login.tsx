@@ -328,7 +328,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primaryBackground,
   },
   input: {
-    backgroundColor: theme.colors.secondaryBackground,
+    backgroundColor: theme.colors.inputBackground,
     borderRadius: 8,
     padding: 15,
     marginBottom: 10,
