@@ -1,3 +1,10 @@
+## [2.0.1](https://github.com/lazzio/bigheads/-/compare/v2.0.0...v2.0.1) (2025-04-28)
+
+### Documentation
+
+* documentation ([d7cec6c](https://github.com/lazzio/bigheads/-/commit/d7cec6c91e0f3f738c56a71c0d0cafa54e1c1a5b))
+* documentation ([#36](https://github.com/lazzio/bigheads/-/issues/36)) ([78d8a62](https://github.com/lazzio/bigheads/-/commit/78d8a62f2476426c1f194b93531833876a9499e5))
+
 ## [2.0.0](https://github.com/lazzio/bigheads/-/compare/v1.5.1...v2.0.0) (2025-04-26)
 
 ### ⚠ BREAKING CHANGES
