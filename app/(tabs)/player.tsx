@@ -1,6 +1,14 @@
-import { View, Text, StyleSheet, AppState, BackHandler, AppStateStatus, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  AppState,
+  BackHandler,
+  AppStateStatus,
+  ActivityIndicator,
+  TouchableOpacity } from 'react-native';
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { useLocalSearchParams, useRouter } from 'expo-router'; // Importer useFocusEffect
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import AudioPlayer from '../../components/AudioPlayer';
 import { supabase } from '../../lib/supabase';
 import { Database } from '../../types/supabase';
@@ -10,6 +18,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import NetInfo from '@react-native-community/netinfo';
 import { syncPlaybackPositions } from '../../utils/PlaybackSyncService';
+import { MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { theme } from '../../styles/global';
+import { componentStyle } from '../../styles/componentStyle';
 
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
 
@@ -512,60 +524,105 @@ export default function PlayerScreen() {
   // --- Rendu JSX ---
   const currentEpisode = !loading && currentIndex !== null && episodes.length > currentIndex ? episodes[currentIndex] : null;
 
-  return (
-    <View style={styles.container}>
-      {/* Affichage pendant le chargement initial de l'écran */}
-      {loading && (
-          <View style={styles.centered}>
-              <ActivityIndicator size="large" color="#0ea5e9" />
-              <Text style={{ color: 'white', marginTop: 10 }}>Chargement...</Text>
-          </View>
-      )}
-      {/* Affichage si erreur majeure pendant l'initialisation */}
-      {!loading && error && !currentEpisode && ( // Afficher l'erreur seulement si aucun épisode n'a pu être chargé
-           <View style={styles.centered}>
-               <Text style={{ color: 'red', marginBottom: 10 }}>{error}</Text>
-           </View>
-       )}
-       {/* Affichage si aucun épisode disponible après chargement */}
-       {!loading && !error && episodes.length === 0 && (
-           <View style={styles.centered}>
-               <Text style={{ color: 'white' }}>Aucun épisode disponible.</Text>
-           </View>
-       )}
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centerContent, { backgroundColor: theme.colors.primaryBackground }]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <Text style={styles.statusText}>Chargement...</Text>
+      </View>
+    );
+  }
 
-      {/* Afficher le lecteur si le chargement est terminé, pas d'erreur bloquante, et un épisode est prêt */}
+  if (!loading && error && !currentEpisode) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <MaterialIcons name="error-outline" size={48} color={theme.colors.error} />
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity onPress={handleRetryLoad} style={styles.retryButton}>
+          <Text style={styles.retryButtonText}>Réessayer</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (!loading && !error && episodes.length === 0) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <MaterialIcons name="hourglass-empty" size={48} color={theme.colors.description} />
+        <Text style={styles.statusText}>Aucun épisode disponible</Text>
+        <TouchableOpacity onPress={handleRetryLoad} style={styles.retryButton}>
+          <Text style={styles.retryButtonText}>Actualiser</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (!loading && !error && episodes.length > 0 && !currentEpisode) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <MaterialIcons name="warning" size={48} color={theme.colors.description} />
+        <Text style={styles.statusText}>Épisode non trouvé</Text>
+      </View>
+    );
+  }
+
+  return (
+    <LinearGradient
+      colors={[theme.colors.gradientStart, theme.colors.gradientEnd]}
+      style={styles.container}
+    >
+    <View style={styles.container}>
       {!loading && currentEpisode && (
         <AudioPlayer
-          key={currentEpisode.id} // Clé importante pour forcer le re-rendu si l'épisode change
+          key={currentEpisode.id}
           episode={currentEpisode}
           onNext={handlePrevious}
           onPrevious={handleNext}
-          onRetry={handleRetryLoad} // handleRetryLoad gère maintenant la logique
+          onRetry={handleRetryLoad}
           onComplete={handlePlaybackComplete}
         />
       )}
-
-      {/* Affichage si chargement terminé mais épisode non trouvé (ex: ID invalide) */}
-      {!loading && !error && episodes.length > 0 && !currentEpisode && (
-        <View style={styles.centered}>
-          <Text style={{ color: 'white' }}>Épisode non trouvé.</Text>
-        </View>
-      )}
     </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
-    justifyContent: 'center',
   },
-  centered: {
-    flex: 1,
+  centerContent: {
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+  },
+  offlineBannerText: {
+    color: theme.colors.text,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  statusText: {
+    color: theme.colors.description, // Use description color for status
+    marginTop: 15,
+    fontSize: 16,
+  },
+  errorText: {
+    color: theme.colors.error,
+    marginTop: 15,
+    textAlign: 'center',
+    fontSize: 16,
+    paddingHorizontal: 20,
+  },
+  retryButton: {
+    marginTop: 25,
+    backgroundColor: theme.colors.borderColor,
+    paddingVertical: 10,
+    paddingHorizontal: 25,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: theme.colors.text,
+    fontSize: 16,
+    fontWeight: '500',
   },
 });

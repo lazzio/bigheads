@@ -4,6 +4,7 @@ import { Episode } from '../types/episode';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { audioManager, formatTime, AudioStatus } from '../utils/OptimizedAudioService';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
+import { theme } from '../styles/global';
 
 interface AudioPlayerProps {
   episode: Episode;
@@ -278,34 +279,21 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
     console.log('[AudioPlayer] Rendering Loading State');
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="large" color="#0ea5e9" />
-        <Text style={styles.loadingText}>Chargement de l'épisode...</Text>
+        <ActivityIndicator size="large" color={theme.colors.primary}/>
+        <Text style={styles.statusText}>Chargement de l'épisode...</Text>
       </View>
     );
   }
 
   // Error State UI
   if (error) {
-    console.log(`[AudioPlayer] Rendering Error State: ${error}`);
     return (
       <View style={styles.container}>
+        <MaterialIcons name="error-outline" size={48} color={theme.colors.error} />
         <Text style={styles.errorText}>{error}</Text>
-        {onRetry && (
-            <TouchableOpacity
-              style={styles.retryButton}
-              onPress={onRetry}
-            >
-              <Text style={styles.retryText}>Réessayer</Text>
-            </TouchableOpacity>
-        )}
-        <View style={styles.debugContainer}>
-          <Text style={styles.debugUrl} numberOfLines={3} ellipsizeMode="middle">
-            URL: {episode?.mp3Link || episode?.offline_path || "Non définie"}
-          </Text>
-          <Text style={styles.debugUrl}>
-            Source: {episode?.offline_path ? "Fichier local" : "URL distante"}
-          </Text>
-        </View>
+        <TouchableOpacity style={styles.retryButton} onPress={onRetry}>
+          <Text style={styles.retryText}>Réessayer</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -323,7 +311,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
         <TouchableOpacity 
           activeOpacity={0.8}
           ref={progressBarRef}
-          style={styles.progressBarContainer}
+          style={styles.progressContainer}
           onLayout={() => {
             // Measure on layout
             if (progressBarRef.current) {
@@ -356,52 +344,53 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
       {/* Playback Controls */}
       <View style={styles.controls}>
          <TouchableOpacity onPress={onPrevious} style={styles.button} disabled={!onPrevious}>
-           <MaterialIcons name="skip-previous" color={onPrevious ? "#fff" : "#555"} size={32} />
+          <MaterialIcons name="skip-previous" size={32} color={theme.colors.text} />
          </TouchableOpacity>
 
          <TouchableOpacity onPress={() => handleSeek(-30)} style={styles.button}>
-           <MaterialIcons name="replay-30" color="#fff" size={32} />
+          <MaterialIcons name="replay-30" size={32} color={theme.colors.text} />
          </TouchableOpacity>
 
          <TouchableOpacity onPress={handlePlayPause} style={[styles.button, styles.playButton]}>
-           {isPlaying ? (
-             <MaterialIcons name="pause" color="#fff" size={42} />
-           ) : (
-             <MaterialIcons name="play-arrow" color="#fff" size={42} />
-           )}
+          {isPlaying ? (
+            <MaterialIcons name="pause" size={52} color={theme.colors.text} />
+          ) : (
+            <MaterialIcons name="play-arrow" size={52} color={theme.colors.text} />
+          )}
          </TouchableOpacity>
 
          <TouchableOpacity onPress={() => handleSeek(30)} style={styles.button}>
-           <MaterialIcons name="forward-30" color="#fff" size={32} />
+          <MaterialIcons name="forward-30" size={32} color={theme.colors.text} />
          </TouchableOpacity>
 
          <TouchableOpacity onPress={onNext} style={styles.button} disabled={!onNext}>
-           <MaterialIcons name="skip-next" color={onNext ? "#fff" : "#555"} size={32} />
+          <MaterialIcons name="skip-next" size={32} color={theme.colors.text} />
          </TouchableOpacity>
        </View>
 
       {/* Additional Controls */}
       <View style={styles.additionalControls}>
         <TouchableOpacity onPress={handleSkipAuditors} style={styles.skipButton}>
-          <MaterialIcons name="fast-forward" color="#fff" size={24} />
-          <Text style={styles.skipText}>Passer les auditeurs</Text>
+          <MaterialIcons name="fast-forward" size={20} color={theme.colors.text} />
+          <Text style={styles.skipText}>Skip auditeurs</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           onPress={toggleSleepTimer}
           style={[styles.sleepButton, sleepTimerActive && styles.sleepButtonActive]}
+          accessibilityLabel={sleepTimerActive ? "Désactiver le minuteur de sommeil" : "Activer le minuteur de sommeil"}
         >
-          <MaterialIcons name="hotel" color={sleepTimerActive ? '#fff' : '#888'} size={24} />
+          <MaterialIcons name="timer" size={20} color={sleepTimerActive ? theme.colors.text : theme.colors.description} />
           <Text style={[styles.sleepText, sleepTimerActive && styles.sleepTextActive]}>
-            {sleepTimerActive ? 'Minuteur actif' : 'Arrêt après cet épisode'}
+            {sleepTimerActive ? 'Sleep actif' : 'Sleep timer'}
           </Text>
         </TouchableOpacity>
       </View>
 
       {/* Buffering Indicator */}
-      {isBuffering && !isLoading && ( // Show buffering only if not in initial loading state
+      {isBuffering && !isLoading && (
         <View style={styles.bufferingContainer}>
-          <ActivityIndicator size="small" color="#0ea5e9" />
+          <ActivityIndicator size="small" color={theme.colors.primary} />
           <Text style={styles.bufferingText}>Mise en mémoire tampon...</Text>
         </View>
       )}
@@ -409,104 +398,94 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
   );
 }
 
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#121212',
-  },
-  loadingText: {
-    marginTop: 10,
-    color: '#ccc',
-  },
-  errorText: {
-    color: '#ef4444',
-    textAlign: 'center',
-    marginBottom: 15,
-    fontSize: 16,
-  },
-  retryButton: {
-    backgroundColor: '#0ea5e9',
-    paddingVertical: 10,
     paddingHorizontal: 20,
-    borderRadius: 8,
-    marginBottom: 20,
+    paddingBottom: 20, // Add padding at the bottom
+    justifyContent: 'flex-end', // Align content towards the bottom
+    alignItems: 'center',
+    width: '100%',
   },
-  retryText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  debugContainer: {
-    marginTop: 10,
-    padding: 10,
-    backgroundColor: '#222',
-    borderRadius: 5,
-    alignSelf: 'stretch',
-  },
-  debugUrl: {
-    color: '#888',
-    fontSize: 10,
+  artwork: {
+      width: 250,
+      height: 250,
+      borderRadius: 12,
+      marginBottom: 30,
+      backgroundColor: theme.colors.borderColor, // Placeholder background
   },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#fff',
+    color: theme.colors.text,
     textAlign: 'center',
     marginBottom: 8,
   },
   description: {
-    fontSize: 14,
-    color: '#aaa',
+    fontSize: 14, // Slightly smaller description
+    color: theme.colors.description,
+    marginBottom: 25,
     textAlign: 'center',
-    marginBottom: 30,
+    paddingHorizontal: 10, // Add horizontal padding
   },
   progressContainer: {
     width: '100%',
     marginBottom: 20,
   },
-  progressBarContainer: { // Container for background, progress, and knob
+  progressBarTouchable: { // Renamed for clarity
     width: '100%',
-    height: 20, // Make touch target larger
+    height: 24, // Increased touch area height
     justifyContent: 'center',
-    position: 'relative', // Needed for knob positioning
-    marginBottom: 5,
+    // backgroundColor: 'rgba(255,0,0,0.1)', // Optional: Visualize touch area
   },
   progressBackground: {
     position: 'absolute',
-    height: 4,
     width: '100%',
-    backgroundColor: '#444',
-    borderRadius: 2,
-    top: 8, // Center the 4px bar vertically in the 20px container
+    height: 6, // Slightly thinner bar
+    backgroundColor: theme.colors.borderColor,
+    borderRadius: 3,
+    top: '50%',
+    marginTop: -3, // Adjust vertical centering
   },
   progressBar: {
     position: 'absolute',
-    height: 4,
-    backgroundColor: '#0ea5e9',
-    borderRadius: 2,
-    top: 8, // Align with background
+    height: 6,
+    backgroundColor: theme.colors.primary,
+    borderRadius: 3,
+    top: '50%',
+    marginTop: -3,
   },
   progressKnob: {
     position: 'absolute',
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#0ea5e9',
-    top: 2, // Center the 16px knob vertically ( (20 - 16) / 2 )
-    // transform is applied dynamically based on progress and seeking state
+    width: 14, // Slightly smaller knob
+    height: 14,
+    backgroundColor: theme.colors.primary,
+    borderRadius: 7,
+    borderWidth: 2, // Thinner border
+    borderColor: theme.colors.text,
+    top: '50%',
+    marginLeft: -7, // Adjust for knob size
+    marginTop: -7, // Adjust for knob size
+    elevation: 3,
+    shadowColor: theme.colors.shadowColor,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
   },
   progressKnobActive: {
-    backgroundColor: '#fff',
-    // Scale applied dynamically
+    transform: [{ scale: 1.3 }], // Slightly larger when active
+    backgroundColor: theme.colors.text, // Change color when active
+    borderColor: theme.colors.primary,
   },
   timeContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    width: '100%',
+    marginTop: 8, // Add margin top
   },
   timeText: {
-    color: '#ccc',
+    color: theme.colors.description,
     fontSize: 12,
   },
   controls: {
@@ -514,71 +493,100 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     alignItems: 'center',
     width: '100%',
-    marginBottom: 30,
+    marginBottom: 20, // Add margin below main controls
   },
   button: {
-    padding: 10,
+    padding: 10, // Add padding for easier touch
   },
   playButton: {
-    backgroundColor: '#0ea5e9',
-    borderRadius: 30,
-    width: 60,
-    height: 60,
-    justifyContent: 'center',
+    backgroundColor: theme.colors.buttonBackground,
+    width: 76,
+    height: 76,
+    borderRadius: 38, // Half of width/height for perfect circle
+    marginHorizontal: 12,
     alignItems: 'center',
+    justifyContent: 'center',
+    padding: 10,
   },
   additionalControls: {
-    flexDirection: 'column',
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    width: '80%',
-    marginBottom: 20,
+    justifyContent: 'space-around',
+    width: '100%',
+    marginBottom: 16,
   },
   skipButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 8,
-    marginBottom: 10,
-    backgroundColor: '#333',
-    borderRadius: 8,
+    backgroundColor: theme.colors.borderColor,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    gap: 6,
   },
   skipText: {
-    color: '#fff',
-    marginLeft: 5,
-    fontSize: 12,
+    color: theme.colors.text,
+    fontSize: 13,
   },
   sleepButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 8,
-    backgroundColor: '#333',
-    borderRadius: 8,
+    borderColor: theme.colors.borderColor,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    gap: 6,
   },
   sleepButtonActive: {
-    backgroundColor: '#0ea5e9',
+    backgroundColor: theme.colors.borderColor,
   },
   sleepText: {
-    color: '#888',
-    marginLeft: 5,
-    fontSize: 12,
+    color: theme.colors.description,
+    fontSize: 13,
   },
   sleepTextActive: {
-    color: '#fff',
+    color: theme.colors.text,
   },
   bufferingContainer: {
-    position: 'absolute',
-    bottom: 10,
-    left: 0,
-    right: 0,
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingVertical: 5,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    position: 'absolute',
+    bottom: 10, // Position near bottom
+    alignSelf: 'center',
+    zIndex: 10,
   },
   bufferingText: {
-    color: '#ccc',
-    marginLeft: 8,
+    color: theme.colors.text,
     fontSize: 12,
+    marginLeft: 6,
+  },
+  statusText: {
+      color: theme.colors.description,
+      marginTop: 15,
+      fontSize: 16,
+  },
+  errorText: {
+    color: theme.colors.error,
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 20,
+  },
+  retryButton: {
+    backgroundColor: theme.colors.borderColor,
+    paddingVertical: 10,
+    paddingHorizontal: 25,
+    borderRadius: 8,
+  },
+  retryText: {
+    color: theme.colors.text,
+    fontSize: 16,
+    fontWeight: '500',
   },
 });
