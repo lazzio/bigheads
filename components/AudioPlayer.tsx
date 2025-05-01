@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef, useCallback } from 'react'; // Added useCallback
-import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, BackHandler, Alert, LayoutChangeEvent, AppState } from 'react-native'; // Removed PanResponder, GestureResponderEvent
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, BackHandler, Alert, LayoutChangeEvent, AppState } from 'react-native';
 import { Episode } from '../types/episode';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { audioManager, formatTime, AudioStatus } from '../utils/OptimizedAudioService';
@@ -19,16 +19,15 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
   const [isPlaying, setIsPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(initialDurationMs);
-  const [isLoading, setIsLoading] = useState(true); // Start loading when component mounts or episode changes
+  const [isLoading, setIsLoading] = useState(true);
   const [isBuffering, setIsBuffering] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Removed isSeeking state
   const [sleepTimerActive, setSleepTimerActive] = useState(false);
   const sleepTimerId = useRef<NodeJS.Timeout | null>(null);
 
   const progressBarRef = useRef<View>(null);
   const progressWidth = useRef(0);
-  const progressPosition = useRef(0); // X position of the progress bar on screen
+  const progressPosition = useRef(0);
 
   // --- Listener Setup Effect ---
   useEffect(() => {
@@ -46,8 +45,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
     const unsubscribe = audioManager.addListener((data: any) => {
       if (!isMounted) return;
 
-      // console.log('[AudioPlayer] Received data:', data.type, data); // Debugging
-
       switch (data.type) {
         case 'loaded':
           console.log(`[AudioPlayer] Received 'loaded' for ${data.episode?.id}. Current episode: ${episode.id}`);
@@ -57,7 +54,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
               setDuration(data.duration);
             }
             setError(null);
-            setIsLoading(false); // Set loading false on successful load
+            setIsLoading(false);
             console.log(`[AudioPlayer] 'loaded' event processed, isLoading=false`);
           }
           break;
@@ -127,7 +124,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
       }
     };
   // --- DEPENDENCY CHANGE: Only re-run when the episode ID changes ---
-  }, [episode.id]); // Removed onComplete, onNext, onPrevious, isSeeking, sleepTimerActive
+  }, [episode.id]);
 
   // Replace the complex PanResponder and measureProgressBar with a simple touch handler
   useEffect(() => {
@@ -197,17 +194,17 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
       console.error("[AudioPlayer] Error playing/pausing:", err);
       setError('Erreur lors de la lecture/pause.');
     }
-  }, [isPlaying, duration]); // Dependencies: isPlaying, duration
+  }, [isPlaying, duration]);
 
   const handleSeek = useCallback(async (offsetSeconds: number) => {
     console.log(`[AudioPlayer] handleSeek: ${offsetSeconds}s`);
     await audioManager.seekRelative(offsetSeconds);
-  }, []); // No dependencies needed
+  }, []);
 
   const handleSkipAuditors = useCallback(async () => {
     console.log('[AudioPlayer] handleSkipAuditors');
     await audioManager.seekRelative(480);
-  }, []); // No dependencies needed
+  }, []);
 
   // --- Sleep Timer (Wrapped in useCallback) ---
   const handleSleepTimerEnd = useCallback(() => {
@@ -218,7 +215,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
       clearTimeout(sleepTimerId.current);
       sleepTimerId.current = null;
     }
-  }, []); // No dependencies needed
+  }, []);
 
   const toggleSleepTimer = useCallback(() => {
     setSleepTimerActive(prev => {
@@ -235,7 +232,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
         }
         return nextState;
     });
-  }, []); // No dependencies needed
+  }, []);
 
   // Add an effect to handle app state changes
   useEffect(() => {
@@ -412,7 +409,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
   );
 }
 
-// --- Styles --- (Add onLayout to progressBarContainer if needed, adjust knob transform)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
