@@ -1,5 +1,6 @@
 # dependencies
 node_modules/
+/android/
 
 # expo
 .expo/

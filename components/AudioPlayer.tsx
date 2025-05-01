@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react'; // Added useCallback
-import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, BackHandler, Alert, PanResponder, GestureResponderEvent, LayoutChangeEvent, AppState } from 'react-native'; // Added LayoutChangeEvent and AppState
+import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, BackHandler, Alert, LayoutChangeEvent, AppState } from 'react-native'; // Removed PanResponder, GestureResponderEvent
 import { Episode } from '../types/episode';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { audioManager, formatTime, AudioStatus } from '../utils/OptimizedAudioService';
@@ -22,7 +22,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
   const [isLoading, setIsLoading] = useState(true); // Start loading when component mounts or episode changes
   const [isBuffering, setIsBuffering] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isSeeking, setIsSeeking] = useState(false);
+  // Removed isSeeking state
   const [sleepTimerActive, setSleepTimerActive] = useState(false);
   const sleepTimerId = useRef<NodeJS.Timeout | null>(null);
 
@@ -72,9 +72,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
           }
 
           // Update position only if not actively seeking
-          if (!isSeeking) {
-            setPosition(data.position);
-          }
+          setPosition(data.position);
           // Update duration if it's valid and different
           if (data.duration > 0 && data.duration !== duration) {
             setDuration(data.duration);
@@ -131,96 +129,47 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
   // --- DEPENDENCY CHANGE: Only re-run when the episode ID changes ---
   }, [episode.id]); // Removed onComplete, onNext, onPrevious, isSeeking, sleepTimerActive
 
-  // --- PanResponder for Seeking ---
-  // Use useCallback to memoize measureProgressBar
-  const measureProgressBar = useCallback(() => {
+  // Replace the complex PanResponder and measureProgressBar with a simple touch handler
+  useEffect(() => {
+    // Re-measure when component mounts or duration changes
     if (progressBarRef.current) {
       progressBarRef.current.measure((fx, fy, width, height, px, py) => {
-        console.log(`[AudioPlayer] Measured progress bar - Width: ${width}, X: ${px}`); // Debug measurement
+        console.log(`[AudioPlayer] Measured progress bar - Width: ${width}, X: ${px}`);
         progressWidth.current = width;
-        progressPosition.current = px; // Store the X offset of the bar itself
+        progressPosition.current = px;
       });
     }
-  }, []); // No dependencies needed
+  }, [episode.id, duration]); // Add duration as dependency to remeasure when it changes
 
-  // Enhance PanResponder with better touch coordinate handling
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true, // Allow seeking
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt, gestureState) => {
-        console.log('[AudioPlayer] PanResponder Grant: isSeeking=true');
-        setIsSeeking(true);
-        measureProgressBar(); // Force measurement update
-        
-        // Calculate position immediately on tap for instant feedback
-        const touchX = evt.nativeEvent.pageX;
-        setTimeout(() => {
-          const totalWidth = progressWidth.current;
-          if (totalWidth > 0) {
-            const touchXRelativeToBar = touchX - progressPosition.current;
-            const clampedX = Math.max(0, Math.min(touchXRelativeToBar, totalWidth));
-            const percentage = clampedX / totalWidth;
-            const newPosition = percentage * duration;
-            setPosition(newPosition);
-          }
-        }, 50); // Small delay to ensure measurement completes
-      },
-      onPanResponderMove: (evt, gestureState) => {
-        if (!isSeeking) return;
-        
-        const touchX = evt.nativeEvent.pageX;
-        const totalWidth = progressWidth.current;
-        
-        // Only process if we have valid measurements
-        if (totalWidth > 0 && duration > 0) {
-          const touchXRelativeToBar = touchX - progressPosition.current;
-          const clampedX = Math.max(0, Math.min(touchXRelativeToBar, totalWidth));
-          const percentage = clampedX / totalWidth;
-          const newPosition = percentage * duration;
-          setPosition(newPosition);
-        }
-      },
-      onPanResponderRelease: (evt, gestureState) => {
-        if (!isSeeking) return;
-        console.log('[AudioPlayer] PanResponder Release');
-        
-        const touchX = evt.nativeEvent.pageX;
-        const totalWidth = progressWidth.current;
-        
-        // Only seek if we have valid measurements
-        if (totalWidth > 0 && duration > 0) {
-          const touchXRelativeToBar = touchX - progressPosition.current;
-          const clampedX = Math.max(0, Math.min(touchXRelativeToBar, totalWidth));
-          const percentage = clampedX / totalWidth;
-          const seekPositionMillis = percentage * duration;
-          
-          console.log(`[AudioPlayer] Seeking to ${seekPositionMillis}ms (${(percentage * 100).toFixed(1)}%)`);
-          
-          // Perform the actual seek
-          audioManager.seekTo(seekPositionMillis);
-        }
-        
-        // Reset seeking state after a short delay
-        setTimeout(() => {
-          if (isSeeking) {
-            console.log('[AudioPlayer] Resetting isSeeking=false after release');
-            setIsSeeking(false);
-          }
-        }, 50);
-      },
-      onPanResponderTerminate: (evt, gestureState) => {
-        console.log('[AudioPlayer] PanResponder Terminate: Resetting isSeeking=false');
-        setIsSeeking(false);
-      },
-    })
-  ).current;
-
-  // Ensure measurement happens on initial layout
-  useEffect(() => {
-    const timeoutId = setTimeout(measureProgressBar, 100);
-    return () => clearTimeout(timeoutId);
-  }, [measureProgressBar]);
+  // New simpler seeking handler
+  const handleProgressBarTouch = useCallback((event: any) => {
+    const touchX = event.nativeEvent.locationX;
+    const barWidth = progressWidth.current;
+    
+    if (barWidth <= 0) {
+      console.warn('[AudioPlayer] Cannot seek: progress bar width is zero');
+      return;
+    }
+    
+    // Calculate percentage of bar width
+    const percentage = Math.max(0, Math.min(touchX / barWidth, 1));
+    
+    // Calculate position in milliseconds
+    const seekPositionMs = percentage * duration;
+    
+    console.log(`[AudioPlayer] Touch position: ${touchX}px / ${barWidth}px = ${percentage.toFixed(2)} -> ${seekPositionMs.toFixed(0)}ms`);
+    
+    // Update UI immediately
+    setPosition(seekPositionMs);
+    
+    // Perform the actual seek
+    try {
+      audioManager.seekTo(seekPositionMs);
+    } catch (err) {
+      console.error('[AudioPlayer] Error seeking:', err);
+      setError('Erreur pendant la recherche de position');
+    }
+  }, [duration]);
 
   // --- Action Handlers (Wrapped in useCallback) ---
   const handlePlayPause = useCallback(async () => {
@@ -296,15 +245,21 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
         console.log('[AudioPlayer] App returned to foreground, refreshing player state');
         
         // Force measurement update for progress bar
-        setTimeout(measureProgressBar, 200);
+        setTimeout(() => {
+          if (progressBarRef.current) {
+            progressBarRef.current.measure((fx, fy, width, height, px, py) => {
+              progressWidth.current = width;
+              progressPosition.current = px;
+              console.log(`[AudioPlayer] Progress bar measured: width=${width}, x=${px}`);
+            });
+          }
+        }, 200);
         
         // Re-sync with TrackPlayer state
         audioManager.getStatusAsync().then(status => {
           if (status.isLoaded && status.currentEpisodeId === episode.id) {
             console.log('[AudioPlayer] Updating UI with current playback state');
-            if (!isSeeking) {
-              setPosition(status.positionMillis);
-            }
+            setPosition(status.positionMillis);
             setIsPlaying(status.isPlaying);
             setIsBuffering(status.isBuffering);
           }
@@ -315,7 +270,7 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
     return () => {
       appStateSubscription.remove();
     };
-  }, [episode.id, measureProgressBar, isSeeking]);
+  }, [episode.id]);
 
   // --- Rendering ---
   const progress = duration > 0 ? Math.min(100, Math.max(0, (position / duration) * 100)) : 0; // Ensure progress is between 0 and 100
@@ -366,31 +321,34 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
         {episode.description}
       </Text>
 
-      {/* Progress Bar and Time */}
+      {/* Progress Bar and Time - Simplified touchable version */}
       <View style={styles.progressContainer}>
-        {/* Measure the bar on layout */}
-        <View 
-          ref={progressBarRef} 
-          style={styles.progressBarContainer} 
-          onLayout={(e) => {
-            // Update measurements whenever layout changes
-            setTimeout(measureProgressBar, 10);
+        <TouchableOpacity 
+          activeOpacity={0.8}
+          ref={progressBarRef}
+          style={styles.progressBarContainer}
+          onLayout={() => {
+            // Measure on layout
+            if (progressBarRef.current) {
+              progressBarRef.current.measure((fx, fy, width, height, px, py) => {
+                progressWidth.current = width;
+                progressPosition.current = px;
+                console.log(`[AudioPlayer] Progress bar measured: width=${width}, x=${px}`);
+              });
+            }
           }}
-          {...panResponder.panHandlers}
+          onPress={handleProgressBarTouch}
         >
-            <View style={styles.progressBackground} />
-            <View style={[styles.progressBar, { width: `${progress}%` }]} />
-            <View
-              style={[
-                styles.progressKnob,
-                // Calculate left position based on progress percentage
-                { left: `${progress}%` },
-                // Translate knob slightly left to center it on the progress line end
-                { transform: [{ translateX: -8 }] }, // Half the knob width (16/2)
-                isSeeking && styles.progressKnobActive // Apply seeking style
-              ]}
-            />
-        </View>
+          <View style={styles.progressBackground} />
+          <View style={[styles.progressBar, { width: `${progress}%` }]} />
+          <View
+            style={[
+              styles.progressKnob,
+              { left: `${progress}%` },
+              { transform: [{ translateX: -8 }] }
+            ]}
+          />
+        </TouchableOpacity>
 
         <View style={styles.timeContainer}>
           <Text style={styles.timeText}>{formatTime(position)}</Text>
