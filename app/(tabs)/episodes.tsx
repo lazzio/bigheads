@@ -1,12 +1,15 @@
 import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Play, CircleCheck as CheckCircle2, WifiOff } from 'lucide-react-native';
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Database } from '../../types/supabase';
 import { Episode } from '../../types/episode';
+import { formatTime } from '../../utils/commons/timeUtils';
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import MaterialIcons from '@react-native-vector-icons/material-icons';
+import { theme } from '../../styles/global';
+import { componentStyle } from '../../styles/componentStyle';
 
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
 type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row']; // Utiliser le type Row complet
@@ -166,24 +169,28 @@ export default function EpisodesScreen() {
 
   if (loading) {
     return (
-      <View style={styles.container}>
+      <View style={componentStyle.container}>
         <Text style={styles.loadingText}>Chargement des épisodes...</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>Episodes</Text>
+    <View style={componentStyle.container}>
+      <View style={componentStyle.header}>
+        <Text style={componentStyle.headerTitle}>Episodes</Text>
       
       {isOffline && (
         <View style={styles.offlineContainer}>
-          <WifiOff size={20} color="#888" />
+          <MaterialIcons name="wifi-off" size={20} color={theme.colors.description} />
           <Text style={styles.offlineText}>
-            Mode hors-ligne - Seuls les épisodes en cache sont disponibles
+            Mode hors-ligne
           </Text>
         </View>
       )}
+      </View>
+
+      {/* Afficher l'erreur si elle existe */}
       
       {error && (
         <View style={styles.errorContainer}>
@@ -222,12 +229,14 @@ export default function EpisodesScreen() {
                 <Text style={styles.episodeDescription} numberOfLines={2}>
                   {item.description}
                 </Text>
-                <Text style={styles.episodeDuration}>{item.duration}</Text>
+                <Text style={styles.episodeDuration}>
+                  {item.duration !== null ? formatTime(item.duration) : '--:--'}
+                </Text>
               </View>
               {watchedEpisodes.has(item.id) ? (
-                <CheckCircle2 size={24} color="#0ea5e9" />
+                <MaterialIcons name="check-circle" size={26} color={theme.colors.primary} />
               ) : (
-                <Play size={24} color="#fff" />
+                <MaterialIcons name="play-circle-outline" size={28} color={theme.colors.text} />
               )}
             </TouchableOpacity>
           )}
@@ -238,17 +247,18 @@ export default function EpisodesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#121212',
-    padding: 20,
-  },
   header: {
+    paddingHorizontal: 15,
+    paddingTop: 15, // Adjust as needed for status bar height
+    paddingBottom: 10,
+    // backgroundColor: theme.colors.primaryBackground, // Match screen background
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.borderColor,
+  },
+  headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 20,
-    marginTop: 20,
+    color: theme.colors.text,
   },
   offlineContainer: {
     flexDirection: 'row',
@@ -294,29 +304,33 @@ const styles = StyleSheet.create({
   },
   episodeItem: {
     flexDirection: 'row',
-    alignItems: 'center',
-    padding: 15,
-    backgroundColor: '#1a1a1a',
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    backgroundColor: theme.colors.secondaryBackground,
     borderRadius: 10,
     marginBottom: 10,
+    marginHorizontal: 15,
+    alignItems: 'center',
   },
   episodeInfo: {
     flex: 1,
+    marginRight: 15,
   },
   episodeTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#fff',
+    color: theme.colors.text,
     marginBottom: 4,
   },
   episodeDescription: {
-    fontSize: 14,
-    color: '#888',
-    marginBottom: 4,
+    fontSize: 13,
+    color: theme.colors.description,
+    marginBottom: 6,
+    lineHeight: 18,
   },
   episodeDuration: {
     fontSize: 12,
-    color: '#666',
+    color: theme.colors.secondaryDescription,
   },
   loadingText: {
     color: '#fff',

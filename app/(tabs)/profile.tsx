@@ -2,18 +2,20 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Modal, SafeAreaView, Platform, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
-import { LogOut, User, X } from 'lucide-react-native';
+import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { storage } from '../../lib/storage';
+import { theme } from '../../styles/global';
+import { componentStyle } from '../../styles/componentStyle';
 
 export default function ProfileScreen() {
-  // État
+  // State
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   
-  // Hooks
+  // Hook for navigation
   const router = useRouter();
 
-  // Gérer la déconnexion avec mémoïsation pour éviter les recréations inutiles
+  // Manage logout with memoization to avoid unnecessary re-creations
   const handleLogout = useCallback(async () => {
     if (isLoggingOut) return; // Éviter les déconnexions multiples
     
@@ -25,14 +27,14 @@ export default function ProfileScreen() {
       setIsLoggingOut(true);
       setShowLogoutModal(false);
       
-      // Déconnexion optimisée pour éviter les opérations inutiles
+      // Unconnecting the user
       const { data } = await supabase.auth.getSession();
       
       if (data.session) {
-        // Utiliser la méthode signOut qui gère déjà le nettoyage des tokens
+        // Use signOut method which already handles token cleanup
         await supabase.auth.signOut();
         
-        // Nettoyage supplémentaire par sécurité (asynchrone mais pas besoin d'attendre)
+        // Additional cleanup in case signOut doesn't clear local storage
         storage.removeItem('supabase.auth.token').catch(() => {});
         storage.removeItem('supabase.auth.refreshToken').catch(() => {});
         storage.removeItem('supabase.auth.user').catch(() => {});
@@ -54,19 +56,20 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
+      <View style={componentStyle.container}>
         {/* En-tête */}
-        <Text style={styles.title}>Profil</Text>
+        <View style={componentStyle.header}>
+          <MaterialIcons name="account-circle" size={32} color={theme.colors.primary} style={{marginRight: 8}} />
+          <Text style={componentStyle.headerTitle}>
+            Paramètres du compte
+          </Text>
+        </View>
         
         {/* Contenu principal */}
         <View style={styles.content}>
-          <View style={styles.profileCard}>
-            <User size={32} color="#0ea5e9" />
-            <Text style={styles.profileText}>
-              Paramètres du compte
-            </Text>
-          </View>
-          
+        </View>
+        
+        <View style={styles.stickyBottom}>
           {/* Bouton de déconnexion */}
           <TouchableOpacity 
             style={styles.logoutButton} 
@@ -74,26 +77,14 @@ export default function ProfileScreen() {
             disabled={isLoggingOut}
           >
             {isLoggingOut ? (
-              <ActivityIndicator size="small" color="#fff" style={styles.logoutIcon} />
+              <ActivityIndicator size="small" color={theme.colors.text} style={styles.logoutIcon} />
             ) : (
-              <LogOut size={24} color="#fff" style={styles.logoutIcon} />
+              <MaterialIcons name="logout" size={24} color={theme.colors.text} style={styles.logoutIcon} />
             )}
             <Text style={styles.logoutText}>
               {isLoggingOut ? 'Déconnexion...' : 'Se déconnecter'}
             </Text>
           </TouchableOpacity>
-        </View>
-        
-        {/* Bloc personnalisable en bas d'écran */}
-        <View style={styles.stickyBottom}>
-          {/* 
-            Bloc personnalisable à compléter
-            Exemples d'utilisation :
-            - Bannière promotionnelle
-            - Informations de version
-            - Liens vers mentions légales
-          */}
-          <Text style={styles.stickyText}>Zone personnalisable</Text>
         </View>
       </View>
 
@@ -110,7 +101,7 @@ export default function ProfileScreen() {
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Déconnexion</Text>
                 <TouchableOpacity onPress={cancelLogout} style={styles.closeButton}>
-                  <X size={24} color="#888" />
+                  <MaterialIcons name="close" size={24} color={theme.colors.description} />
                 </TouchableOpacity>
               </View>
               
@@ -130,7 +121,7 @@ export default function ProfileScreen() {
                   style={styles.confirmButton} 
                   onPress={confirmLogout}
                 >
-                  <LogOut size={16} color="#fff" style={{ marginRight: 6 }} />
+                  <MaterialIcons name="logout" size={16} color={theme.colors.text} style={{ marginRight: 6 }} />
                   <Text style={styles.confirmButtonText}>Déconnexion</Text>
                 </TouchableOpacity>
               </View>
@@ -145,33 +136,34 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: theme.colors.primaryBackground,
   },
   container: {
     flex: 1,
     padding: 20,
-    backgroundColor: '#121212',
+    backgroundColor: theme.colors.primaryBackground,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#fff',
+    color: theme.colors.text,
     marginBottom: 20,
   },
   content: {
     flex: 1,
+    padding: 10,
   },
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1a1a1a',
+    backgroundColor: theme.colors.secondaryBackground,
     padding: 15,
     borderRadius: 8,
     marginBottom: 20,
     gap: 12,
   },
   profileText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 16,
     fontWeight: '500',
   },
@@ -179,7 +171,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ef4444',
+    backgroundColor: theme.colors.error,
     padding: 15,
     borderRadius: 8,
     gap: 8,
@@ -188,20 +180,20 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   logoutText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 16,
     fontWeight: '600',
   },
   stickyBottom: {
     padding: 16,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: theme.colors.secondaryBackground,
     borderRadius: 8,
     marginTop: 'auto',
     marginBottom: Platform.OS === 'ios' ? 0 : 16,
     // Ombre subtile
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
+        shadowColor: theme.colors.shadowColor,
         shadowOffset: { width: 0, height: -2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
@@ -212,7 +204,7 @@ const styles = StyleSheet.create({
     }),
   },
   stickyText: {
-    color: '#888',
+    color: theme.colors.description,
     fontSize: 14,
     textAlign: 'center',
   },
@@ -228,12 +220,12 @@ const styles = StyleSheet.create({
     maxWidth: 400,
   },
   modalContent: {
-    backgroundColor: '#1e1e1e',
+    backgroundColor: theme.colors.modal,
     borderRadius: 16,
     overflow: 'hidden',
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
+        shadowColor: theme.colors.shadowColor,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
@@ -247,14 +239,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderBottomColor: '#333',
+    borderBottomColor: theme.colors.borderColor,
     borderBottomWidth: StyleSheet.hairlineWidth,
     padding: 16,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#fff',
+    color: theme.colors.text,
   },
   closeButton: {
     padding: 4,
@@ -268,31 +260,31 @@ const styles = StyleSheet.create({
   },
   modalButtons: {
     flexDirection: 'row',
-    borderTopColor: '#333',
+    borderTopColor: theme.colors.borderColor,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   cancelButton: {
     flex: 1,
     padding: 16,
     alignItems: 'center',
-    borderRightColor: '#333',
+    borderRightColor: theme.colors.borderColor,
     borderRightWidth: StyleSheet.hairlineWidth,
   },
   cancelButtonText: {
-    color: '#0ea5e9',
+    color: theme.colors.linkColor,
     fontSize: 16,
     fontWeight: '600',
   },
   confirmButton: {
     flex: 1,
     flexDirection: 'row',
-    backgroundColor: '#ef4444',
+    backgroundColor: theme.colors.error,
     padding: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
   confirmButtonText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 16,
     fontWeight: '600',
   },

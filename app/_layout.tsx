@@ -17,7 +17,7 @@ SplashScreen.preventAutoHideAsync();
 export default function RootLayout() {
   const router = useRouter();
   const [isAppReady, setIsAppReady] = useState(false);
-  const appMounted = useRef(true); // Pour éviter les mises à jour après démontage
+  const appMounted = useRef(true);
 
   useEffect(() => {
     const initializeApp = async () => {
@@ -86,8 +86,7 @@ export default function RootLayout() {
         // Configurer l'écouteur NetInfo pour la synchro hors ligne (si nécessaire)
         const unsubscribeNetInfo = NetInfo.addEventListener(state => {
           if (state.isConnected && state.isInternetReachable) {
-            // syncOfflineWatchedEpisodes().catch(err => console.error('Failed to sync offline watched episodes:', err));
-            // La synchro est déjà gérée par PlaybackSyncService, pas besoin ici a priori
+            console.log('Device is online, syncing playback state...');
           }
         });
 
@@ -106,7 +105,6 @@ export default function RootLayout() {
       } catch (error) {
         console.error('Initialization error:', error);
         Sentry.captureException(error);
-        // Gérer l'erreur d'initialisation si nécessaire
       }
     };
 
@@ -115,12 +113,8 @@ export default function RootLayout() {
     // Nettoyage au démontage
     return () => {
       appMounted.current = false;
-      // Désinscription des écouteurs (si nécessaire, géré par les services eux-mêmes?)
-      // subscription?.unsubscribe(); // Supabase auth listener
-      // unsubscribeNetInfo?.(); // NetInfo listener
-      // cleanupSync(); // Playback sync listener
     };
-  }, []); // Exécuter une seule fois au montage
+  }, []);
 
   // Afficher Slot seulement quand l'app est prête pour éviter les flashs
   if (!isAppReady) {
@@ -130,9 +124,9 @@ export default function RootLayout() {
 
   console.log('[RootLayout] App is ready, rendering Slot.');
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'black' }}>
       <SafeAreaProvider>
-        <StatusBar style="light" />
+        <StatusBar style="light" backgroundColor="#000000" />
         <Slot />
       </SafeAreaProvider>
     </GestureHandlerRootView>
