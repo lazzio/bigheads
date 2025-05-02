@@ -28,6 +28,9 @@
       "extends": "base",
       "environment": "production",
       "distribution": "internal",
+      "android": {
+        "buildType": "app-bundle"
+      },
       "env": {
         "EAS_NO_VCS": "1"
       }
