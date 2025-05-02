@@ -49,3 +49,14 @@ export function formatTime(timeInSeconds: number): string {
   
     return Math.floor(seconds);
   }
+
+  export function parseDuration(durationStr: string | number | null): number | null {
+    if (typeof durationStr === 'number') return durationStr;
+    if (typeof durationStr !== 'string' || !durationStr) return null;
+    const parts = durationStr.split(':').map(Number);
+    let seconds = 0;
+    if (parts.length === 3) seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+    else if (parts.length === 2) seconds = parts[0] * 60 + parts[1];
+    else if (parts.length === 1 && !isNaN(parts[0])) seconds = parts[0];
+    return isNaN(seconds) ? null : seconds;
+  }

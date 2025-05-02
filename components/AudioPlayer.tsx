@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, BackHandler, Alert, LayoutChangeEvent, AppState } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, AppState } from 'react-native';
 import { Episode } from '../types/episode';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { audioManager, formatTime, AudioStatus } from '../utils/OptimizedAudioService';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
+import throttle from 'lodash.throttle';
 import { theme } from '../styles/global';
 
 interface AudioPlayerProps {
@@ -12,9 +13,10 @@ interface AudioPlayerProps {
   onPrevious?: () => void;
   onComplete?: () => void;
   onRetry?: () => void;
+  onPositionUpdate?: (positionMillis: number) => void; // New prop
 }
 
-export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, onRetry }: AudioPlayerProps) {
+export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, onRetry, onPositionUpdate }: AudioPlayerProps) {
   const initialDurationMs = episode.duration ? episode.duration * 1000 : 0;
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -42,6 +44,11 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
     setIsBuffering(false); // Ensure not buffering initially
 
     console.log(`[AudioPlayer] useEffect for episode ${episode.id}, setting isLoading=true`);
+
+    // Throttle the position update callback, ensuring it always has a 'cancel' method
+    const throttledPositionUpdate = onPositionUpdate
+      ? throttle(onPositionUpdate, 5000, { leading: true, trailing: true })
+      : Object.assign(throttle(() => {}, 5000), { cancel: () => {} });
 
     const unsubscribe = audioManager.addListener((data: any) => {
       if (!isMounted) return;
@@ -71,6 +78,9 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
 
           // Update position only if not actively seeking
           setPosition(data.position);
+          // Call the throttled position update callback
+          throttledPositionUpdate(data.position);
+
           // Update duration if it's valid and different
           if (data.duration > 0 && data.duration !== duration) {
             setDuration(data.duration);
@@ -99,7 +109,13 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
         case 'finished':
           console.log('[AudioPlayer] Received finished, calling onComplete');
           // Set position to the end, ensure isPlaying is false
-          setPosition(duration > 0 ? duration : 0);
+          const finalPosition = duration > 0 ? duration : 0;
+          setPosition(finalPosition);
+          // Ensure final position is reported before completion
+          throttledPositionUpdate(finalPosition);
+          // Cancel any pending throttled calls before finishing
+          throttledPositionUpdate.cancel();
+
           setIsPlaying(false);
           setIsBuffering(false);
           if (onComplete) onComplete();
@@ -120,6 +136,8 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
       console.log(`[AudioPlayer] Cleaning up effect for episode ${episode.id}`);
       isMounted = false;
       unsubscribe();
+      // Cancel throttled calls on cleanup
+      throttledPositionUpdate.cancel();
       if (sleepTimerId.current) {
         clearTimeout(sleepTimerId.current);
       }
@@ -163,11 +181,15 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
     // Perform the actual seek
     try {
       audioManager.seekTo(seekPositionMs);
+      // Immediately report position after seek
+      if (onPositionUpdate) {
+        onPositionUpdate(seekPositionMs);
+      }
     } catch (err) {
       console.error('[AudioPlayer] Error seeking:', err);
       setError('Erreur pendant la recherche de position');
     }
-  }, [duration]);
+  }, [duration, onPositionUpdate]); // Add onPositionUpdate dependency
 
   // --- Action Handlers (Wrapped in useCallback) ---
   const handlePlayPause = useCallback(async () => {
@@ -199,13 +221,23 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
 
   const handleSeek = useCallback(async (offsetSeconds: number) => {
     console.log(`[AudioPlayer] handleSeek: ${offsetSeconds}s`);
-    await audioManager.seekRelative(offsetSeconds);
-  }, []);
+    const newPosition = await audioManager.seekRelative(offsetSeconds);
+    // Immediately update local state and save locally after seek
+    if (typeof newPosition === 'number' && onPositionUpdate) {
+        setPosition(newPosition);
+        onPositionUpdate(newPosition); // Report position immediately after seek
+    }
+  }, [onPositionUpdate]); // Add onPositionUpdate dependency
 
   const handleSkipAuditors = useCallback(async () => {
     console.log('[AudioPlayer] handleSkipAuditors');
-    await audioManager.seekRelative(480);
-  }, []);
+    const newPosition = await audioManager.seekRelative(480);
+    // Immediately update local state and save locally after skip
+    if (typeof newPosition === 'number' && onPositionUpdate) {
+        setPosition(newPosition);
+        onPositionUpdate(newPosition); // Report position immediately after skip
+    }
+  }, [onPositionUpdate]); // Add onPositionUpdate dependency
 
   // --- Sleep Timer (Wrapped in useCallback) ---
   const handleSleepTimerEnd = useCallback(() => {
