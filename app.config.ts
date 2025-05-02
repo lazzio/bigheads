@@ -13,6 +13,7 @@ const config: ExpoConfig = {
   scheme: "xyz.myops.bigheads",
   backgroundColor: "#121212", // Changed from #F6F6F6 to match app theme
   icon: "./assets/images/bh_opti.png",
+  platforms: ["android", "ios"],
 
   splash: {
     image: "./assets/images/bh_opti.png",
@@ -21,6 +22,7 @@ const config: ExpoConfig = {
   },
   
   android: {
+    version: "2.0.1",
     adaptiveIcon: {
       foregroundImage: "./assets/images/bh_opti.png",
       backgroundColor: "#b48d7b"
@@ -50,7 +52,6 @@ const config: ExpoConfig = {
       notificationColor: '#b48d7b',
     }
   },
-  platforms: ["android", "ios"],
   plugins: [
     "expo-router",
     [
@@ -94,6 +95,11 @@ const config: ExpoConfig = {
     eas: {
       projectId: "891a7461-aa6c-432c-9d03-2b4f6e54b742"
     }
+  },
+  updates: {
+    enabled: true,
+    checkAutomatically: "ON_ERROR_RECOVERY",
+    fallbackToCacheTimeout: 0,
   },
   experiments: {
     typedRoutes: true
