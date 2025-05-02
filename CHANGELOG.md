@@ -1,3 +1,10 @@
+## [3.1.0](https://github.com/lazzio/bigheads/-/compare/v3.0.3...v3.1.0) (2025-05-02)
+
+### Features
+
+* production ([22a9e8d](https://github.com/lazzio/bigheads/-/commit/22a9e8d3b05314e0b68f25b0f334f956e12f6cbd))
+* production ([#45](https://github.com/lazzio/bigheads/-/issues/45)) ([27e3f33](https://github.com/lazzio/bigheads/-/commit/27e3f33c60b0274239464a5897bef14bda481b41))
+
 ## [3.0.3](https://github.com/lazzio/bigheads/-/compare/v3.0.2...v3.0.3) (2025-05-02)
 
 ### Bug Fixes
