@@ -1,24 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import { AppState } from 'react-native';
 import { Slot, SplashScreen, useRouter } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { initEpisodeNotificationService, setupNotificationListener, syncPushTokenAfterLogin } from '../utils/EpisodeNotificationService';
-import { triggerSync } from '../services/PlaybackSyncService';
 import NetInfo from '@react-native-community/netinfo';
 import * as Sentry from '@sentry/react-native';
-import { setStatusBarBackgroundColor, StatusBar } from 'expo-status-bar';
-import { NavigationProvider } from '../contexts/NavigationContext';
-import TrackPlayer from 'react-native-track-player';
-import { PlaybackService } from '../services/PlaybackService';
+import { StatusBar } from 'expo-status-bar';
+import { cleanupStaleLocalPositions } from '../utils/LocalPositionCleanupService';
 
-// Register the playback service right away
-TrackPlayer.registerPlaybackService(() => PlaybackService);
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
+// Main layout component
 export default function RootLayout() {
   const router = useRouter();
   const [isAppReady, setIsAppReady] = useState(false);
@@ -27,107 +22,113 @@ export default function RootLayout() {
   useEffect(() => {
     const initializeApp = async () => {
       try {
-        // Auth state listener
+        // Écouter les changements d'état d'authentification
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+          console.log('Auth state changed:', event);
           if (event === 'SIGNED_IN') {
+            // Tenter de synchroniser le token push après connexion réussie
             await syncPushTokenAfterLogin();
-            triggerSync();
+            // Optionnel: rediriger si nécessaire, mais Tabs gère déjà cela
+            // router.replace('/(tabs)');
           } else if (event === 'SIGNED_OUT') {
+            // Rediriger vers l'écran de connexion
             router.replace('/auth/login');
           }
         });
 
-        // Notification service
+        // Initialiser le service de notification
         try {
           await initEpisodeNotificationService();
-          setupNotificationListener((episodeId, position) => {
+          // Configurer l'écouteur pour la navigation
+          setupNotificationListener((episodeId) => {
+            console.log(`[NotificationHandler] Received notification for episode ${episodeId}`);
+            
+            // Navigation vers l'écran player
             const navigateToPlayer = () => {
+              console.log('[NotificationHandler] Navigating to player tab');
               router.navigate({
                 pathname: '/(tabs)/player',
-                params: {
-                  episodeId,
-                  position,
+                params: { 
+                  episodeId: episodeId, 
                   source: 'notification',
-                  timestamp: Date.now()
+                  timestamp: Date.now() // Add timestamp to force refresh
                 }
               });
             };
+
+            // Si l'app est prête, naviguer immédiatement
             if (appMounted.current && isAppReady) {
               navigateToPlayer();
             } else {
+              // Sinon, attendre que l'app soit prête et naviguer ensuite
+              console.log('[NotificationHandler] App not ready, waiting...');
               const readyCheckInterval = setInterval(() => {
                 if (appMounted.current && isAppReady) {
+                  console.log('[NotificationHandler] App now ready, navigating...');
                   clearInterval(readyCheckInterval);
                   navigateToPlayer();
                 }
               }, 200);
+              
+              // Arrêter de vérifier après 10 secondes pour éviter une boucle infinie
               setTimeout(() => clearInterval(readyCheckInterval), 10000);
             }
           });
+          console.log('Episode notification service initialized');
         } catch (notificationError) {
+          console.error('Error initializing episode notification service:', notificationError);
           Sentry.captureException(notificationError);
         }
 
-        // Trigger initial sync after a delay
-        setTimeout(triggerSync, 5000);
-
-        // NetInfo listener for sync on reconnect
+        // Configurer l'écouteur NetInfo pour la synchro hors ligne (si nécessaire)
         const unsubscribeNetInfo = NetInfo.addEventListener(state => {
           if (state.isConnected && state.isInternetReachable) {
-            triggerSync();
+            console.log('Device is online, syncing playback state...');
           }
         });
 
-        // Hide splash screen
+        // Cacher l'écran de démarrage
         try {
           await SplashScreen.hideAsync();
         } catch (error) {
-          // Ignore
+          console.warn('SplashScreen.hideAsync failed:', error);
         }
 
-        if (appMounted.current) setIsAppReady(true);
-
-        // Cleanup
-        return () => {
-          appMounted.current = false;
-          subscription?.unsubscribe?.();
-          unsubscribeNetInfo?.();
-        };
+        // Marquer l'application comme prête
+        if (appMounted.current) {
+          console.log('[RootLayout] App is now ready.');
+          setIsAppReady(true);
+        }
       } catch (error) {
+        console.error('Initialization error:', error);
         Sentry.captureException(error);
       }
     };
 
     initializeApp();
 
-    // Cleanup on unmount
+    // Cleanup remaining positions of episodes that are no longer available
+    cleanupStaleLocalPositions();
+
+    // Nettoyage au démontage
     return () => {
       appMounted.current = false;
     };
-  }, [router]);
-
-  // Sync on app foreground
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', async (nextAppState) => {
-      if (nextAppState === 'active') {
-        triggerSync();
-      }
-    });
-    return () => subscription.remove();
   }, []);
 
+  // Afficher Slot seulement quand l'app est prête pour éviter les flashs
   if (!isAppReady) {
-    return null;
+    console.log('[RootLayout] App not ready, rendering null.');
+    return null; // Ou retourner un écran de chargement minimal si SplashScreen.hideAsync a échoué
   }
 
+  console.log('[RootLayout] App is ready, rendering Slot.');
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'black' }}>
-      <NavigationProvider>
-        <SafeAreaProvider>
-          <StatusBar style="light" backgroundColor="#000000" />
-          <Slot />
-        </SafeAreaProvider>
-      </NavigationProvider>
+      <SafeAreaProvider>
+        <StatusBar style="light" backgroundColor="#000000" />
+        <Slot />
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

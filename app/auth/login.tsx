@@ -7,10 +7,11 @@ import * as Linking from 'expo-linking';
 import { storage } from '../../lib/storage';
 import * as Sentry from '@sentry/react-native';
 import Constants from 'expo-constants';
-import { theme } from '../../styles/global';
-import { componentStyle } from '../../styles/componentStyle';
+
+// Import SVG components
 import Svg, { Path } from 'react-native-svg';
 
+// Fixed GoogleIcon implementation using react-native-svg
 function GoogleIcon() {
   return (
     <Svg width={18} height={18} viewBox="0 0 18 18" style={{ marginRight: 24 }}>
@@ -47,28 +48,32 @@ export default function LoginScreen() {
   ? Constants.expoConfig.scheme 
   : 'xyz.myops.bigheads';
   const redirectUrl = Linking.createURL('/(tabs)', {
+    // S'assurer que c'est un schéma deeplink et non une URL web
     scheme: appScheme
   });
 
-  // Cleanup of previous OAuth sessions
+  // Nettoyage du cache des sessions OAuth précédentes
   useEffect(() => {
     if (Platform.OS !== 'web') {
       WebBrowser.maybeCompleteAuthSession();
     }
     
-    // Verify if there is an active session on load
+    // Vérifions s'il y a déjà une session active au chargement
     const checkExistingSession = async () => {
       const { data } = await supabase.auth.getSession();
       console.log('Checking existing session on load:', data.session ? 'Session exists' : 'No session');
       
       if (data.session) {
-        // If a session exists, redirect to the app
+        // Si une session existe déjà, rediriger vers l'app
         router.replace('/(tabs)');
       }
     };
     
     checkExistingSession();
   }, [router]);
+
+  // Journal pour le débogage
+  console.log('Login screen rendered, redirectUrl:', redirectUrl);
 
   async function handleLogin() {
     try {
@@ -86,6 +91,7 @@ export default function LoginScreen() {
       router.replace('/(tabs)');
     } catch (err) {
       console.error('Login error:', err);
+      // Capture d'exception pour Sentry
       Sentry.captureException(err);
       setError(err instanceof Error ? err.message : 'Une erreur est survenue');
     } finally {
@@ -95,6 +101,7 @@ export default function LoginScreen() {
 
   async function handleGoogleSignIn() {
     try {
+      // Ajout d'un breadcrumb pour Sentry
       Sentry.addBreadcrumb({
         category: 'auth',
         message: 'Starting Google OAuth flow',
@@ -107,8 +114,9 @@ export default function LoginScreen() {
 
       setLoading(true);
       setError(null);
+      console.log('Starting Google OAuth flow');
 
-      // Cleanup of previous tokens to avoid conflicts
+      // Nettoyage des anciens tokens avant de commencer
       await storage.removeItem('supabase.auth.token');
       await storage.removeItem('supabase.auth.refreshToken');
       await storage.removeItem('supabase.auth.user');
@@ -145,6 +153,7 @@ export default function LoginScreen() {
         if (data?.url) {
           console.log('Opening auth URL in browser:', data.url);
           
+          // Utiliser openAuthSessionAsync avec les bons paramètres
           const result = await WebBrowser.openAuthSessionAsync(
             data.url, 
             redirectUrl,
@@ -161,11 +170,11 @@ export default function LoginScreen() {
             console.log('OAuth redirect success, processing URL:', url);
             
             try {
-              // Check if the URL contains access_token or code
+              // Essayer de traiter l'URL de redirection et d'extraire les tokens
               if (url.includes('access_token') || url.includes('code=')) {
                 console.log('URL contains auth params, extracting...');
                 
-                // Extract tokens from the URL
+                // Essayer d'extraire les paramètres de l'URL
                 let params: URLSearchParams;
                 if (url.includes('#')) {
                   // Format fragment
@@ -212,9 +221,7 @@ export default function LoginScreen() {
                 }
               } else {
                 console.log('No auth params in URL, checking session directly');
-                
-                // If no tokens, check session directly
-                // This is a fallback in case the URL doesn't contain tokens
+                // Vérifier directement si une session existe
                 const { data: { session } } = await supabase.auth.getSession();
                 if (session) {
                   console.log('Session exists, redirecting');
@@ -225,10 +232,7 @@ export default function LoginScreen() {
               }
             } catch (parseError) {
               console.error('Error parsing OAuth redirect:', parseError);
-              
-              // Try to get session in case of parse error
-              // This is a fallback to ensure we handle any unexpected cases
-              // and still redirect the user if a session exists
+              // Essayer une approche différente - obtenir la session actuelle
               const { data: { session } } = await supabase.auth.getSession();
               if (session) {
                 console.log('Session exists despite parse error, redirecting');
@@ -239,20 +243,18 @@ export default function LoginScreen() {
             }
           } else if (result.type === 'cancel') {
             console.log('User canceled OAuth flow');
-            // Handle user cancellation
-            // This could be a user action or an error in the flow
-            // You can show an alert or a message to inform the user
+            // L'utilisateur a annulé, afficher un message
             Alert.alert('Connexion annulée', 'Vous avez annulé la connexion Google.');
           }
         }
       }
     } catch (err) {
       console.error('Google sign-in error:', err);
+      // Capture d'exception pour Sentry
       Sentry.captureException(err);
       setError(err instanceof Error ? err.message : 'Une erreur est survenue lors de la connexion Google');
       
-      // Cleanup of tokens in case of error
-      // This ensures that any previous tokens are removed to avoid conflicts
+      // Effacer les données d'auth partielles en cas d'erreur
       await storage.removeItem('supabase.auth.token');
       await storage.removeItem('supabase.auth.refreshToken');
       await storage.removeItem('supabase.auth.user');
@@ -262,60 +264,56 @@ export default function LoginScreen() {
   }
 
   return (
-    <View style={componentStyle.container}>
-      <View style={componentStyle.header}>
-        <Text style={componentStyle.headerTitle}>Connexion</Text>
-      </View>
+    <View style={styles.container}>
+      <Text style={styles.title}>Connexion</Text>
 
       {error && <Text style={styles.error}>{error}</Text>}
 
-      <View style={styles.subContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          placeholderTextColor={theme.colors.secondaryDescription}
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-        />
+      <TextInput
+        style={styles.input}
+        placeholder="Email"
+        placeholderTextColor="#666"
+        value={email}
+        onChangeText={setEmail}
+        autoCapitalize="none"
+        keyboardType="email-address"
+      />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Mot de passe"
-          placeholderTextColor={theme.colors.secondaryDescription}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
+      <TextInput
+        style={styles.input}
+        placeholder="Mot de passe"
+        placeholderTextColor="#666"
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+      />
 
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleLogin}
-          disabled={loading}>
-          <Text style={styles.buttonText}>
-            {loading ? 'Connexion...' : 'Se connecter'}
-          </Text>
-        </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.button, loading && styles.buttonDisabled]}
+        onPress={handleLogin}
+        disabled={loading}>
+        <Text style={styles.buttonText}>
+          {loading ? 'Connexion...' : 'Se connecter'}
+        </Text>
+      </TouchableOpacity>
 
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>ou</Text>
-          <View style={styles.dividerLine} />
-        </View>
-
-        <TouchableOpacity
-          style={styles.googleButton}
-          onPress={handleGoogleSignIn}
-          disabled={loading}>
-          <GoogleIcon />
-          <Text style={styles.googleButtonText}>Se connecter avec Google</Text>
-        </TouchableOpacity>
-
-        <Link href="/auth/register" style={styles.link}>
-          <Text style={styles.linkText}>Pas encore de compte ? S'inscrire</Text>
-        </Link>
+      <View style={styles.divider}>
+        <View style={styles.dividerLine} />
+        <Text style={styles.dividerText}>ou</Text>
+        <View style={styles.dividerLine} />
       </View>
+
+      <TouchableOpacity
+        style={styles.googleButton}
+        onPress={handleGoogleSignIn}
+        disabled={loading}>
+        <GoogleIcon />
+        <Text style={styles.googleButtonText}>Se connecter avec Google</Text>
+      </TouchableOpacity>
+
+      <Link href="/auth/register" style={styles.link}>
+        <Text style={styles.linkText}>Pas encore de compte ? S'inscrire</Text>
+      </Link>
     </View>
   );
 }
@@ -325,22 +323,24 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
     justifyContent: 'center',
-    backgroundColor: theme.colors.primaryBackground,
+    backgroundColor: '#121212',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 20,
+    textAlign: 'center',
   },
   input: {
-    backgroundColor: theme.colors.inputBackground,
+    backgroundColor: '#1a1a1a',
     borderRadius: 8,
     padding: 15,
     marginBottom: 10,
-    color: theme.colors.text,
-  },
-  subContainer: {
-    flex: 1,
-    padding: 15,
-    justifyContent: 'center',
+    color: '#fff',
   },
   button: {
-    backgroundColor: theme.colors.buttonBackground,
+    backgroundColor: '#0ea5e9',
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
@@ -350,7 +350,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   buttonText: {
-    color: theme.colors.text,
+    color: '#fff',
     fontWeight: '600',
     fontSize: 16,
   },
@@ -359,11 +359,11 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   linkText: {
-    color: theme.colors.linkColor,
+    color: '#0ea5e9',
     fontSize: 16,
   },
   error: {
-    color: theme.colors.error,
+    color: '#ef4444',
     marginBottom: 10,
     textAlign: 'center',
   },
@@ -375,27 +375,27 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: theme.colors.borderColor,
+    backgroundColor: '#333',
   },
   dividerText: {
-    color: theme.colors.secondaryDescription,
+    color: '#666',
     paddingHorizontal: 10,
   },
   googleButton: {
     flexDirection: 'row',
-    backgroundColor: theme.colors.text,
+    backgroundColor: '#fff',
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 1,
-    shadowColor: theme.colors.shadowColor,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 1,
   },
   googleButtonText: {
-    color: theme.colors.secondaryDescription,
+    color: '#757575',
     fontSize: 15,
     fontWeight: '500',
   },

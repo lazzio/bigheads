@@ -22,7 +22,7 @@ const config: ExpoConfig = {
   },
   
   android: {
-    versionName: "v1.5.1",
+    version: "2.0.1",
     adaptiveIcon: {
       foregroundImage: "./assets/images/bh_opti.png",
       backgroundColor: "#b48d7b"
@@ -52,7 +52,6 @@ const config: ExpoConfig = {
       notificationColor: '#b48d7b',
     }
   },
-
   plugins: [
     "expo-router",
     [
@@ -84,13 +83,11 @@ const config: ExpoConfig = {
     "expo-background-fetch",
     "expo-task-manager"
   ],
-
   notification: {
     icon: "./assets/images/bh_opti.png",
     color: "#b48d7b",
     iosDisplayInForeground: true,
   },
-  
   extra: {
     "router": {
         "origin": false
@@ -99,13 +96,11 @@ const config: ExpoConfig = {
       projectId: "891a7461-aa6c-432c-9d03-2b4f6e54b742"
     }
   },
-  
   updates: {
     enabled: true,
     checkAutomatically: "ON_ERROR_RECOVERY",
     fallbackToCacheTimeout: 0,
   },
-
   experiments: {
     typedRoutes: true
   }

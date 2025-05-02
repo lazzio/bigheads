@@ -1,5 +1,6 @@
 # dependencies
 node_modules/
+/android/
 
 # expo
 .expo/
@@ -43,6 +44,6 @@ worker/.venv
 
 # Service account file
 worker/sa.json
+credentials/*
+!credentials/.gitkeep
 
-.env.local
-/android/

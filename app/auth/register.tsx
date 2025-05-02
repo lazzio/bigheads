@@ -2,9 +2,7 @@ import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Alert } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
-import { syncPushTokenAfterLogin } from '../../utils/EpisodeNotificationService';
-import { componentStyle } from '../../styles/componentStyle';
-import { theme } from '../../styles/global';
+import { syncPushTokenAfterLogin } from '../../utils/EpisodeNotificationService'; // <<< Importer la nouvelle fonction
 
 export default function RegisterScreen() {
   const [email, setEmail] = useState('');
@@ -82,46 +80,42 @@ export default function RegisterScreen() {
   }
 
   return (
-    <View style={componentStyle.container}>
-      <View style={componentStyle.header}>
-        <Text style={componentStyle.headerTitle}>Créer un compte</Text>
-      </View>
+    <View style={styles.container}>
+      <Text style={styles.title}>Créer un compte</Text>
 
       {error && <Text style={styles.error}>{error}</Text>}
 
-    <View style={styles.subContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          placeholderTextColor={theme.colors.secondaryDescription}
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-        />
+      <TextInput
+        style={styles.input}
+        placeholder="Email"
+        placeholderTextColor="#666"
+        value={email}
+        onChangeText={setEmail}
+        autoCapitalize="none"
+        keyboardType="email-address"
+      />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Mot de passe"
-          placeholderTextColor={theme.colors.secondaryDescription}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
+      <TextInput
+        style={styles.input}
+        placeholder="Mot de passe"
+        placeholderTextColor="#666"
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+      />
 
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleRegister}
-          disabled={loading}>
-          <Text style={styles.buttonText}>
-            {loading ? 'Création...' : 'Créer un compte'}
-          </Text>
-        </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.button, loading && styles.buttonDisabled]}
+        onPress={handleRegister}
+        disabled={loading}>
+        <Text style={styles.buttonText}>
+          {loading ? 'Création...' : 'Créer un compte'}
+        </Text>
+      </TouchableOpacity>
 
-        <Link href="/auth/login" style={styles.link}>
-          <Text style={styles.linkText}>Déjà un compte ? Se connecter</Text>
-        </Link>
-      </View>
+      <Link href="/auth/login" style={styles.link}>
+        <Text style={styles.linkText}>Déjà un compte ? Se connecter</Text>
+      </Link>
     </View>
   );
 }
@@ -131,29 +125,24 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
     justifyContent: 'center',
-    backgroundColor: theme.colors.primaryBackground,
+    backgroundColor: '#121212',
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: theme.colors.text,
+    color: '#fff',
     marginBottom: 20,
     textAlign: 'center',
   },
-  subContainer: {
-    flex: 1,
-    padding: 15,
-    justifyContent: 'center',
-  },
   input: {
-    backgroundColor: theme.colors.inputBackground,
+    backgroundColor: '#1a1a1a',
     borderRadius: 8,
     padding: 15,
     marginBottom: 10,
-    color: theme.colors.text,
+    color: '#fff',
   },
   button: {
-    backgroundColor: theme.colors.buttonBackground,
+    backgroundColor: '#0ea5e9',
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
@@ -163,7 +152,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   buttonText: {
-    color: theme.colors.text,
+    color: '#fff',
     fontWeight: '600',
     fontSize: 16,
   },
@@ -172,11 +161,11 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   linkText: {
-    color: theme.colors.linkColor,
+    color: '#0ea5e9',
     fontSize: 16,
   },
   error: {
-    color: theme.colors.error,
+    color: '#ef4444',
     marginBottom: 10,
     textAlign: 'center',
   }

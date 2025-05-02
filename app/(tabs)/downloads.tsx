@@ -1,14 +1,14 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TouchableOpacity, 
-  Platform, 
-  FlatList, 
-  RefreshControl, 
-  Alert, 
-  ActivityIndicator
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Platform,
+  FlatList,
+  Alert,
+  ActivityIndicator,
+  RefreshControl
 } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { supabase } from '../../lib/supabase';
@@ -20,6 +20,7 @@ import Svg, { Circle } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { theme } from '../../styles/global';
 import { componentStyle } from '../../styles/componentStyle';
+import { parseDuration } from '../../utils/commons/timeUtils';
 
 // Types
 interface DownloadStatus {
@@ -36,6 +37,7 @@ const DOWNLOADS_DIR = FileSystem.documentDirectory + 'downloads/';
 const EPISODES_CACHE_KEY = 'cached_episodes';
 const CLEANUP_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 const MAX_DOWNLOAD_AGE_DAYS = 7;
+
 
 export default function DownloadsScreen() {
   // Main state management
@@ -223,7 +225,7 @@ export default function DownloadsScreen() {
   };
 
   // Retrieve downloaded episodes (for offline mode)
-  const getDownloadedEpisodes = async () => {
+  const getDownloadedEpisodes = async (): Promise<Episode[]> => {
     if (Platform.OS === 'web') return [];
     
     const metadata = await loadDownloadedEpisodesMetadata();
@@ -248,7 +250,7 @@ export default function DownloadsScreen() {
         description: meta.description || '',
         mp3Link: '',
         mp3_link: '',
-        duration: meta.duration || 0,
+        duration: parseDuration(meta.duration),
         publicationDate: meta.downloadDate || new Date().toISOString(),
         publication_date: meta.downloadDate || new Date().toISOString(),
         offline_path: meta.filePath
@@ -631,18 +633,19 @@ export default function DownloadsScreen() {
   const playEpisode = useCallback((episode: Episode, index: number) => {
     if (downloadStatus[episode.id]?.downloaded) {
       const filePath = downloadStatus[episode.id]?.filePath;
-      // Correction : toujours passer episodeId et offlinePath dans les params
+      
+      // For a downloaded episode, pass the local path
       router.push({
-        pathname: '/(tabs)/player',
+        pathname: '/player',
         params: { 
           episodeId: episode.id,
           offlinePath: filePath
         }
       });
     } else {
-      // Pour un épisode en ligne, passer episodeId
+      // For an online episode, use the index
       router.push({
-        pathname: '/(tabs)/player',
+        pathname: '/player',
         params: { episodeId: episode.id }
       });
     }

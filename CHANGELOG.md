@@ -1,38 +1,3 @@
-## [2.0.1](https://github.com/lazzio/bigheads/-/compare/v2.0.0...v2.0.1) (2025-04-28)
-
-### Documentation
-
-* documentation ([d7cec6c](https://github.com/lazzio/bigheads/-/commit/d7cec6c91e0f3f738c56a71c0d0cafa54e1c1a5b))
-* documentation ([#36](https://github.com/lazzio/bigheads/-/issues/36)) ([78d8a62](https://github.com/lazzio/bigheads/-/commit/78d8a62f2476426c1f194b93531833876a9499e5))
-
-## [2.0.0](https://github.com/lazzio/bigheads/-/compare/v1.5.1...v2.0.0) (2025-04-26)
-
-### ⚠ BREAKING CHANGES
-
-* refonte change episode ok (#35)
-
-### Features
-
-* cleanup ([c8e53ee](https://github.com/lazzio/bigheads/-/commit/c8e53eea97c347b7b3964571648f37b8e244152e))
-* design and repair ([f7a8386](https://github.com/lazzio/bigheads/-/commit/f7a83867ff06364d76bc2cd6f170f3303e56d634))
-* gradient ([65c76d3](https://github.com/lazzio/bigheads/-/commit/65c76d34702a37dd45a23cc16006639381b577e0))
-* new design ([f81eb41](https://github.com/lazzio/bigheads/-/commit/f81eb412cedf92a3a109aedc9628a6224c93fe31))
-* refonte change episode ok ([4e059f3](https://github.com/lazzio/bigheads/-/commit/4e059f36a0fd1aff62a5b41d866bacbf6d0d75eb))
-* refonte change episode ok ([#35](https://github.com/lazzio/bigheads/-/issues/35)) ([5f67b5a](https://github.com/lazzio/bigheads/-/commit/5f67b5a1827d137ed42f6d7aaafff8ece298d94e))
-* remove refresh button & notification to player ([14aecf9](https://github.com/lazzio/bigheads/-/commit/14aecf929cb8128d0f0e9ce1cb8724deab8b5cf5))
-* repair player ([d88f7e8](https://github.com/lazzio/bigheads/-/commit/d88f7e851c9d8a2c86e1f7da4fe070df79986f47))
-* suite ([c293904](https://github.com/lazzio/bigheads/-/commit/c2939049266dd85828c717f981d02c015d2353b6))
-
-### Bug Fixes
-
-* wake up app from notification ([0ad3037](https://github.com/lazzio/bigheads/-/commit/0ad30375ddd922d4f69b312c258826b4f9ae52f3))
-
-## [1.5.1](https://github.com/lazzio/bigheads/-/compare/v1.5.0...v1.5.1) (2025-04-23)
-
-### Bug Fixes
-
-* **worker:** new rss process ([#33](https://github.com/lazzio/bigheads/-/issues/33)) ([60550ff](https://github.com/lazzio/bigheads/-/commit/60550fff8ca82a4536a3528def5db2eb651b413a))
-
 ## [1.5.0](https://github.com/lazzio/bigheads/-/compare/v1.4.0...v1.5.0) (2025-04-23)
 
 ### Features
