@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, AppState, AppStateStatus, BackHandler } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, AppState, AppStateStatus, BackHandler, Platform } from 'react-native'; // Added Platform
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -15,11 +15,9 @@ import AudioPlayer from '../../components/AudioPlayer';
 import { theme } from '../../styles/global';
 import { parseDuration } from '../../utils/commons/timeUtils';
 
+// --- Types ---
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
 type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row'];
-
-const EPISODES_CACHE_KEY = 'cached_episodes';
-const PLAYBACK_POSITIONS_KEY = 'playbackPositions';
 
 // Structure for locally stored positions
 interface LocalPositionInfo {
@@ -28,8 +26,16 @@ interface LocalPositionInfo {
 }
 type LocalPositions = Record<string, LocalPositionInfo>;
 
+// --- Constants ---
+const EPISODES_CACHE_KEY = 'cached_episodes';
+const PLAYBACK_POSITIONS_KEY = 'playbackPositions';
+const LAST_PLAYED_EPISODE_KEY = 'lastPlayedEpisodeId';
+const LAST_PLAYED_POSITION_KEY = 'lastPlayedPosition';
+const LAST_PLAYING_STATE_KEY = 'wasPlaying';
+
+
 export default function PlayerScreen() {
-  const { episodeId, offlinePath, source } = useLocalSearchParams<{ episodeId?: string; offlinePath?: string; source?: string }>();
+  const { episodeId, offlinePath, source, _retry } = useLocalSearchParams<{ episodeId?: string; offlinePath?: string; source?: string; _retry?: string }>(); // Added _retry for refresh
   const router = useRouter();
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number | null>(null);
@@ -39,39 +45,7 @@ export default function PlayerScreen() {
   const appState = useRef(AppState.currentState);
   const isSyncingRef = useRef(false); // Ref to prevent concurrent syncs
   const netStateRef = useRef<NetInfoState | null>(null); // Store last network state
-
-  // --- Local Storage Helpers ---
-  const savePositionLocally = useCallback(async (epId: string, positionMillis: number) => {
-    if (!epId) return;
-    const positionSeconds = positionMillis / 1000;
-    console.log(`[PlayerScreen] Saving position locally for ${epId}: ${positionSeconds.toFixed(2)}s`);
-    try {
-      const existingPositionsString = await AsyncStorage.getItem(PLAYBACK_POSITIONS_KEY);
-      const positions: LocalPositions = existingPositionsString ? JSON.parse(existingPositionsString) : {};
-      positions[epId] = {
-        position: positionSeconds,
-        timestamp: Date.now(),
-      };
-      await AsyncStorage.setItem(PLAYBACK_POSITIONS_KEY, JSON.stringify(positions));
-    } catch (error) {
-      console.error("[PlayerScreen] Error saving position locally:", error);
-    }
-  }, []);
-
-  const getPositionLocally = useCallback(async (epId: string): Promise<number | null> => {
-    if (!epId) return null;
-    try {
-      const existingPositionsString = await AsyncStorage.getItem(PLAYBACK_POSITIONS_KEY);
-      const positions: LocalPositions = existingPositionsString ? JSON.parse(existingPositionsString) : {};
-      if (positions[epId]) {
-        console.log(`[PlayerScreen] Found local position for ${epId}: ${positions[epId].position}s`);
-        return positions[epId].position * 1000; // Return in milliseconds
-      }
-    } catch (error) {
-      console.error("[PlayerScreen] Error getting position locally:", error);
-    }
-    return null;
-  }, []);
+  const isLoadingEpisodeRef = useRef(false); // Add ref to track loading state within loadEpisodeAndPosition
 
   // --- Remote Sync Function ---
   const syncAllLocalPositionsToSupabase = useCallback(async () => {
@@ -144,30 +118,117 @@ export default function PlayerScreen() {
       isSyncingRef.current = false;
       console.log('[PlayerScreen] Sync process finished.');
     }
-  }, [episodes]); // Depend on episodes array to get duration
+  }, [episodes]); // episodes needed for duration
+
+  // --- Local Storage Helpers ---
+  const savePositionLocally = useCallback(async (epId: string, positionMillis: number) => {
+    if (!epId) return;
+    const positionSeconds = positionMillis / 1000;
+    // Prevent saving NaN or excessively large/small numbers
+    if (isNaN(positionSeconds) || !isFinite(positionSeconds)) {
+        console.warn(`[PlayerScreen] Attempted to save invalid position (${positionSeconds}s) for ${epId}. Skipping.`);
+        return;
+    }
+    console.log(`[PlayerScreen] Saving position locally for ${epId}: ${positionSeconds.toFixed(2)}s`);
+    try {
+      const existingPositionsString = await AsyncStorage.getItem(PLAYBACK_POSITIONS_KEY);
+      const positions: LocalPositions = existingPositionsString ? JSON.parse(existingPositionsString) : {};
+      
+      // Update only if position has actually changed
+      const currentPos = positions[epId]?.position;
+      if (currentPos === undefined || Math.abs(currentPos - positionSeconds) > 0.5) {
+        positions[epId] = {
+          position: positionSeconds,
+          timestamp: Date.now(),
+        };
+        
+        await AsyncStorage.setItem(PLAYBACK_POSITIONS_KEY, JSON.stringify(positions));
+        console.log(`[PlayerScreen] Position for ${epId} updated in storage`);
+      }
+    } catch (error) {
+      console.error("[PlayerScreen] Error saving position locally:", error);
+    }
+  }, []);
+
+  const getPositionLocally = useCallback(async (epId: string): Promise<number | null> => {
+    if (!epId) return null;
+    try {
+      const existingPositionsString = await AsyncStorage.getItem(PLAYBACK_POSITIONS_KEY);
+      const positions: LocalPositions = existingPositionsString ? JSON.parse(existingPositionsString) : {};
+      if (positions[epId] && typeof positions[epId].position === 'number' && isFinite(positions[epId].position)) {
+        console.log(`[PlayerScreen] Found local position for ${epId}: ${positions[epId].position}s`);
+        return positions[epId].position * 1000; // Return in milliseconds
+      }
+    } catch (error) {
+      console.error("[PlayerScreen] Error getting position locally:", error);
+    }
+    return null;
+  }, []);
+
+  // --- Save Current Playback State (Position + Last Played Info) ---
+  const saveCurrentPlaybackState = useCallback(async () => {
+    try {
+      const episodeIdToSave = currentEpisodeIdRef.current; // Capture ref value
+      if (!episodeIdToSave) {
+        console.log('[PlayerScreen] saveCurrentPlaybackState: No current episode ID, skipping.');
+        return;
+      }
+
+      const status = await audioManager.getStatusAsync();
+      // Also check if the status matches the episode we intend to save for
+      if (!status.isLoaded || status.currentEpisodeId !== episodeIdToSave) {
+         console.log(`[PlayerScreen] saveCurrentPlaybackState: Status not loaded or mismatch (Expected: ${episodeIdToSave}, Got: ${status.currentEpisodeId}, Loaded: ${status.isLoaded}), skipping save.`);
+         return;
+      }
+
+      console.log(`[PlayerScreen] Saving complete playback state for ${episodeIdToSave} at position ${status.positionMillis}ms, playing=${status.isPlaying}`);
+
+      // Save to local position storage (for episode-specific positions)
+      await savePositionLocally(episodeIdToSave, status.positionMillis);
+
+      // Save as the last played episode (for app resumption)
+      await AsyncStorage.setItem(LAST_PLAYED_EPISODE_KEY, episodeIdToSave);
+      await AsyncStorage.setItem(LAST_PLAYED_POSITION_KEY, String(status.positionMillis));
+      await AsyncStorage.setItem(LAST_PLAYING_STATE_KEY, String(status.isPlaying));
+
+      // Also sync to remote if possible (fire-and-forget)
+      syncAllLocalPositionsToSupabase().catch(err =>
+        console.error('[PlayerScreen] Error syncing after saving state:', err)
+      );
+    } catch (error) {
+      console.error('[PlayerScreen] Error saving current playback state:', error);
+    }
+  // REMOVED syncAllLocalPositionsToSupabase from dependencies
+  // It's called internally but doesn't affect the function's core logic/identity based on inputs
+  }, [savePositionLocally]);
 
   // --- Position Update Handler (from AudioPlayer) ---
   const handlePositionUpdate = useCallback((positionMillis: number) => {
     if (currentEpisodeIdRef.current) {
+      // Log every position update to help with debugging
+      console.log(`[PlayerScreen] Position update for ${currentEpisodeIdRef.current}: ${(positionMillis/1000).toFixed(2)}s`);
       savePositionLocally(currentEpisodeIdRef.current, positionMillis);
     }
   }, [savePositionLocally]);
 
-  // --- Function to GET playback position (Local first, then Remote, save remote locally) ---
+  // --- Function to GET playback position (Local -> Remote -> Default) ---
   const getPlaybackPosition = useCallback(async (epId: string): Promise<number | null> => {
-    // 1. Try local storage
+    // 1. Try local storage first for speed
     const localPositionMillis = await getPositionLocally(epId);
     if (localPositionMillis !== null) {
       console.log(`[PlayerScreen] Using local position for ${epId}: ${localPositionMillis}ms`);
       return localPositionMillis;
     }
 
-    // 2. Try remote storage (if online)
+    // 2. If not found locally, try remote storage (if online)
     const netInfoState = await NetInfo.fetch();
     if (netInfoState.isConnected && netInfoState.isInternetReachable) {
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return null;
+        if (!user) {
+          console.warn("[PlayerScreen] Cannot fetch remote position: no user logged in.");
+          return null; // No user, cannot check remote
+        }
 
         console.log(`[PlayerScreen] No local position for ${epId}, checking Supabase...`);
         const { data, error } = await supabase
@@ -179,21 +240,23 @@ export default function PlayerScreen() {
 
         if (error) {
           console.error("[PlayerScreen] Supabase fetch position error:", error.message);
+          // Don't throw, just proceed without remote position
         } else if (data) {
-          // If marked finished remotely, start from beginning, otherwise use stored position
+          // If marked finished remotely, start from 0, otherwise use stored position
           const remotePositionSeconds = data.is_finished ? 0 : data.playback_position;
-          if (remotePositionSeconds !== null) {
+          if (remotePositionSeconds !== null && isFinite(remotePositionSeconds)) {
             const remotePositionMillis = remotePositionSeconds * 1000;
             console.log(`[PlayerScreen] Found remote position for ${epId}: ${remotePositionSeconds}s (Finished: ${data.is_finished}). Saving locally.`);
-            // *** Save the fetched remote position locally ***
+            // Save the fetched remote position locally for next time
             await savePositionLocally(epId, remotePositionMillis);
-            return remotePositionMillis; // Return in milliseconds
+            return remotePositionMillis;
           }
         } else {
           console.log(`[PlayerScreen] No remote position found for ${epId} in Supabase.`);
         }
       } catch (err) {
         console.error("[PlayerScreen] Exception fetching remote position:", err);
+        // Don't throw, just proceed without remote position
       }
     } else {
         console.log(`[PlayerScreen] Offline, cannot check remote position for ${epId}.`);
@@ -202,49 +265,51 @@ export default function PlayerScreen() {
     // 3. Default to null (start from beginning) if not found locally or remotely
     console.log(`[PlayerScreen] No position found for ${epId}, starting from beginning.`);
     return null;
-  }, [getPositionLocally, savePositionLocally]); // Add savePositionLocally dependency
+  }, [getPositionLocally, savePositionLocally]); // Dependencies are correct
 
   // --- Function to load episodes from cache ---
   const loadCachedEpisodes = useCallback(async (): Promise<Episode[]> => {
-    // ... (existing code - no changes needed here) ...
-     try {
-       const cachedData = await AsyncStorage.getItem(EPISODES_CACHE_KEY);
-       if (cachedData) {
-         const episodes: Episode[] = JSON.parse(cachedData);
-         // Normaliser la durée
-         const normalizedEpisodes = episodes.map(ep => ({ ...ep, duration: parseDuration(ep.duration) }));
-         console.log(`Loaded ${normalizedEpisodes.length} episodes from cache for player`);
-         return normalizedEpisodes;
-       }
-     } catch (error) { console.error('Error loading cached episodes:', error); }
-     return [];
+    try {
+      const cachedData = await AsyncStorage.getItem(EPISODES_CACHE_KEY);
+      if (cachedData) {
+        const episodes: Episode[] = JSON.parse(cachedData);
+        // Normaliser la durée
+        const normalizedEpisodes = episodes.map(ep => ({ ...ep, duration: parseDuration(ep.duration) }));
+        console.log(`Loaded ${normalizedEpisodes.length} episodes from cache for player`);
+        return normalizedEpisodes;
+      }
+    } catch (error) { console.error('Error loading cached episodes:', error); }
+    return [];
   }, []);
 
   // --- Function to get offline episode details ---
   const getOfflineEpisodeDetails = useCallback(async (filePath: string): Promise<Episode | null> => {
-    // ... (existing code - no changes needed here) ...
-     try {
-       const metaPath = filePath + '.meta';
-       const fileExists = await FileSystem.getInfoAsync(metaPath);
-       if (fileExists.exists) {
-         const metaContent = await FileSystem.readAsStringAsync(metaPath);
-         const metadata = JSON.parse(metaContent);
-         return {
-           id: metadata.id,
-           title: metadata.title || 'Épisode téléchargé',
-           description: metadata.description || '',
-           mp3Link: filePath, // Use local path as mp3Link for offline
-           publicationDate: metadata.downloadDate || new Date().toISOString(),
-           duration: parseDuration(metadata.duration), // Ensure duration is parsed
-           offline_path: filePath,
-           originalMp3Link: metadata.originalMp3Link
-         };
-       } return null;
-     } catch (error) { console.error('Error getting offline episode details:', error); return null; }
+    try {
+      const metaPath = filePath + '.meta';
+      const fileExists = await FileSystem.getInfoAsync(metaPath);
+      if (fileExists.exists) {
+        const metaContent = await FileSystem.readAsStringAsync(metaPath);
+        const metadata = JSON.parse(metaContent);
+        return {
+          id: metadata.id,
+          title: metadata.title || 'Épisode téléchargé',
+          description: metadata.description || '',
+          mp3Link: filePath, // Use local path as mp3Link for offline
+          publicationDate: metadata.downloadDate || new Date().toISOString(),
+          duration: parseDuration(metadata.duration), // Ensure duration is parsed
+          offline_path: filePath,
+          originalMp3Link: metadata.originalMp3Link
+        };
+      } return null;
+    } catch (error) { console.error('Error getting offline episode details:', error); return null; }
   }, []);
 
-  // --- Function to load the episode and its position ---
+  // --- Function to load the episode sound and set initial position ---
   const loadEpisodeAndPosition = useCallback(async (index: number | null) => {
+    if (isLoadingEpisodeRef.current) {
+        console.log("[PlayerScreen] Already loading an episode, skipping request.");
+        return;
+    }
     if (index === null || episodes.length <= index) {
       console.log("[PlayerScreen] Invalid index or episodes not loaded, unloading.");
       await audioManager.unloadSound();
@@ -253,59 +318,126 @@ export default function PlayerScreen() {
     }
 
     const currentEp = episodes[index];
-    // Check if the episode to load is already the current one
     const currentStatus = await audioManager.getStatusAsync();
-    if (currentEpisodeIdRef.current === currentEp.id && currentStatus.isLoaded) {
-        console.log(`[PlayerScreen] Episode ${currentEp.title} is already loaded.`);
+
+    // Check if the requested episode is already loaded and playing/paused
+    // Use currentEpisodeIdRef as a secondary check in case getStatusAsync is stale
+    if (currentStatus.currentEpisodeId === currentEp.id && currentStatus.isLoaded && currentEpisodeIdRef.current === currentEp.id) {
+        console.log(`[PlayerScreen] Episode ${currentEp.title} (${currentEp.id}) is already loaded.`);
+        // If loaded but source was notification, ensure it plays
+        if (source === 'notification') {
+            if (!currentStatus.isPlaying) {
+                console.log('[PlayerScreen] Ensuring playback due to notification source.');
+                audioManager.play().catch(e => console.error("Error playing on notification load:", e));
+            }
+        }
+        // currentEpisodeIdRef.current = currentEp.id; // Already set
         return; // Don't reload if already loaded
     }
 
+    // Save position of the *previous* episode before loading the new one
+    if (currentStatus.isLoaded && currentStatus.currentEpisodeId && currentStatus.currentEpisodeId !== currentEp.id) {
+        console.log(`[PlayerScreen] Saving position for previous episode ${currentStatus.currentEpisodeId} before loading ${currentEp.id}`);
+        await savePositionLocally(currentStatus.currentEpisodeId, currentStatus.positionMillis);
+    }
+
+    // Set ref for the new episode *before* loading starts
     currentEpisodeIdRef.current = currentEp.id;
-    setError(null);
-    console.log(`[PlayerScreen] Preparing to load: ${currentEp.title} (Index: ${index})`);
+    setError(null); // Clear previous errors
+    console.log(`[PlayerScreen] Preparing to load: ${currentEp.title} (Index: ${index}, ID: ${currentEp.id})`);
+    isLoadingEpisodeRef.current = true; // Set loading flag
 
     try {
-      // Get initial position (local first, then remote)
-      const initialPosition = await getPlaybackPosition(currentEp.id);
-      console.log(`[PlayerScreen] Initial position for ${currentEp.id}: ${initialPosition ?? 0}ms`);
-      // Use offline_path if available, otherwise mp3Link
+      // --- Determine Initial Position ---
+      // 1. Get position specific to this episode (local or remote)
+      console.log(`[PlayerScreen] Getting playback position for ${currentEp.id}...`);
+      let initialPosition = await getPlaybackPosition(currentEp.id); // Uses the combined local/remote logic
+
+      // 2. If no specific position, check if it was the *very last* played episode (app closed/reopened)
+      if (initialPosition === null) {
+        const savedEpisodeId = await AsyncStorage.getItem(LAST_PLAYED_EPISODE_KEY);
+        const savedPositionStr = await AsyncStorage.getItem(LAST_PLAYED_POSITION_KEY);
+
+        if (savedEpisodeId === currentEp.id && savedPositionStr) {
+          const savedPosition = Number(savedPositionStr);
+          if (isFinite(savedPosition)) {
+            initialPosition = savedPosition;
+            console.log(`[PlayerScreen] Using last globally saved position for ${currentEp.id}: ${initialPosition}ms`);
+          }
+        }
+      }
+
+      // Log the final position decision
+      if (initialPosition !== null) {
+        console.log(`[PlayerScreen] Final initial position for ${currentEp.id}: ${(initialPosition/1000).toFixed(2)}s`);
+      } else {
+        console.log(`[PlayerScreen] No position found for ${currentEp.id}, starting from 0ms`);
+        initialPosition = 0; // Default to 0 if null
+      }
+
+      // --- Determine Audio Source URI ---
       const sourceUri = currentEp.offline_path || currentEp.mp3Link;
       if (!sourceUri) {
           throw new Error(`No valid audio source found for episode ${currentEp.id}`);
       }
-      const episodeToLoad = { ...currentEp, mp3Link: sourceUri }; // Ensure mp3Link is correct
 
-      await audioManager.loadSound(episodeToLoad, initialPosition ?? 0);
-      console.log(`[PlayerScreen] Successfully loaded: ${currentEp.title}`);
+      // --- Load Sound ---
+      const episodeToLoad = { ...currentEp, mp3Link: sourceUri }; // Ensure mp3Link has the correct URI for the player
+      console.log(`[PlayerScreen] Calling audioManager.loadSound for ${episodeToLoad.id} with initialPosition: ${initialPosition}ms`);
+      await audioManager.loadSound(episodeToLoad, initialPosition);
+      console.log(`[PlayerScreen] Successfully loaded episode: ${currentEp.title}`);
+
+      // --- Auto-Resume Playback? ---
+      // Check if this episode was the last one playing when the app was backgrounded/closed
+      const wasPlayingStr = await AsyncStorage.getItem(LAST_PLAYING_STATE_KEY);
+      const lastPlayedId = await AsyncStorage.getItem(LAST_PLAYED_EPISODE_KEY);
+      if (wasPlayingStr === 'true' && lastPlayedId === currentEp.id) {
+        console.log('[PlayerScreen] Auto-resuming playback as episode was playing before');
+        // Clear the flag after using it
+        await AsyncStorage.removeItem(LAST_PLAYING_STATE_KEY);
+        await audioManager.play().catch(err =>
+          console.error('[PlayerScreen] Error auto-resuming playback:', err)
+        );
+      }
+
     } catch (loadError: any) {
       console.error("[PlayerScreen] Error loading episode:", loadError);
       setError(`Error loading: ${loadError.message || 'Unknown'}`);
-      await audioManager.unloadSound();
-      currentEpisodeIdRef.current = null;
+      await audioManager.unloadSound(); // Ensure cleanup on error
+      currentEpisodeIdRef.current = null; // Clear ref on error
+    } finally {
+        isLoadingEpisodeRef.current = false; // Clear loading flag
     }
-  }, [episodes, getPlaybackPosition]); // Depend on episodes and getPlaybackPosition
+  }, [episodes, getPlaybackPosition, savePositionLocally, source]); // Dependencies look correct
 
   // --- Main Initialization Effect ---
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
+    setError(null); // Clear error on init/retry
 
     const initializeAndLoad = async () => {
       try {
+        // 1. Setup Audio Service
         await audioManager.setupAudio();
+
+        // 2. Check Network Status
         const networkState = await NetInfo.fetch();
         netStateRef.current = networkState; // Store initial network state
-        let fetchedEpisodes: Episode[] = [];
 
+        // 3. Fetch Episodes List
+        let fetchedEpisodes: Episode[] = [];
         if (offlinePath) {
-          console.log("[PlayerScreen] Loading offline episode:", offlinePath);
+          // Offline mode: Load only the specified offline episode
+          console.log("[PlayerScreen] Loading single offline episode:", offlinePath);
           const offlineEpisode = await getOfflineEpisodeDetails(offlinePath);
           if (offlineEpisode) {
             fetchedEpisodes = [offlineEpisode];
           } else {
             throw new Error("Unable to load offline episode details.");
           }
-        } else if (networkState.isConnected) {
+        } else if (networkState.isConnected && networkState.isInternetReachable) {
+          // Online mode: Fetch from Supabase
           console.log("[PlayerScreen] Online, loading from Supabase...");
           const { data, error: apiError } = await supabase
             .from('episodes')
@@ -320,71 +452,78 @@ export default function PlayerScreen() {
             description: episode.description,
             originalMp3Link: episode.original_mp3_link ?? undefined,
             mp3Link: episode.mp3_link ?? '',
-            duration: parseDuration(episode.duration),
+            duration: parseDuration(episode.duration), // Ensure duration is parsed correctly
             publicationDate: episode.publication_date,
-            offline_path: episode.offline_path ?? undefined,
+            offline_path: episode.offline_path ?? undefined, // Ensure offline_path is handled
           }));
+          // Cache fetched episodes
           await AsyncStorage.setItem(EPISODES_CACHE_KEY, JSON.stringify(fetchedEpisodes));
         } else {
+          // Offline mode (no specific path): Load from cache
           console.log("[PlayerScreen] Offline, loading from cache...");
           fetchedEpisodes = await loadCachedEpisodes();
           if (fetchedEpisodes.length === 0) {
             setError("Offline mode and no cached episodes available.");
+            // Keep loading false, let UI show error/empty state
           }
         }
 
-        if (!isMounted) return;
+        if (!isMounted) return; // Check if component unmounted during async operations
 
+        // 4. Update State with Episodes
         setEpisodes(fetchedEpisodes);
 
+        // 5. Determine Initial Episode Index
         let initialIndex: number | null = null;
         if (fetchedEpisodes.length > 0) {
             if (offlinePath) {
+                // If offline path provided, it's always the first (and only) episode
                 initialIndex = 0;
             } else if (episodeId) {
+                // If specific episode ID requested
                 const index = fetchedEpisodes.findIndex(ep => ep.id === episodeId);
                 if (index !== -1) {
                     initialIndex = index;
                 } else {
-                    console.warn(`[PlayerScreen] Episode ID ${episodeId} not found.`);
+                    console.warn(`[PlayerScreen] Requested episode ID ${episodeId} not found in fetched list.`);
                     setError("Requested episode not found.");
-                    initialIndex = 0; // Fallback to first episode
+                    initialIndex = 0; // Fallback to first episode if ID not found
                 }
             } else {
-                initialIndex = 0; // Default to first episode
-                console.log("[PlayerScreen] No specific episode requested, loading first.");
+                // No specific episode requested, default to the first episode (latest)
+                initialIndex = 0;
+                console.log("[PlayerScreen] No specific episode requested, defaulting to first episode.");
             }
         } else {
-            console.log("[PlayerScreen] No episodes to load.");
+            console.log("[PlayerScreen] No episodes available to load.");
+            // initialIndex remains null
         }
 
+        // 6. Update State with Index and finish loading
         setCurrentIndex(initialIndex);
         setLoading(false);
 
       } catch (err: any) {
         if (!isMounted) return;
         console.error('[PlayerScreen] Initialization error:', err);
-        setError(`Error: ${err.message || 'Unknown'}`);
-        // Try loading from cache as a last resort if API failed
-        if (!offlinePath) {
+        setError(`Initialization failed: ${err.message || 'Unknown error'}`);
+        setLoading(false); // Ensure loading is stopped on error
+        // Optionally try loading cache as a fallback if API failed
+        if (!offlinePath && episodes.length === 0) {
             try {
                 const cached = await loadCachedEpisodes();
                 if (cached.length > 0) {
                     setEpisodes(cached);
                     // Try to find index in cache
-                    if (episodeId) {
-                        const index = cached.findIndex(ep => ep.id === episodeId);
-                        setCurrentIndex(index !== -1 ? index : 0);
-                    } else {
-                        setCurrentIndex(0);
-                    }
-                    // Keep the original error message, but at least show cached data
+                    const index = episodeId ? cached.findIndex(ep => ep.id === episodeId) : 0;
+                    setCurrentIndex(index !== -1 ? index : 0);
+                    // Keep the error message, but show cached data
+                    console.warn("[PlayerScreen] Displaying cached data due to initialization error.");
                 }
             } catch (cacheErr) {
                 // Ignore cache error here, main error is already set
             }
         }
-        setLoading(false);
       }
     };
 
@@ -393,46 +532,39 @@ export default function PlayerScreen() {
     // Cleanup on unmount
     return () => {
       isMounted = false;
-      console.log('[PlayerScreen] Unmounting, unloading audio.');
-      // Save position one last time before unloading
-      audioManager.getStatusAsync().then(status => {
-          if (status.isLoaded && currentEpisodeIdRef.current) {
-              savePositionLocally(currentEpisodeIdRef.current, status.positionMillis);
-              // Optionally trigger sync here? AppState listener should handle it too.
-              // syncAllLocalPositionsToSupabase();
-          }
-      }).finally(() => {
-          audioManager.unloadSound();
+      console.log('[PlayerScreen] Unmounting, saving final playback state.');
+      // Save state before unloading sound
+      saveCurrentPlaybackState().finally(() => {
+        // Consider if unloading is always desired. Maybe only if not playing?
+        // For simplicity now, unload always on unmount.
+        // audioManager.unloadSound();
       });
     };
-  // Run only on initial mount or if route params change
-  }, [episodeId, offlinePath, loadCachedEpisodes, getOfflineEpisodeDetails, savePositionLocally]);
-
+  // Dependencies: Check if saveCurrentPlaybackState is stable now
+  }, [episodeId, offlinePath, source, loadCachedEpisodes, getOfflineEpisodeDetails, saveCurrentPlaybackState, _retry]);
 
   // --- Effect to load sound when index changes ---
   useEffect(() => {
-    if (!loading && currentIndex !== null) {
+    // Only load if not loading, episodes are available, and index is valid
+    // AND check the loading ref
+    if (!loading && episodes.length > 0 && currentIndex !== null && !isLoadingEpisodeRef.current) {
       loadEpisodeAndPosition(currentIndex);
-    } else if (!loading && episodes.length > 0 && currentIndex === null) {
-        console.log("[PlayerScreen] Episodes loaded but index is null, loading first.");
-        setCurrentIndex(0); // Attempt to load the first one
     } else if (!loading && episodes.length === 0) {
+        // If loading finished but no episodes, ensure sound is unloaded
         audioManager.unloadSound();
+        currentEpisodeIdRef.current = null;
     }
-  }, [currentIndex, loading, loadEpisodeAndPosition, episodes.length]);
+    // Intentionally not depending on loadEpisodeAndPosition to avoid loops if it changes identity.
+    // It's stable due to useCallback, but this pattern is safer.
+  }, [currentIndex, loading, episodes]); // Rerun when index or loading state changes
 
 
   // --- Effect for AppState changes (Background/Foreground) ---
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: AppStateStatus) => {
       if (appState.current.match(/active/) && nextAppState.match(/inactive|background/)) {
-        console.log('[PlayerScreen] App entering background, saving position and syncing.');
-        const status = await audioManager.getStatusAsync();
-        if (status.isLoaded && currentEpisodeIdRef.current) {
-          await savePositionLocally(currentEpisodeIdRef.current, status.positionMillis);
-        }
-        // Trigger sync when app goes to background
-        await syncAllLocalPositionsToSupabase();
+        console.log('[PlayerScreen] App entering background, saving complete playback state.');
+        await saveCurrentPlaybackState();
       }
       appState.current = nextAppState;
     };
@@ -442,7 +574,7 @@ export default function PlayerScreen() {
     return () => {
       subscription.remove();
     };
-  }, [savePositionLocally, syncAllLocalPositionsToSupabase]); // Add dependencies
+  }, [saveCurrentPlaybackState]); // Dependency is correct
 
   // --- Effect for Network changes ---
    useEffect(() => {
@@ -467,12 +599,11 @@ export default function PlayerScreen() {
      return () => {
        unsubscribe();
      };
-   }, [syncAllLocalPositionsToSupabase]); // Add dependency
+   }, [syncAllLocalPositionsToSupabase]); // Dependency is correct
 
 
-  // --- Effect to handle notification open ---
+  // --- Effect to handle notification open (ensure playback) ---
   useEffect(() => {
-    // ... (existing code - no changes needed here) ...
     if (source === 'notification' && episodeId && currentEpisodeIdRef.current === episodeId) {
       console.log('[PlayerScreen] Opened from notification with matching episode, ensuring playback');
       audioManager.getStatusAsync().then(status => {
@@ -484,7 +615,7 @@ export default function PlayerScreen() {
         }
       }).catch(error => console.error('[PlayerScreen] Error checking audio status:', error));
     }
-  }, [episodeId, source]);
+  }, [episodeId, source]); // Dependencies are correct
 
   // --- Handler for playback completion ---
   const handlePlaybackComplete = useCallback(async () => {
@@ -510,66 +641,70 @@ export default function PlayerScreen() {
       // Optionally move to next episode
       // handleNext();
     }
-  }, [episodes, savePositionLocally, syncAllLocalPositionsToSupabase]); // Add dependencies
+  }, [episodes, savePositionLocally, syncAllLocalPositionsToSupabase, currentIndex]); // Added currentIndex for potential auto-next logic
 
   // --- Navigation Handlers (Next/Previous) ---
   const handleNext = useCallback(async () => {
     const status = await audioManager.getStatusAsync();
+    // --- MODIFICATION START: Save position before changing index ---
     if (status?.isLoaded && currentEpisodeIdRef.current) {
-      // Save current position before navigating
+      console.log(`[PlayerScreen] Saving position ${status.positionMillis}ms for ${currentEpisodeIdRef.current} before going Next`);
       await savePositionLocally(currentEpisodeIdRef.current, status.positionMillis);
     }
+    // --- MODIFICATION END ---
     if (currentIndex !== null && currentIndex < episodes.length - 1) {
-      setCurrentIndex(currentIndex + 1);
+      console.log("[PlayerScreen] Navigating to Next episode");
+      setCurrentIndex(currentIndex - 1); // This triggers the effect to load the new episode
     } else { console.log("Already at the last episode"); }
   }, [currentIndex, episodes.length, savePositionLocally]);
 
   const handlePrevious = useCallback(async () => {
     const status = await audioManager.getStatusAsync();
+    // --- MODIFICATION START: Save position before changing index ---
     if (status?.isLoaded && currentEpisodeIdRef.current) {
-      // Save current position before navigating
+      console.log(`[PlayerScreen] Saving position ${status.positionMillis}ms for ${currentEpisodeIdRef.current} before going Previous`);
       await savePositionLocally(currentEpisodeIdRef.current, status.positionMillis);
     }
+    // --- MODIFICATION END ---
     if (currentIndex !== null && currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1);
+      console.log("[PlayerScreen] Navigating to Previous episode");
+      setCurrentIndex(currentIndex + 1); // This triggers the effect to load the new episode
     } else { console.log("Already at the first episode"); }
   }, [currentIndex, savePositionLocally]);
 
   // --- Retry Handler ---
   const handleRetryLoad = useCallback(() => {
     console.log("[PlayerScreen] Retrying load...");
-    setError(null); // Clear previous error
-    if (currentIndex !== null) {
-      setLoading(true); // Show loading indicator while retrying
-      loadEpisodeAndPosition(currentIndex).finally(() => setLoading(false));
-    } else {
-      // If index is null, retry the initial load process
-      setLoading(true);
-      // Re-trigger the main initialization effect logic somehow?
-      // Easiest might be to navigate to self with a timestamp to force re-run
-      router.replace({
-          pathname: '/player',
-          params: { episodeId, offlinePath, source, _retry: Date.now().toString() }
-      });
-    }
-  }, [currentIndex, loadEpisodeAndPosition, episodeId, offlinePath, source, router]);
+    // Force re-run of the initialization effect by changing the _retry param
+    router.replace({
+        pathname: '/(tabs)/player', // Ensure it targets the correct route
+        params: { episodeId, offlinePath, source, _retry: Date.now().toString() }
+    });
+  }, [episodeId, offlinePath, source, router]); // Dependencies are correct
 
   // --- Android Back Button Handler ---
   useEffect(() => {
+    if (Platform.OS !== 'android') return; // Only for Android
+
     const backAction = () => {
-      // Save position before going back
-      audioManager.getStatusAsync().then(status => {
-          if (status.isLoaded && currentEpisodeIdRef.current) {
-              savePositionLocally(currentEpisodeIdRef.current, status.positionMillis);
-          }
-      }).finally(() => {
-          router.back(); // Navigate back after attempting save
+      console.log("[PlayerScreen] Back button pressed, saving state and navigating back.");
+      // Save state first, then navigate back once saved
+      saveCurrentPlaybackState().finally(() => {
+        if (router.canGoBack()) {
+            router.back();
+        } else {
+            // If cannot go back (e.g., deep link entry), maybe exit app or go home?
+            // For now, default back behavior might handle this.
+            console.log("[PlayerScreen] Cannot go back further.");
+            // Returning false allows default back behavior (exit app)
+            // return false;
+        }
       });
       return true; // Indicate event was handled
     };
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
     return () => backHandler.remove();
-  }, [router, savePositionLocally]); // Add savePositionLocally dependency
+  }, [router, saveCurrentPlaybackState]); // Dependencies are correct
 
   // --- Rendering Logic ---
   const currentEpisode = !loading && currentIndex !== null && episodes.length > currentIndex ? episodes[currentIndex] : null;
@@ -584,8 +719,8 @@ export default function PlayerScreen() {
     );
   }
 
-  // Error State (with Retry)
-  if (error && !currentEpisode) { // Show full screen error only if no episode is loaded
+  // Error State (Full screen error if loading failed and no episode is displayable)
+  if (error && !currentEpisode && !loading) {
     return (
       <View style={[styles.container, styles.centerContent, { backgroundColor: theme.colors.primaryBackground }]}>
         <MaterialIcons name="error-outline" size={48} color={theme.colors.error} />
@@ -597,7 +732,7 @@ export default function PlayerScreen() {
     );
   }
 
-  // No Episodes State (with Refresh/Retry)
+  // No Episodes State
   if (!loading && !error && episodes.length === 0) {
     return (
       <View style={[styles.container, styles.centerContent, { backgroundColor: theme.colors.primaryBackground }]}>
@@ -610,7 +745,8 @@ export default function PlayerScreen() {
     );
   }
 
-  // Episode Not Found State (e.g., invalid index after load)
+  // Episode Not Found State (Should ideally be covered by error state now)
+  // This might occur if index is somehow invalid after loading finishes
   if (!loading && !error && episodes.length > 0 && !currentEpisode) {
     return (
       <View style={[styles.container, styles.centerContent, { backgroundColor: theme.colors.primaryBackground }]}>
@@ -629,33 +765,39 @@ export default function PlayerScreen() {
       colors={[theme.colors.gradientStart, theme.colors.gradientEnd]}
       style={styles.container}
     >
-      {/* Display error as a banner if an episode is loaded but an error occurred (e.g., playback error) */}
+      {/* Display error as a banner if an episode is loaded but a playback error occurred */}
       {error && currentEpisode && (
           <View style={styles.errorBanner}>
               <Text style={styles.errorBannerText}>{error}</Text>
+              {/* Optionally add a dismiss button */}
           </View>
       )}
+
+      {/* Render Player if an episode is ready */}
       {currentEpisode && (
         <AudioPlayer
-          key={currentEpisode.id} // Ensure re-render on episode change
+          key={currentEpisode.id} // Key ensures component remounts on episode change
           episode={currentEpisode}
-          onNext={handleNext} // Use corrected next handler
-          onPrevious={handlePrevious} // Use corrected previous handler
-          onRetry={handleRetryLoad}
+          onNext={currentIndex !== null && currentIndex < episodes.length - 1 ? handleNext : undefined} // Disable if last
+          onPrevious={currentIndex !== null && currentIndex > 0 ? handlePrevious : undefined} // Disable if first
+          onRetry={handleRetryLoad} // Allow retry from player errors
           onComplete={handlePlaybackComplete}
           onPositionUpdate={handlePositionUpdate} // Pass the handler
         />
       )}
-      {/* Fallback if somehow currentEpisode is null despite checks */}
+
+      {/* Fallback if somehow currentEpisode is null despite checks (should be rare) */}
       {!currentEpisode && !loading && !error && (
            <View style={[styles.container, styles.centerContent]}>
                <Text style={styles.statusText}>Unable to display player.</Text>
+               {/* Maybe add a retry button here too */}
            </View>
       )}
     </LinearGradient>
   );
 }
 
+// --- Styles ---
 const styles = StyleSheet.create({
   container: {
     flex: 1,

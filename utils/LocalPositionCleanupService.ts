@@ -30,7 +30,7 @@ async function fetchAvailableEpisodeIds(): Promise<Set<string> | null> {
             console.log("[LocalPositionCleanup] Online, fetching episodes from Supabase...");
             const { data, error: apiError } = await supabase
                 .from('episodes')
-                .select('id, title, description, original_mp3_link, mp3_link, duration, publication_date, offline_path') // Select necessary fields
+                .select('*')
                 .order('publication_date', { ascending: false });
 
             if (apiError) {

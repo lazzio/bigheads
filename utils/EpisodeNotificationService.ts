@@ -45,6 +45,16 @@ export function setupNotificationListener(onNotificationReceived: (episodeId: st
     const episodeId = response.notification.request.content.data?.episodeId;
     if (episodeId) {
       console.log(`[NotificationService] Processing notification tap for episode ${episodeId}`);
+      
+      // Save this as the last requested episode in case the app gets killed before loading
+      try {
+        AsyncStorage.setItem('lastRequestedEpisodeId', episodeId);
+        console.log(`[NotificationService] Saved ${episodeId} as the last requested episode`);
+      } catch (error) {
+        console.error('[NotificationService] Error saving last requested episode:', error);
+      }
+      
+      // Call the callback to handle navigation
       onNotificationReceived(episodeId);
     }
   });

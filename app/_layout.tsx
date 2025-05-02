@@ -8,7 +8,7 @@ import NetInfo from '@react-native-community/netinfo';
 import * as Sentry from '@sentry/react-native';
 import { StatusBar } from 'expo-status-bar';
 import { cleanupStaleLocalPositions } from '../utils/LocalPositionCleanupService';
-
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -74,6 +74,34 @@ export default function RootLayout() {
               setTimeout(() => clearInterval(readyCheckInterval), 10000);
             }
           });
+
+          // Check for last requested episode from killed state
+          const checkLastRequestedEpisode = async () => {
+            try {
+              const lastEpisodeId = await AsyncStorage.getItem('lastRequestedEpisodeId');
+              if (lastEpisodeId) {
+                console.log(`[Layout] Found last requested episode ${lastEpisodeId}, clearing and navigating`);
+                // Clear it so we don't keep reopening the same episode
+                await AsyncStorage.removeItem('lastRequestedEpisodeId');
+                
+                // Navigate to player with this episode
+                router.navigate({
+                  pathname: '/(tabs)/player',
+                  params: { 
+                    episodeId: lastEpisodeId, 
+                    source: 'notification',
+                    timestamp: Date.now()
+                  }
+                });
+              }
+            } catch (error) {
+              console.error('[Layout] Error checking last requested episode:', error);
+            }
+          };
+          
+          // Check after app is ready with a small delay
+          setTimeout(checkLastRequestedEpisode, 1000);
+
           console.log('Episode notification service initialized');
         } catch (notificationError) {
           console.error('Error initializing episode notification service:', notificationError);
