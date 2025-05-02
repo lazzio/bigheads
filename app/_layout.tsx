@@ -4,10 +4,10 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { initEpisodeNotificationService, setupNotificationListener, syncPushTokenAfterLogin } from '../utils/EpisodeNotificationService';
-import { initializePlaybackSync } from '../utils/PlaybackSyncService';
 import NetInfo from '@react-native-community/netinfo';
 import * as Sentry from '@sentry/react-native';
 import { StatusBar } from 'expo-status-bar';
+import { cleanupStaleLocalPositions } from '../utils/LocalPositionCleanupService';
 
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
@@ -80,9 +80,6 @@ export default function RootLayout() {
           Sentry.captureException(notificationError);
         }
 
-        // Initialiser la synchronisation de la position de lecture
-        const cleanupSync = initializePlaybackSync();
-
         // Configurer l'écouteur NetInfo pour la synchro hors ligne (si nécessaire)
         const unsubscribeNetInfo = NetInfo.addEventListener(state => {
           if (state.isConnected && state.isInternetReachable) {
@@ -109,6 +106,9 @@ export default function RootLayout() {
     };
 
     initializeApp();
+
+    // Cleanup remaining positions of episodes that are no longer available
+    cleanupStaleLocalPositions();
 
     // Nettoyage au démontage
     return () => {
