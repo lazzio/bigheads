@@ -1,3 +1,10 @@
+## [3.0.1](https://github.com/lazzio/bigheads/-/compare/v3.0.0...v3.0.1) (2025-05-02)
+
+### Bug Fixes
+
+* submit config ([a645bf6](https://github.com/lazzio/bigheads/-/commit/a645bf6123030336805872497002253257693706))
+* submit config ([#42](https://github.com/lazzio/bigheads/-/issues/42)) ([e39ab06](https://github.com/lazzio/bigheads/-/commit/e39ab0641b9ab888dc6d922cfdbf20d3d5993cf1))
+
 ## [3.0.0](https://github.com/lazzio/bigheads/-/compare/v2.0.1...v3.0.0) (2025-05-02)
 
 ### ⚠ BREAKING CHANGES
