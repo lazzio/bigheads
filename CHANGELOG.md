@@ -1,3 +1,10 @@
+## [3.0.3](https://github.com/lazzio/bigheads/-/compare/v3.0.2...v3.0.3) (2025-05-02)
+
+### Bug Fixes
+
+* remove google service account from config ([7e48fb1](https://github.com/lazzio/bigheads/-/commit/7e48fb194f36b785716e002e3632a06725149350))
+* remove google service account from config ([#44](https://github.com/lazzio/bigheads/-/issues/44)) ([d495c34](https://github.com/lazzio/bigheads/-/commit/d495c345f7b8d7827239ba85b3f97abf010110f4))
+
 ## [3.0.2](https://github.com/lazzio/bigheads/-/compare/v3.0.1...v3.0.2) (2025-05-02)
 
 ### Bug Fixes
