@@ -44,5 +44,6 @@ worker/.venv
 
 # Service account file
 worker/sa.json
+credentials/*
+!credentials/.gitkeep
 
-.env.local
