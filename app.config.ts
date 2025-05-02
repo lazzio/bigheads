@@ -22,7 +22,8 @@ const config: ExpoConfig = {
   },
   
   android: {
-    version: "2.0.1",
+    version: "3.0.1",
+    googleServicesFile: process.env.ANDROID_PLAY_STORE_SERVICE_ACCOUNT_JSON ??  "./credentials/google-play-service-account.json",
     adaptiveIcon: {
       foregroundImage: "./assets/images/bh_opti.png",
       backgroundColor: "#b48d7b"
