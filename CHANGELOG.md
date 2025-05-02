@@ -1,3 +1,10 @@
+## [3.0.2](https://github.com/lazzio/bigheads/-/compare/v3.0.1...v3.0.2) (2025-05-02)
+
+### Bug Fixes
+
+* switch episode and position ([b50bcc9](https://github.com/lazzio/bigheads/-/commit/b50bcc98f1cb7d5456ac85ff6fa64c520adc5550))
+* switch episode and position ([#43](https://github.com/lazzio/bigheads/-/issues/43)) ([d9c28ac](https://github.com/lazzio/bigheads/-/commit/d9c28ac0b1b9ee8df4d386ecf29f84ba3e5b9e63))
+
 ## [3.0.1](https://github.com/lazzio/bigheads/-/compare/v3.0.0...v3.0.1) (2025-05-02)
 
 ### Bug Fixes
