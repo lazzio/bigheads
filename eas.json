@@ -20,6 +20,11 @@
       "android": {
         "buildType": "apk"
       },
+      "internal": {
+        "extends": "base",
+        "environment": "preview",
+        "distribution": "internal"
+      },
       "env": {
         "EAS_NO_VCS": "1"
       }
