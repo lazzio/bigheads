@@ -1,3 +1,27 @@
+## [3.0.0](https://github.com/lazzio/bigheads/-/compare/v2.0.1...v3.0.0) (2025-05-02)
+
+### ⚠ BREAKING CHANGES
+
+* progressbar gesture works again (#37)
+
+### Features
+
+* expo build and publish ([08b95c9](https://github.com/lazzio/bigheads/-/commit/08b95c95d7eb9f7375d2b93518494262d5d413d8))
+* expo build and publish ([#41](https://github.com/lazzio/bigheads/-/issues/41)) ([fdaef56](https://github.com/lazzio/bigheads/-/commit/fdaef56d893072c69e219794ef79b12057599d34))
+* reapply new design ([4dc3796](https://github.com/lazzio/bigheads/-/commit/4dc37967ba4cafa7494ab390409c1660bc8e6670))
+* reapply new design ([#38](https://github.com/lazzio/bigheads/-/issues/38)) ([a1c7773](https://github.com/lazzio/bigheads/-/commit/a1c7773bf250d0905f258c8a60ae926186fc717c))
+* save position in local and cleanup positions of old episodes ([ca4c719](https://github.com/lazzio/bigheads/-/commit/ca4c7190e15bcb2c17b6b14bd717764f49407780))
+* save position in local and cleanup positions of old episodes ([#40](https://github.com/lazzio/bigheads/-/issues/40)) ([9c41dd5](https://github.com/lazzio/bigheads/-/commit/9c41dd59a5d0964388d6202f93f995bd4cf3abcd))
+* update project config ([bba942f](https://github.com/lazzio/bigheads/-/commit/bba942fb6bab54823a2e08bc50e6ad5d653aa7a0))
+* update project config ([#39](https://github.com/lazzio/bigheads/-/issues/39)) ([b4ecd53](https://github.com/lazzio/bigheads/-/commit/b4ecd53b41df11764f0fa9739438987324e0ec23))
+
+### Bug Fixes
+
+* progressbar gesture works again ([b544e2f](https://github.com/lazzio/bigheads/-/commit/b544e2ffca7437d8e2f4b39e6ffa366c6480b157))
+* progressbar gesture works again ([#37](https://github.com/lazzio/bigheads/-/issues/37)) ([515c80b](https://github.com/lazzio/bigheads/-/commit/515c80b36cbae08d8e50e9361940016040f87b1e))
+* re-import previous files ([44c2ce1](https://github.com/lazzio/bigheads/-/commit/44c2ce1b40fe7e2eb08199dd100308acdae7d943))
+* version ([9fa2cc6](https://github.com/lazzio/bigheads/-/commit/9fa2cc67033f446b25079e3e9ee43c5ae12692fe))
+
 ## [1.5.0](https://github.com/lazzio/bigheads/-/compare/v1.4.0...v1.5.0) (2025-04-23)
 
 ### Features
