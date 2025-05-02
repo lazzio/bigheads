@@ -4,7 +4,7 @@ import { Episode } from '../types/episode';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { audioManager, formatTime, AudioStatus } from '../utils/OptimizedAudioService';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
-import throttle from 'lodash.throttle';
+import { throttle } from 'lodash';
 import { theme } from '../styles/global';
 
 interface AudioPlayerProps {
@@ -16,7 +16,7 @@ interface AudioPlayerProps {
   onPositionUpdate?: (positionMillis: number) => void; // New prop
 }
 
-export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, onRetry, onPositionUpdate }: AudioPlayerProps) {
+export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, onRetry, onPositionUpdate }: AudioPlayerProps) {
   const initialDurationMs = episode.duration ? episode.duration * 1000 : 0;
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -35,21 +35,26 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
   // --- Listener Setup Effect ---
   useEffect(() => {
     let isMounted = true;
-    // Set loading to true ONLY when the episode ID changes, indicating a new load sequence.
+    // Reset state when episode changes
     setIsLoading(true);
     setError(null);
-    setPosition(0); // Reset position when episode changes
-    setDuration(episode.duration ? episode.duration * 1000 : 0); // Reset duration
-    setIsPlaying(false); // Ensure not playing initially
-    setIsBuffering(false); // Ensure not buffering initially
+    setPosition(0);
+    setDuration(episode.duration ? episode.duration * 1000 : 0);
+    setIsPlaying(false);
+    setIsBuffering(false);
 
-    console.log(`[AudioPlayer] useEffect for episode ${episode.id}, setting isLoading=true`);
+    console.log(`[AudioPlayer] Setting up for episode ${episode.id}`);
 
-    // Throttle the position update callback, ensuring it always has a 'cancel' method
-    const throttledPositionUpdate = onPositionUpdate
-      ? throttle(onPositionUpdate, 5000, { leading: true, trailing: true })
-      : Object.assign(throttle(() => {}, 5000), { cancel: () => {} });
+    // Create a throttled function that will call onPositionUpdate
+    // We set leading and trailing to true so that the first and last updates are always sent
+    const throttledUpdate = onPositionUpdate 
+      ? throttle((pos: number) => {
+          console.log(`[AudioPlayer] Throttled position update: ${(pos/1000).toFixed(2)}s`);
+          onPositionUpdate(pos);
+        }, 5000, { leading: true, trailing: true })
+      : null;
 
+    // Listen for audio events
     const unsubscribe = audioManager.addListener((data: any) => {
       if (!isMounted) return;
 
@@ -76,28 +81,29 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
               break;
           }
 
-          // Update position only if not actively seeking
+          // Update position in UI
           setPosition(data.position);
-          // Call the throttled position update callback
-          throttledPositionUpdate(data.position);
+          
+          // Call the throttled position update
+          if (throttledUpdate && data.isLoaded && data.position > 0) {
+            throttledUpdate(data.position);
+          }
 
-          // Update duration if it's valid and different
+          // Update other state
           if (data.duration > 0 && data.duration !== duration) {
             setDuration(data.duration);
           }
-          // Update playing and buffering states
           setIsPlaying(data.isPlaying);
-          // Make buffering check slightly more robust
-          setIsBuffering(data.isBuffering || (data.isPlaying && data.duration > 0 && data.position >= data.duration - 500)); // Also consider buffering near the end
+          setIsBuffering(data.isBuffering || (data.isPlaying && data.duration > 0 && data.position >= data.duration - 500));
 
-          // If still loading, check if we have enough info to stop loading
-          // Check against data.duration OR the initialDurationMs from the episode prop
-          if (isLoading && data.isLoaded && (data.duration > 0 || initialDurationMs > 0)) {
-             console.log(`[AudioPlayer] 'status' event processed while loading, setting isLoading=false`);
-             setIsLoading(false);
+          // If still loading but we have data, stop loading
+          if (isLoading && data.isLoaded && (data.duration > 0 || episode.duration)) {
+            console.log(`[AudioPlayer] 'status' event processed while loading, setting isLoading=false`);
+            setIsLoading(false);
           }
-          // Clear error on valid status update
-          if (error) setError(null); // Clear error only if it was previously set
+          
+          // Clear error on valid status
+          if (error) setError(null);
           break;
         case 'error':
           console.error(`[AudioPlayer] Received 'error': ${data.error}`);
@@ -112,9 +118,11 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
           const finalPosition = duration > 0 ? duration : 0;
           setPosition(finalPosition);
           // Ensure final position is reported before completion
-          throttledPositionUpdate(finalPosition);
-          // Cancel any pending throttled calls before finishing
-          throttledPositionUpdate.cancel();
+          if (throttledUpdate) {
+              throttledUpdate(finalPosition);
+              // Cancel any pending throttled calls before finishing
+              throttledUpdate.cancel();
+          }
 
           setIsPlaying(false);
           setIsBuffering(false);
@@ -136,16 +144,20 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
       console.log(`[AudioPlayer] Cleaning up effect for episode ${episode.id}`);
       isMounted = false;
       unsubscribe();
-      // Cancel throttled calls on cleanup
-      throttledPositionUpdate.cancel();
+      
+      // Make sure to flush any pending position updates
+      if (throttledUpdate) {
+        console.log(`[AudioPlayer] Flushing throttled position update`);
+        throttledUpdate.flush(); // This should call onPositionUpdate with the latest position
+      }
+      
+      // Clear timeouts
       if (sleepTimerId.current) {
         clearTimeout(sleepTimerId.current);
       }
     };
-  // --- DEPENDENCY CHANGE: Only re-run when the episode ID changes ---
-  }, [episode.id]);
+  }, [episode.id, onPositionUpdate]); // Add onPositionUpdate to dependencies
 
-  // Replace the complex PanResponder and measureProgressBar with a simple touch handler
   useEffect(() => {
     // Re-measure when component mounts or duration changes
     if (progressBarRef.current) {
@@ -157,7 +169,6 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
     }
   }, [episode.id, duration]); // Add duration as dependency to remeasure when it changes
 
-  // New simpler seeking handler
   const handleProgressBarTouch = useCallback((event: any) => {
     const touchX = event.nativeEvent.locationX;
     const barWidth = progressWidth.current;
@@ -198,26 +209,41 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
       if (isPlaying) {
         await audioManager.pause();
       } else {
+        // Attempt to play even if duration is initially 0.
+        // TrackPlayer might still be able to play or determine duration later.
+        // We can also try fetching the status again to get a potentially updated duration.
         let currentDuration = duration;
         if (currentDuration <= 0) {
             console.warn("[AudioPlayer] Duration is 0, fetching status before play.");
-            const status = await audioManager.getStatusAsync();
-            currentDuration = status.durationMillis;
-            if (currentDuration > 0) setDuration(currentDuration);
+            try {
+                // Use getStatusAsync which now includes currentEpisodeId
+                const status = await audioManager.getStatusAsync();
+                // Check if the status is for the correct episode and has a valid duration
+                if (status.isLoaded && status.currentEpisodeId === episode.id && status.durationMillis > 0) {
+                    console.log(`[AudioPlayer] Got duration from status: ${status.durationMillis}ms`);
+                    currentDuration = status.durationMillis;
+                    // Update state if it changed and component is still mounted
+                    if (duration !== currentDuration) {
+                        setDuration(currentDuration);
+                    }
+                } else {
+                    console.warn(`[AudioPlayer] Status fetch did not provide valid duration (Loaded: ${status.isLoaded}, EpisodeMatch: ${status.currentEpisodeId === episode.id}, Duration: ${status.durationMillis})`);
+                }
+            } catch (statusError) {
+                console.error("[AudioPlayer] Error fetching status before play:", statusError);
+            }
         }
 
-        if (currentDuration > 0) {
-            await audioManager.play();
-        } else {
-            console.error("[AudioPlayer] Cannot play: Duration is still 0.");
-            setError("Impossible de déterminer la durée de l'épisode.");
-        }
+        // Now, attempt to play. If duration is still 0, TrackPlayer might handle it.
+        console.log(`[AudioPlayer] Attempting to play (duration known: ${currentDuration > 0})`);
+        await audioManager.play();
+        // --- MODIFICATION END ---
       }
     } catch (err) {
       console.error("[AudioPlayer] Error playing/pausing:", err);
       setError('Erreur lors de la lecture/pause.');
     }
-  }, [isPlaying, duration]);
+  }, [isPlaying, duration, episode.id]);
 
   const handleSeek = useCallback(async (offsetSeconds: number) => {
     console.log(`[AudioPlayer] handleSeek: ${offsetSeconds}s`);
@@ -225,9 +251,9 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
     // Immediately update local state and save locally after seek
     if (typeof newPosition === 'number' && onPositionUpdate) {
         setPosition(newPosition);
-        onPositionUpdate(newPosition); // Report position immediately after seek
+        onPositionUpdate(newPosition); 
     }
-  }, [onPositionUpdate]); // Add onPositionUpdate dependency
+  }, [onPositionUpdate]);
 
   const handleSkipAuditors = useCallback(async () => {
     console.log('[AudioPlayer] handleSkipAuditors');
@@ -235,9 +261,9 @@ export default function AudioPlayer({ episode, onNext, onPrevious, onComplete, o
     // Immediately update local state and save locally after skip
     if (typeof newPosition === 'number' && onPositionUpdate) {
         setPosition(newPosition);
-        onPositionUpdate(newPosition); // Report position immediately after skip
+        onPositionUpdate(newPosition);
     }
-  }, [onPositionUpdate]); // Add onPositionUpdate dependency
+  }, [onPositionUpdate]);
 
   // --- Sleep Timer (Wrapped in useCallback) ---
   const handleSleepTimerEnd = useCallback(() => {
