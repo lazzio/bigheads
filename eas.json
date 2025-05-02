@@ -24,5 +24,13 @@
         "EAS_NO_VCS": "1"
       }
     }
+  },
+  "submit": {
+    "internal": {
+      "android": {
+        "serviceAccountKeyPath": "./credentials/google-play-service-account.json",
+        "track": "internal"
+      }
+    }
   }
 }

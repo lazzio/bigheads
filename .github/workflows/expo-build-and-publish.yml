@@ -1,0 +1,81 @@
+name: Build Android Preview
+
+on:
+  release:
+    types: [published] # Trigger when a release is published
+
+jobs:
+  expo-build:
+    name: Build Android Preview
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check for EXPO_TOKEN
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "You must provide an EXPO_TOKEN secret linked to this project's Expo account in this repo's secrets. Learn more: https://docs.expo.dev/eas-update/github-actions"
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Android Preview
+        uses: expo/expo-github-action/preview-build@v8
+        with:
+          command: eas build --platform android --profile preview --non-interactive
+
+  play-store-publish:
+    needs: expo-build
+    name: Publish to Play Store
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check for EXPO_TOKEN
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "You must provide an EXPO_TOKEN secret linked to this project's Expo account in this repo's secrets. Learn more: https://docs.expo.dev/eas-update/github-actions"
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Get Service Account JSON
+        run: |
+          if [ -z "${{ secrets.ANDROID_PLAY_STORE_SERVICE_ACCOUNT_JSON }}" ]; then
+            echo "You must provide a GOOGLE_PLAY_SERVICE_ACCOUNT_JSON secret linked to this project's Google Play account in this repo's secrets. Learn more: https://docs.expo.dev/eas-update/github-actions"
+            exit 1
+          fi
+          echo "${{ secrets.ANDROID_PLAY_STORE_SERVICE_ACCOUNT_JSON }}" > ./credentials/google-play-service-account.json
+          echo "Service account JSON file created."
+
+      - name: Publish to Play Store
+        run: eas submit --platform android --profile internal
