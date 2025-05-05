@@ -1,4 +1,4 @@
-import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
@@ -240,6 +240,20 @@ export default function EpisodesScreen() {
               )}
             </TouchableOpacity>
           )}
+
+          refreshControl={
+            <RefreshControl
+              refreshing={loading}
+              onRefresh={() => {
+                checkNetworkStatus();
+                fetchEpisodes();
+                fetchWatchedEpisodes();
+              }}
+              tintColor={theme.colors.primary}
+              colors={[theme.colors.primary]}
+              progressBackgroundColor={theme.colors.secondaryBackground}
+            />
+          }
         />
       )}
     </View>

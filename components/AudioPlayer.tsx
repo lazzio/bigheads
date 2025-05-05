@@ -13,7 +13,7 @@ interface AudioPlayerProps {
   onPrevious?: () => void;
   onComplete?: () => void;
   onRetry?: () => void;
-  onPositionUpdate?: (positionMillis: number) => void; // New prop
+  onPositionUpdate?: (positionMillis: number) => void;
 }
 
 export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, onRetry, onPositionUpdate }: AudioPlayerProps) {

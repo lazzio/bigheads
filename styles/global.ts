@@ -23,3 +23,16 @@ export const theme = {
         heading: 'Georgia, serif',
     },
 };
+
+export const gradientColors = [
+    { start: '#3b82f6'},
+    { start: '#8b5cf6'},
+    { start: '#a855f7'},
+    { start: '#ec4899'},
+    { start: '#ef4444'},
+    { start: '#f97316'},
+    { start: '#eab308'},
+    { start: '#0b133b'},
+    { start: '#9333ea'},
+    { start: '#f43f5e'},
+];

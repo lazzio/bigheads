@@ -12,7 +12,7 @@ import { Database } from '../../types/supabase';
 import { Episode } from '../../types/episode';
 import { audioManager } from '../../utils/OptimizedAudioService';
 import AudioPlayer from '../../components/AudioPlayer';
-import { theme } from '../../styles/global';
+import { theme, gradientColors } from '../../styles/global';
 import { parseDuration } from '../../utils/commons/timeUtils';
 
 // --- Types ---
@@ -35,12 +35,13 @@ const LAST_PLAYING_STATE_KEY = 'wasPlaying';
 
 
 export default function PlayerScreen() {
-  const { episodeId, offlinePath, source, _retry } = useLocalSearchParams<{ episodeId?: string; offlinePath?: string; source?: string; _retry?: string }>(); // Added _retry for refresh
+  const { episodeId, offlinePath, source, _retry } = useLocalSearchParams<{ episodeId?: string; offlinePath?: string; source?: string; _retry?: string }>();
   const router = useRouter();
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentGradientStart, setCurrentGradient] = useState<string>(theme.colors.gradientStart);
   const currentEpisodeIdRef = useRef<string | null>(null);
   const appState = useRef(AppState.currentState);
   const isSyncingRef = useRef(false); // Ref to prevent concurrent syncs
@@ -499,7 +500,14 @@ export default function PlayerScreen() {
             // initialIndex remains null
         }
 
-        // 6. Update State with Index and finish loading
+        // 6. Select Random Gradient
+        const randomIndex = Math.floor(Math.random() * gradientColors.length);
+        const selectedGradient = gradientColors[randomIndex];
+        if (isMounted) { // Check mount status again before setting state
+            setCurrentGradient(selectedGradient.start);
+        }
+
+        // 7. Update State with Index and finish loading
         setCurrentIndex(initialIndex);
         setLoading(false);
 
@@ -762,7 +770,7 @@ export default function PlayerScreen() {
   // Main Player View
   return (
     <LinearGradient
-      colors={[theme.colors.gradientStart, theme.colors.gradientEnd]}
+      colors={[currentGradientStart, theme.colors.gradientEnd]} // Use state for colors
       style={styles.container}
     >
       {/* Display error as a banner if an episode is loaded but a playback error occurred */}
