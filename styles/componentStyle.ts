@@ -7,6 +7,12 @@ export const componentStyle = StyleSheet.create({
     backgroundColor: theme.colors.primaryBackground,
     //marginBottom: 10,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: theme.colors.primaryBackground,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

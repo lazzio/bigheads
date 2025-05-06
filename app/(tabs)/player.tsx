@@ -722,7 +722,6 @@ export default function PlayerScreen() {
     return (
       <View style={[styles.container, styles.centerContent, { backgroundColor: theme.colors.primaryBackground }]}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
-        <Text style={styles.statusText}>Loading...</Text>
       </View>
     );
   }

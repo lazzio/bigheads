@@ -51,7 +51,6 @@ export default function NotFoundScreen() {
   return (
     <View style={styles.container}>
       <ActivityIndicator size="large" color={theme.colors.primary} />
-      <Text style={styles.text}>Redirection en cours...</Text>
     </View>
   );
 }
