@@ -22,7 +22,6 @@ const config: ExpoConfig = {
   },
   
   android: {
-    version: "3.0.3",
     adaptiveIcon: {
       foregroundImage: "./assets/images/bh_opti.png",
       backgroundColor: "#b48d7b"
