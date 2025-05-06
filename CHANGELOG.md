@@ -1,3 +1,9 @@
+## [3.3.1](https://github.com/lazzio/bigheads/-/compare/v3.3.0...v3.3.1) (2025-05-06)
+
+### Bug Fixes
+
+* expo build and publish to play store ([#48](https://github.com/lazzio/bigheads/-/issues/48)) ([e1a3d8f](https://github.com/lazzio/bigheads/-/commit/e1a3d8f71a1df8f25b90b6cfbef553d4cf4d7127))
+
 ## [3.3.0](https://github.com/lazzio/bigheads/-/compare/v3.2.0...v3.3.0) (2025-05-06)
 
 ### Features
