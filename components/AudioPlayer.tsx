@@ -13,7 +13,7 @@ interface AudioPlayerProps {
   onPrevious?: () => void;
   onComplete?: () => void;
   onRetry?: () => void;
-  onPositionUpdate?: (positionMillis: number) => void; // New prop
+  onPositionUpdate?: (positionMillis: number) => void;
 }
 
 export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, onRetry, onPositionUpdate }: AudioPlayerProps) {
@@ -338,7 +338,6 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
     return (
       <View style={styles.container}>
         <ActivityIndicator size="large" color={theme.colors.primary}/>
-        <Text style={styles.statusText}>Chargement de l'épisode...</Text>
       </View>
     );
   }
@@ -449,7 +448,6 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
       {isBuffering && !isLoading && (
         <View style={styles.bufferingContainer}>
           <ActivityIndicator size="small" color={theme.colors.primary} />
-          <Text style={styles.bufferingText}>Mise en mémoire tampon...</Text>
         </View>
       )}
     </GestureHandlerRootView>

@@ -17,9 +17,22 @@ export const theme = {
         shadowColor: '#000000',
         gradientStart: '#0b133b',
         gradientEnd: '#000000',
+        downloadProgress: '#0e9afa',
     },
     fonts: {
         main: 'Arial, sans-serif',
         heading: 'Georgia, serif',
     },
 };
+
+export const gradientColors = [
+    { start: '#3b82f6'},
+    { start: '#8b5cf6'},
+    { start: '#a855f7'},
+    { start: '#ec4899'},
+    { start: '#ef4444'},
+    { start: '#fac308'},
+    { start: '#0b133b'},
+    { start: '#9333ea'},
+    { start: '#f43f5e'},
+];

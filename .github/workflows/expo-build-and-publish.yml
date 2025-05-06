@@ -8,6 +8,8 @@ jobs:
   expo-build:
     name: Build Android Preview
     runs-on: ubuntu-latest
+    outputs:
+      build_id: ${{ steps.extract-id.outputs.build_id }}
 
     steps:
       - name: Check for EXPO_TOKEN
@@ -36,9 +38,17 @@ jobs:
         run: npm ci
 
       - name: Build Android Preview
+        id: build
         uses: expo/expo-github-action/preview-build@v8
         with:
-          command: eas build --platform android --profile preview --non-interactive
+          command: eas build --platform android --profile preview --non-interactive --json >> $GITHUB_OUTPUT
+
+      - name: Extract Build ID
+        id: extract-id
+        run: |
+          BUILD_ID=$(echo "${{ steps.build.outputs.* }}" | jq -r '.[0].id')
+          echo "build_id=$BUILD_ID" >> $GITHUB_OUTPUT
+          echo "Android build ID: $BUILD_ID"
 
   play-store-publish:
     needs: expo-build
@@ -78,4 +88,6 @@ jobs:
           echo "Service account JSON file created."
 
       - name: Publish to Play Store
-        run: eas submit --platform android --profile internal
+        run: |
+          echo "Submitting build ID: ${{ needs.expo-build.outputs.build_id }}";
+          eas submit --build-id ${{ needs.expo-build.outputs.build_id }} --platform android --profile internal --non-interactive

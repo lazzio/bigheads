@@ -739,9 +739,8 @@ export default function DownloadsScreen() {
   // Display during loading
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={componentStyle.loadingContainer}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
-        <Text style={styles.loadingText}>Loading episodes...</Text>
       </View>
     );
   }
@@ -750,6 +749,7 @@ export default function DownloadsScreen() {
   return (
     <View style={componentStyle.container}>
       <View style={componentStyle.header}>
+        <MaterialIcons name="download-for-offline" size={24} color={theme.colors.text} style={{marginRight: 8}} />
         <Text style={componentStyle.headerTitle}>Downloads</Text>
         <View style={styles.headerActions}>
           {isOffline && <OfflineIndicator />}
@@ -853,12 +853,6 @@ export default function DownloadsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.primaryBackground,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
     backgroundColor: theme.colors.primaryBackground,
   },
   loadingText: {
@@ -987,9 +981,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   actionButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 20,
     backgroundColor: theme.colors.borderColor,
     justifyContent: 'center',
     alignItems: 'center',
@@ -998,7 +992,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.buttonBackground,
   },
   downloadingButton: {
-    backgroundColor: theme.colors.buttonBackground,
+    backgroundColor: theme.colors.downloadProgress,
   },
   deleteButton: {
     backgroundColor: theme.colors.error,

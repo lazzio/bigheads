@@ -1,4 +1,4 @@
-import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl, ActivityIndicator } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
@@ -151,9 +151,9 @@ export default function EpisodesScreen() {
 
       const { data, error } = await supabase
         .from('watched_episodes')
-        .select('episode_id') // Sélectionner seulement l'ID
+        .select('episode_id')
         .eq('user_id', userId)
-        .eq('is_finished', true); // <<< Ajouter ce filtre
+        .eq('is_finished', true);
 
       if (error) throw error;
 
@@ -169,8 +169,8 @@ export default function EpisodesScreen() {
 
   if (loading) {
     return (
-      <View style={componentStyle.container}>
-        <Text style={styles.loadingText}>Chargement des épisodes...</Text>
+      <View style={componentStyle.loadingContainer}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
       </View>
     );
   }
@@ -178,6 +178,7 @@ export default function EpisodesScreen() {
   return (
     <View style={componentStyle.container}>
       <View style={componentStyle.header}>
+        <MaterialIcons name="library-music" size={32} color={theme.colors.text} style={{marginRight: 8}} />
         <Text style={componentStyle.headerTitle}>Episodes</Text>
       
       {isOffline && (
@@ -234,12 +235,26 @@ export default function EpisodesScreen() {
                 </Text>
               </View>
               {watchedEpisodes.has(item.id) ? (
-                <MaterialIcons name="check-circle" size={26} color={theme.colors.primary} />
+                <MaterialIcons name="check-circle" size={36} color={theme.colors.primary} />
               ) : (
-                <MaterialIcons name="play-circle-outline" size={28} color={theme.colors.text} />
+                <MaterialIcons name="play-circle-outline" size={30} color={theme.colors.text} />
               )}
             </TouchableOpacity>
           )}
+
+          refreshControl={
+            <RefreshControl
+              refreshing={loading}
+              onRefresh={() => {
+                checkNetworkStatus();
+                fetchEpisodes();
+                fetchWatchedEpisodes();
+              }}
+              tintColor={theme.colors.primary}
+              colors={[theme.colors.primary]}
+              progressBackgroundColor={theme.colors.secondaryBackground}
+            />
+          }
         />
       )}
     </View>
