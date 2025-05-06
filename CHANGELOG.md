@@ -1,3 +1,9 @@
+## [3.3.0](https://github.com/lazzio/bigheads/-/compare/v3.2.0...v3.3.0) (2025-05-06)
+
+### Features
+
+* remove loading text and random background color ([#47](https://github.com/lazzio/bigheads/-/issues/47)) ([f39d5ba](https://github.com/lazzio/bigheads/-/commit/f39d5baa8652e6b76af88929a66b75f3b90d99e0))
+
 ## [3.2.0](https://github.com/lazzio/bigheads/-/compare/v3.1.0...v3.2.0) (2025-05-02)
 
 ### Features
