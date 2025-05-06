@@ -9,7 +9,7 @@ jobs:
     name: Build Android Preview
     runs-on: ubuntu-latest
     outputs:
-      build_id: ${{ steps.extract-id.outputs.build_id }}
+      android_build_id: ${{ steps.build.outputs.androidBuildId }}
 
     steps:
       - name: Check for EXPO_TOKEN
@@ -42,13 +42,6 @@ jobs:
         uses: expo/expo-github-action/preview-build@v8
         with:
           command: eas build --platform android --profile preview --non-interactive --json >> $GITHUB_OUTPUT
-
-      - name: Extract Build ID
-        id: extract-id
-        run: |
-          BUILD_ID=$(echo "${{ steps.build.outputs.* }}" | jq -r '.[0].id')
-          echo "build_id=$BUILD_ID" >> $GITHUB_OUTPUT
-          echo "Android build ID: $BUILD_ID"
 
   play-store-publish:
     needs: expo-build
@@ -89,5 +82,5 @@ jobs:
 
       - name: Publish to Play Store
         run: |
-          echo "Submitting build ID: ${{ needs.expo-build.outputs.build_id }}";
-          eas submit --build-id ${{ needs.expo-build.outputs.build_id }} --platform android --profile internal --non-interactive
+          echo "Submitting build ID: ${{ needs.expo-build.outputs.android_build_id }}";
+          eas submit --build-id ${{ needs.expo-build.outputs.android_build_id }} --platform android --profile internal --non-interactive
