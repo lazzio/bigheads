@@ -1,3 +1,9 @@
+## [3.3.2](https://github.com/lazzio/bigheads/-/compare/v3.3.1...v3.3.2) (2025-05-06)
+
+### Bug Fixes
+
+* ci android build ([#49](https://github.com/lazzio/bigheads/-/issues/49)) ([3853983](https://github.com/lazzio/bigheads/-/commit/385398319e65c1f544664ba88b2262a986a82786))
+
 ## [3.3.1](https://github.com/lazzio/bigheads/-/compare/v3.3.0...v3.3.1) (2025-05-06)
 
 ### Bug Fixes
