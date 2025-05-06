@@ -1,3 +1,9 @@
+## [3.3.3](https://github.com/lazzio/bigheads/-/compare/v3.3.2...v3.3.3) (2025-05-06)
+
+### Bug Fixes
+
+* build as internal with aab ([#50](https://github.com/lazzio/bigheads/-/issues/50)) ([0cd33fe](https://github.com/lazzio/bigheads/-/commit/0cd33fe433964472f8913718703f86e97c57f292))
+
 ## [3.3.2](https://github.com/lazzio/bigheads/-/compare/v3.3.1...v3.3.2) (2025-05-06)
 
 ### Bug Fixes
