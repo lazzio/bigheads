@@ -40,7 +40,7 @@ jobs:
       - name: Build Android Preview
         id: build
         run: |
-          BUILD_JSON=$(eas build --platform android --profile preview --non-interactive --json)
+          BUILD_JSON=$(eas build --platform android --profile internal --non-interactive --json)
           BUILD_ID=$(echo $BUILD_JSON | jq -r '.[0].id')
           echo "Build ID: $BUILD_ID"
           echo "buildId=$BUILD_ID" >> "$GITHUB_OUTPUT"
