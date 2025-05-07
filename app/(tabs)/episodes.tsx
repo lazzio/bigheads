@@ -218,10 +218,10 @@ export default function EpisodesScreen() {
             <TouchableOpacity
               style={styles.episodeItem}
               onPress={() => {
-                // Pass the episode ID instead of index
+                // Pass the episode ID to the player
                 router.push({
-                  pathname: '/player',
-                  params: { episodeId: item.id }
+                  pathname: '/player/player',
+                  params: { episodeId: item.id } // Pass the selected episode ID
                 });
               }}
             >

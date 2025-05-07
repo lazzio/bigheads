@@ -4,6 +4,7 @@ on:
   release:
     types: [published] # Trigger when a release is published
 
+
 jobs:
   expo-build:
     name: Build Android Preview
@@ -85,4 +86,4 @@ jobs:
       - name: Publish to Play Store
         run: |
           echo "Submitting build ID: ${{ needs.expo-build.outputs.android_build_id }}";
-          eas submit --build-id ${{ needs.expo-build.outputs.android_build_id }} --platform android --profile internal --non-interactive
+          eas submit --id ${{ needs.expo-build.outputs.android_build_id }} --platform android --profile internal --non-interactive --verbose 

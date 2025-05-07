@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Slot, SplashScreen, useRouter } from 'expo-router';
+import { Slot, SplashScreen, useRouter, Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
@@ -47,7 +47,7 @@ export default function RootLayout() {
             const navigateToPlayer = () => {
               console.log('[NotificationHandler] Navigating to player tab');
               router.navigate({
-                pathname: '/(tabs)/player',
+                pathname: '/player/player',
                 params: { 
                   episodeId: episodeId, 
                   source: 'notification',
@@ -86,7 +86,7 @@ export default function RootLayout() {
                 
                 // Navigate to player with this episode
                 router.navigate({
-                  pathname: '/(tabs)/player',
+                  pathname: '/player/player',
                   params: { 
                     episodeId: lastEpisodeId, 
                     source: 'notification',
@@ -155,7 +155,22 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'black' }}>
       <SafeAreaProvider>
         <StatusBar style="light" backgroundColor="#000000" />
-        <Slot />
+        <Stack>
+          <Slot />
+          <Stack.Screen
+            name="(tabs)"
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="player"
+            options={{
+              animation: 'slide_from_bottom', // Animation pour glisser depuis le bas
+              presentation: 'modal', // Permet de glisser pour fermer
+              gestureEnabled: true, // Activer le geste pour fermer
+              headerShown: false, // Cacher l'en-tête
+            }}
+          />
+        </Stack>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

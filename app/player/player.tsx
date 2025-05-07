@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as FileSystem from 'expo-file-system';
+import { GestureHandlerRootView, PanGestureHandler, State } from 'react-native-gesture-handler';
 
 import { supabase } from '../../lib/supabase';
 import { Database } from '../../types/supabase';
@@ -477,27 +478,27 @@ export default function PlayerScreen() {
         // 5. Determine Initial Episode Index
         let initialIndex: number | null = null;
         if (fetchedEpisodes.length > 0) {
-            if (offlinePath) {
-                // If offline path provided, it's always the first (and only) episode
-                initialIndex = 0;
-            } else if (episodeId) {
-                // If specific episode ID requested
-                const index = fetchedEpisodes.findIndex(ep => ep.id === episodeId);
-                if (index !== -1) {
-                    initialIndex = index;
-                } else {
-                    console.warn(`[PlayerScreen] Requested episode ID ${episodeId} not found in fetched list.`);
-                    setError("Requested episode not found.");
-                    initialIndex = 0; // Fallback to first episode if ID not found
-                }
+          if (episodeId) {
+            // If specific episode ID requested
+            const index = fetchedEpisodes.findIndex(ep => ep.id === episodeId);
+            if (index !== -1) {
+              initialIndex = index; // Set the index of the requested episode
             } else {
-                // No specific episode requested, default to the first episode (latest)
-                initialIndex = 0;
-                console.log("[PlayerScreen] No specific episode requested, defaulting to first episode.");
+              console.warn(`[PlayerScreen] Requested episode ID ${episodeId} not found in fetched list.`);
+              setError("Requested episode not found.");
+              initialIndex = 0; // Fallback to the first episode if ID not found
             }
+          } else if (offlinePath) {
+            // If offline path provided, it's always the first (and only) episode
+            initialIndex = 0;
+          } else {
+            // No specific episode requested, default to the first episode (latest)
+            initialIndex = 0;
+            console.log("[PlayerScreen] No specific episode requested, defaulting to first episode.");
+          }
         } else {
-            console.log("[PlayerScreen] No episodes available to load.");
-            // initialIndex remains null
+          console.log("[PlayerScreen] No episodes available to load.");
+          // initialIndex remains null
         }
 
         // 6. Select Random Gradient
@@ -685,7 +686,7 @@ export default function PlayerScreen() {
     console.log("[PlayerScreen] Retrying load...");
     // Force re-run of the initialization effect by changing the _retry param
     router.replace({
-        pathname: '/(tabs)/player', // Ensure it targets the correct route
+        pathname: '/player/player',
         params: { episodeId, offlinePath, source, _retry: Date.now().toString() }
     });
   }, [episodeId, offlinePath, source, router]); // Dependencies are correct
@@ -713,6 +714,14 @@ export default function PlayerScreen() {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
     return () => backHandler.remove();
   }, [router, saveCurrentPlaybackState]); // Dependencies are correct
+
+  // --- Gesture Handler ---
+  const handleGesture = useCallback(({ nativeEvent }: { nativeEvent: { translationY: number; state: number } }) => {
+    if (nativeEvent.translationY > 100 && nativeEvent.state === State.END) {
+      console.log('[PlayerScreen] Gesture detected, navigating back.');
+      router.back();
+    }
+  }, [router]);
 
   // --- Rendering Logic ---
   const currentEpisode = !loading && currentIndex !== null && episodes.length > currentIndex ? episodes[currentIndex] : null;
@@ -768,39 +777,48 @@ export default function PlayerScreen() {
 
   // Main Player View
   return (
-    <LinearGradient
-      colors={[currentGradientStart, theme.colors.gradientEnd]} // Use state for colors
-      style={styles.container}
-    >
-      {/* Display error as a banner if an episode is loaded but a playback error occurred */}
-      {error && currentEpisode && (
-          <View style={styles.errorBanner}>
-              <Text style={styles.errorBannerText}>{error}</Text>
-              {/* Optionally add a dismiss button */}
-          </View>
-      )}
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <PanGestureHandler onHandlerStateChange={handleGesture}>
+        <LinearGradient
+          colors={[currentGradientStart, theme.colors.gradientEnd]} // Use state for colors
+          style={styles.container}
+        >
+          {/* Display error as a banner if an episode is loaded but a playback error occurred */}
+          {error && currentEpisode && (
+              <View style={styles.errorBanner}>
+                  <Text style={styles.errorBannerText}>{error}</Text>
+                  {/* Optionally add a dismiss button */}
+              </View>
+          )}
 
-      {/* Render Player if an episode is ready */}
-      {currentEpisode && (
-        <AudioPlayer
-          key={currentEpisode.id} // Key ensures component remounts on episode change
-          episode={currentEpisode}
-          onNext={currentIndex !== null && currentIndex < episodes.length - 1 ? handleNext : undefined} // Disable if last
-          onPrevious={currentIndex !== null && currentIndex > 0 ? handlePrevious : undefined} // Disable if first
-          onRetry={handleRetryLoad} // Allow retry from player errors
-          onComplete={handlePlaybackComplete}
-          onPositionUpdate={handlePositionUpdate} // Pass the handler
-        />
-      )}
+          {/* Render Player if an episode is ready */}
+          {currentEpisode && (
+            <AudioPlayer
+              key={currentEpisode.id} // Key ensures component remounts on episode change
+              episode={currentEpisode}
+              onNext={currentIndex !== null && currentIndex < episodes.length - 1 ? handleNext : undefined} // Disable if last
+              onPrevious={currentIndex !== null && currentIndex > 0 ? handlePrevious : undefined} // Disable if first
+              onRetry={handleRetryLoad} // Allow retry from player errors
+              onComplete={handlePlaybackComplete}
+              onPositionUpdate={handlePositionUpdate} // Pass the handler
+            />
+          )}
 
-      {/* Fallback if somehow currentEpisode is null despite checks (should be rare) */}
-      {!currentEpisode && !loading && !error && (
-           <View style={[styles.container, styles.centerContent]}>
-               <Text style={styles.statusText}>Unable to display player.</Text>
-               {/* Maybe add a retry button here too */}
-           </View>
-      )}
-    </LinearGradient>
+          {/* Fallback if somehow currentEpisode is null despite checks (should be rare) */}
+          {!currentEpisode && !loading && !error && (
+               <View style={[styles.container, styles.centerContent]}>
+                   <Text style={styles.statusText}>Unable to display player.</Text>
+                   {/* Maybe add a retry button here too */}
+               </View>
+          )}
+
+          {/* Button to close/reduce player */}
+          <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+            <MaterialIcons name="expand-more" size={36} color="white" />
+          </TouchableOpacity>
+        </LinearGradient>
+      </PanGestureHandler>
+    </GestureHandlerRootView>
   );
 }
 
@@ -847,5 +865,11 @@ const styles = StyleSheet.create({
       color: theme.colors.error,
       fontSize: 14,
       textAlign: 'center',
-  }
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 30,
+    left: 20,
+    padding: 10,
+  },
 });

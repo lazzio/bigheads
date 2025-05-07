@@ -18,7 +18,7 @@ export default function HomeScreen() {
 
         <TouchableOpacity
           style={styles.playButton}
-          onPress={() => router.push('/player')}
+          onPress={() => router.push('/player/player')}
         >
           <MaterialIcons name="play-arrow" size={24} color={theme.colors.shadowColor} />
           <Text style={styles.playText}>Écouter le dernier épisode</Text>
