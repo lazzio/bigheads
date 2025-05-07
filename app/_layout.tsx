@@ -155,7 +155,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'black' }}>
       <SafeAreaProvider>
         <StatusBar style="light" backgroundColor="#000000" />
-        <Stack>
+        <Stack screenOptions={{ headerShown: false }}>
           <Slot />
           <Stack.Screen
             name="(tabs)"
@@ -164,10 +164,10 @@ export default function RootLayout() {
           <Stack.Screen
             name="player"
             options={{
-              animation: 'slide_from_bottom', // Animation pour glisser depuis le bas
-              presentation: 'modal', // Permet de glisser pour fermer
-              gestureEnabled: true, // Activer le geste pour fermer
-              headerShown: false, // Cacher l'en-tête
+              animation: 'slide_from_bottom',
+              presentation: 'modal',
+              gestureEnabled: true,
+              headerShown: false,
             }}
           />
         </Stack>
