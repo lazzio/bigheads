@@ -15,6 +15,7 @@ export default function TabLayout() {
           left: 0,
           right: 0,
           bottom: 0,
+          height: 60,
         },
         tabBarActiveTintColor: theme.colors.text,
         tabBarInactiveTintColor: theme.colors.description,
