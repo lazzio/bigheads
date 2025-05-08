@@ -12,14 +12,26 @@ import { theme } from '../../styles/global';
 import { componentStyle } from '../../styles/componentStyle';
 
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
-type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row']; // Utiliser le type Row complet
+type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row'];
+
+// Structure for locally stored positions
+interface LocalPositionInfo {
+  position: number; // seconds
+  timestamp: number; // ms since epoch
+}
+type LocalPositions = Record<string, LocalPositionInfo>;
 
 const EPISODES_CACHE_KEY = 'cached_episodes';
+const PLAYBACK_POSITIONS_KEY = 'playbackPositions';
+const LAST_PLAYED_EPISODE_KEY = 'lastPlayedEpisodeId';
+const LAST_PLAYED_POSITION_KEY = 'lastPlayedPosition';
+const LAST_PLAYING_STATE_KEY = 'wasPlaying';
 
 export default function EpisodesScreen() {
   const router = useRouter();
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [watchedEpisodes, setWatchedEpisodes] = useState<Set<string>>(new Set());
+  const [episodeProgress, setEpisodeProgress] = useState<Record<string, number | null>>({}); // Store position in ms or null
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
@@ -36,22 +48,48 @@ export default function EpisodesScreen() {
     }
   };
 
+  const getPositionLocally = useCallback(async (epId: string): Promise<number | null> => {
+    if (!epId) return null;
+    try {
+      const existingPositionsString = await AsyncStorage.getItem(PLAYBACK_POSITIONS_KEY);
+      const positions: LocalPositions = existingPositionsString ? JSON.parse(existingPositionsString) : {};
+      if (positions[epId] && typeof positions[epId].position === 'number' && isFinite(positions[epId].position)) {
+        // console.log(`[EpisodesScreen] Found local position for ${epId}: ${positions[epId].position}s`);
+        return positions[epId].position * 1000; // Return in milliseconds
+      }
+    } catch (error) {
+      console.error("[EpisodesScreen] Error getting position locally:", error);
+    }
+    return null;
+  }, []);
+  
+  const fetchAllEpisodeProgress = useCallback(async (currentEpisodes: Episode[]) => {
+    const progressMap: Record<string, number | null> = {};
+    for (const episode of currentEpisodes) {
+      progressMap[episode.id] = await getPositionLocally(episode.id);
+    }
+    setEpisodeProgress(progressMap);
+  }, [getPositionLocally]);
+
   // Utiliser useFocusEffect pour rafraîchir la liste des épisodes vus à chaque fois que l'écran est affiché
   useFocusEffect(
     useCallback(() => {
       fetchWatchedEpisodes();
-    }, [])
+      if (episodes.length > 0) { // Fetch progress if episodes are already loaded
+        fetchAllEpisodeProgress(episodes);
+      }
+    }, [episodes, fetchAllEpisodeProgress]) // Add episodes and fetchAllEpisodeProgress to dependencies
   );
 
   useEffect(() => {
     const initialize = async () => {
       await checkNetworkStatus();
-      fetchEpisodes();
-      fetchWatchedEpisodes();
+      await fetchEpisodes(); // fetchEpisodes will call fetchAllEpisodeProgress
+      // fetchWatchedEpisodes is already in useFocusEffect
     };
     
     initialize();
-  }, []);
+  }, []); // Keep initial fetch logic
 
   // Charger les épisodes depuis le cache
   const loadCachedEpisodes = async (): Promise<Episode[]> => {
@@ -59,8 +97,12 @@ export default function EpisodesScreen() {
       const cachedData = await AsyncStorage.getItem(EPISODES_CACHE_KEY);
       if (cachedData) {
         const episodes = JSON.parse(cachedData);
+        //console.log(JSON.stringify(episodes, null, 2));
         console.log(`Loaded ${episodes.length} episodes from cache for episodes tab`);
         return episodes;
+      } else {
+        // Pas de cache trouvé, retourner un tableau vide
+        return [];
       }
     } catch (error) {
       console.error('Error loading cached episodes:', error);
@@ -70,70 +112,63 @@ export default function EpisodesScreen() {
 
   async function fetchEpisodes() {
     try {
-      // Vérifier d'abord si nous sommes hors-ligne
       const offline = await checkNetworkStatus();
-      
+      let episodesToSet: Episode[] = [];
+
       if (offline) {
-        // En mode hors-ligne, essayer de charger depuis le cache
         const cachedEpisodes = await loadCachedEpisodes();
         if (cachedEpisodes.length > 0) {
-          setEpisodes(cachedEpisodes);
-          // Message informatif, pas d'erreur
+          episodesToSet = cachedEpisodes;
           setError(null);
         } else {
-          // Pas de cache disponible, afficher un message informatif
-          setError(null); // Pas d'erreur, juste une info
-        }
-        setLoading(false);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from('episodes')
-        .select('*')
-        .order('publication_date', { ascending: false });
-
-      if (error) throw error;
-
-      const formattedEpisodes: Episode[] = (data as SupabaseEpisode[]).map(episode => ({
-        id: episode.id,
-        title: episode.title,
-        description: episode.description,
-        originalMp3Link: episode.original_mp3_link,
-        original_mp3_link: episode.original_mp3_link,
-        mp3Link: episode.mp3_link,
-        mp3_link: episode.mp3_link,
-        offline_path: episode.offline_path,
-        duration: episode.duration,
-        publicationDate: episode.publication_date,
-        publication_date: episode.publication_date
-      }));
-
-      setEpisodes(formattedEpisodes);
-      
-      // Sauvegarder dans le cache
-      try {
-        await AsyncStorage.setItem(EPISODES_CACHE_KEY, JSON.stringify(formattedEpisodes));
-      } catch (cacheError) {
-        console.error('Error saving episodes to cache:', cacheError);
-      }
-    } catch (err) {
-      const offline = await checkNetworkStatus();
-      
-      if (offline) {
-        // En mode hors-ligne, essayer d'abord de charger depuis le cache
-        const cachedEpisodes = await loadCachedEpisodes();
-        if (cachedEpisodes.length > 0) {
-          setEpisodes(cachedEpisodes);
-          setError(null); // Pas d'erreur en mode hors-ligne
-        } else {
-          // Message informatif pour le mode hors-ligne sans cache
-          setError(null);
+          setError(null); 
         }
       } else {
-        // Une vraie erreur s'est produite alors qu'on est en ligne
-        setError(err instanceof Error ? err.message : 'Une erreur est survenue');
+        // Try cache first even if online
+        const cachedEpisodes = await loadCachedEpisodes();
+        if (cachedEpisodes.length > 0) {
+          console.log(`Loaded ${cachedEpisodes.length} episodes from cache for episodes tab (online mode)`);
+          episodesToSet = cachedEpisodes;
+          setError(null);
+        } else {
+          // Fetch from Supabase if cache is empty
+          const { data, error: supabaseError } = await supabase
+            .from('episodes')
+            .select('*')
+            .order('publication_date', { ascending: false });
+
+          if (supabaseError) throw supabaseError;
+
+          const formattedEpisodes: Episode[] = (data as SupabaseEpisode[]).map(episode => ({
+            id: episode.id,
+            title: episode.title,
+            description: episode.description,
+            originalMp3Link: episode.original_mp3_link,
+            original_mp3_link: episode.original_mp3_link,
+            mp3Link: episode.mp3_link,
+            mp3_link: episode.mp3_link,
+            offline_path: episode.offline_path,
+            duration: episode.duration,
+            publicationDate: episode.publication_date,
+            publication_date: episode.publication_date
+          }));
+          episodesToSet = formattedEpisodes;
+          
+          try {
+            await AsyncStorage.setItem(EPISODES_CACHE_KEY, JSON.stringify(formattedEpisodes));
+          } catch (cacheError) {
+            console.error('Error saving episodes to cache:', cacheError);
+          }
+        }
       }
+      
+      setEpisodes(episodesToSet);
+      if (episodesToSet.length > 0) {
+        await fetchAllEpisodeProgress(episodesToSet);
+      }
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue');
     } finally {
       setLoading(false);
     }
@@ -214,33 +249,52 @@ export default function EpisodesScreen() {
         <FlatList
           data={episodes}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.episodeItem}
-              onPress={() => {
-                // Pass the episode ID to the player
-                router.push({
-                  pathname: '/player/player',
-                  params: { episodeId: item.id } // Pass the selected episode ID
-                });
-              }}
-            >
-              <View style={styles.episodeInfo}>
-                <Text style={styles.episodeTitle}>{item.title}</Text>
-                <Text style={styles.episodeDescription} numberOfLines={2}>
-                  {item.description}
-                </Text>
-                <Text style={styles.episodeDuration}>
-                  {item.duration !== null ? formatTime(item.duration) : '--:--'}
-                </Text>
-              </View>
-              {watchedEpisodes.has(item.id) ? (
-                <MaterialIcons name="check-circle" size={36} color={theme.colors.primary} />
-              ) : (
-                <MaterialIcons name="play-circle-outline" size={30} color={theme.colors.text} />
-              )}
-            </TouchableOpacity>
-          )}
+          renderItem={({ item }) => {
+            const currentPositionMillis = episodeProgress[item.id] || 0;
+            const totalDurationSeconds = item.duration;
+            let progressPercentage = 0;
+
+            if (totalDurationSeconds && totalDurationSeconds > 0 && currentPositionMillis !== null) {
+              const totalDurationMillis = totalDurationSeconds * 1000;
+              progressPercentage = Math.min(100, Math.max(0, (currentPositionMillis / totalDurationMillis) * 100));
+            }
+
+            return (
+              <TouchableOpacity
+                style={styles.episodeItem}
+                onPress={() => {
+                  router.push({
+                    pathname: '/player/player',
+                    params: { episodeId: item.id } 
+                  });
+                }}
+              >
+                <View style={styles.episodeInfo}>
+                  <Text style={styles.episodeTitle}>{item.title}</Text>
+                  <Text style={styles.episodeDescription} numberOfLines={2}>
+                    {item.description}
+                  </Text>
+                  <View style={styles.durationContainer}>
+                    <Text style={styles.episodeDuration}>
+                      {item.duration !== null ? formatTime(item.duration) : '--:--'}
+                    </Text>
+                      <View style={styles.progressBarContainer}>
+                      {totalDurationSeconds && totalDurationSeconds > 0 && currentPositionMillis !== null && currentPositionMillis > 0 ? (
+                        <View style={[styles.progressBarFilled, { width: `${progressPercentage}%` }]} />
+                        ) : (
+                          <View style={[styles.progressBarFilled, { width: `0%` }]} />
+                      )}
+                    </View>
+                  </View>
+                </View>
+                {watchedEpisodes.has(item.id) ? (
+                  <MaterialIcons name="check-circle" size={36} color={theme.colors.primary} />
+                ) : (
+                  <MaterialIcons name="play-circle-outline" size={30} color={theme.colors.text} />
+                )}
+              </TouchableOpacity>
+            );
+          }}
 
           refreshControl={
             <RefreshControl
@@ -343,9 +397,27 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     lineHeight: 18,
   },
+  durationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
   episodeDuration: {
     fontSize: 12,
-    color: theme.colors.secondaryDescription,
+    color: theme.colors.text,
+    marginRight: 8, // Space between duration and progress bar
+  },
+  progressBarContainer: {
+    flex: 1, // Take up remaining space in the durationContainer
+    height: 3, // Height of the progress bar track
+    backgroundColor: theme.colors.borderColor, // Color of the track
+    borderRadius: 2.5,
+    marginLeft: 5, // Space from duration text
+  },
+  progressBarFilled: {
+    height: '100%',
+    backgroundColor: theme.colors.primary, // Color of the filled progress
+    borderRadius: 2.5,
   },
   loadingText: {
     color: '#fff',
