@@ -162,7 +162,7 @@ export default function RootLayout() {
             options={{ headerShown: false }}
           />
           <Stack.Screen
-            name="player-root"
+            name="player"
             options={{
               animation: 'slide_from_bottom',
               presentation: 'modal',

@@ -233,7 +233,7 @@ export default function EpisodesScreen() {
                 onPress={() => {
                   router.push({
                     pathname: '/player/player',
-                    params: { episodeId: item.id } 
+                    params: { episodeId: item.id },
                   });
                 }}
               >
