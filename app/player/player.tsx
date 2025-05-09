@@ -15,24 +15,37 @@ import { audioManager } from '../../utils/OptimizedAudioService';
 import AudioPlayer from '../../components/AudioPlayer';
 import { theme, gradientColors } from '../../styles/global';
 import { parseDuration } from '../../utils/commons/timeUtils';
+import { 
+  EPISODES_CACHE_KEY, 
+  PLAYBACK_POSITIONS_KEY, 
+  LAST_PLAYED_EPISODE_KEY, 
+  LAST_PLAYED_POSITION_KEY, 
+  LAST_PLAYING_STATE_KEY,
+  LocalPositionInfo, 
+  LocalPositions,
+  getPositionLocally,
+  loadCachedEpisodes,
+  setCurrentEpisodeId
+} from '../../utils/LocalStorageService';
+
 
 // --- Types ---
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
 type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row'];
 
-// Structure for locally stored positions
-interface LocalPositionInfo {
-  position: number; // seconds
-  timestamp: number; // ms since epoch
-}
-type LocalPositions = Record<string, LocalPositionInfo>;
+// Structure for locally stored positions - REMOVED, now imported
+// interface LocalPositionInfo {
+//   position: number; // seconds
+//   timestamp: number; // ms since epoch
+// }
+// type LocalPositions = Record<string, LocalPositionInfo>;
 
-// --- Constants ---
-const EPISODES_CACHE_KEY = 'cached_episodes';
-const PLAYBACK_POSITIONS_KEY = 'playbackPositions';
-const LAST_PLAYED_EPISODE_KEY = 'lastPlayedEpisodeId';
-const LAST_PLAYED_POSITION_KEY = 'lastPlayedPosition';
-const LAST_PLAYING_STATE_KEY = 'wasPlaying';
+// --- Constants --- - REMOVED, now imported
+// const EPISODES_CACHE_KEY = 'cached_episodes';
+// const PLAYBACK_POSITIONS_KEY = 'playbackPositions';
+// const LAST_PLAYED_EPISODE_KEY = 'lastPlayedEpisodeId';
+// const LAST_PLAYED_POSITION_KEY = 'lastPlayedPosition';
+// const LAST_PLAYING_STATE_KEY = 'wasPlaying';
 
 
 export default function PlayerScreen() {
@@ -152,20 +165,20 @@ export default function PlayerScreen() {
     }
   }, []);
 
-  const getPositionLocally = useCallback(async (epId: string): Promise<number | null> => {
-    if (!epId) return null;
-    try {
-      const existingPositionsString = await AsyncStorage.getItem(PLAYBACK_POSITIONS_KEY);
-      const positions: LocalPositions = existingPositionsString ? JSON.parse(existingPositionsString) : {};
-      if (positions[epId] && typeof positions[epId].position === 'number' && isFinite(positions[epId].position)) {
-        console.log(`[PlayerScreen] Found local position for ${epId}: ${positions[epId].position}s`);
-        return positions[epId].position * 1000; // Return in milliseconds
-      }
-    } catch (error) {
-      console.error("[PlayerScreen] Error getting position locally:", error);
-    }
-    return null;
-  }, []);
+  // const getPositionLocally = useCallback(async (epId: string): Promise<number | null> => { // REMOVED, now imported
+  //   if (!epId) return null;
+  //   try {
+  //     const existingPositionsString = await AsyncStorage.getItem(PLAYBACK_POSITIONS_KEY);
+  //     const positions: LocalPositions = existingPositionsString ? JSON.parse(existingPositionsString) : {};
+  //     if (positions[epId] && typeof positions[epId].position === 'number' && isFinite(positions[epId].position)) {
+  //       console.log(`[PlayerScreen] Found local position for ${epId}: ${positions[epId].position}s`);
+  //       return positions[epId].position * 1000; // Return in milliseconds
+  //     }
+  //   } catch (error) {
+  //     console.error("[PlayerScreen] Error getting position locally:", error);
+  //   }
+  //   return null;
+  // }, []);
 
   // --- Save Current Playback State (Position + Last Played Info) ---
   const saveCurrentPlaybackState = useCallback(async () => {
@@ -216,7 +229,7 @@ export default function PlayerScreen() {
   // --- Function to GET playback position (Local -> Remote -> Default) ---
   const getPlaybackPosition = useCallback(async (epId: string): Promise<number | null> => {
     // 1. Try local storage first for speed
-    const localPositionMillis = await getPositionLocally(epId);
+    const localPositionMillis = await getPositionLocally(epId); // Uses imported function
     if (localPositionMillis !== null) {
       console.log(`[PlayerScreen] Using local position for ${epId}: ${localPositionMillis}ms`);
       return localPositionMillis;
@@ -267,22 +280,22 @@ export default function PlayerScreen() {
     // 3. Default to null (start from beginning) if not found locally or remotely
     console.log(`[PlayerScreen] No position found for ${epId}, starting from beginning.`);
     return null;
-  }, [getPositionLocally, savePositionLocally]); // Dependencies are correct
+  }, [savePositionLocally]); // Removed getPositionLocally from here as it's now imported and stable
 
   // --- Function to load episodes from cache ---
-  const loadCachedEpisodes = useCallback(async (): Promise<Episode[]> => {
-    try {
-      const cachedData = await AsyncStorage.getItem(EPISODES_CACHE_KEY);
-      if (cachedData) {
-        const episodes: Episode[] = JSON.parse(cachedData);
-        // Normaliser la durée
-        const normalizedEpisodes = episodes.map(ep => ({ ...ep, duration: parseDuration(ep.duration) }));
-        console.log(`Loaded ${normalizedEpisodes.length} episodes from cache for player`);
-        return normalizedEpisodes;
-      }
-    } catch (error) { console.error('Error loading cached episodes:', error); }
-    return [];
-  }, []);
+  // const loadCachedEpisodes = useCallback(async (): Promise<Episode[]> => { // REMOVED, now imported
+  //   try {
+  //     const cachedData = await AsyncStorage.getItem(EPISODES_CACHE_KEY);
+  //     if (cachedData) {
+  //       const episodes: Episode[] = JSON.parse(cachedData);
+  //       // Normaliser la durée
+  //       const normalizedEpisodes = episodes.map(ep => ({ ...ep, duration: parseDuration(ep.duration) }));
+  //       console.log(`Loaded ${normalizedEpisodes.length} episodes from cache for player`);
+  //       return normalizedEpisodes;
+  //     }
+  //   } catch (error) { console.error('Error loading cached episodes:', error); }
+  //   return [];
+  // }, []);
 
   // --- Function to get offline episode details ---
   const getOfflineEpisodeDetails = useCallback(async (filePath: string): Promise<Episode | null> => {
@@ -345,6 +358,7 @@ export default function PlayerScreen() {
 
     // Set ref for the new episode *before* loading starts
     currentEpisodeIdRef.current = currentEp.id;
+    await setCurrentEpisodeId(currentEp.id); // <-- Ajout : stocke l'ID dans le cache
     setError(null); // Clear previous errors
     console.log(`[PlayerScreen] Preparing to load: ${currentEp.title} (Index: ${index}, ID: ${currentEp.id})`);
     isLoadingEpisodeRef.current = true; // Set loading flag
@@ -407,10 +421,11 @@ export default function PlayerScreen() {
       setError(`Error loading: ${loadError.message || 'Unknown'}`);
       await audioManager.unloadSound(); // Ensure cleanup on error
       currentEpisodeIdRef.current = null; // Clear ref on error
+      await setCurrentEpisodeId(null); // <-- Ajout : vide le cache en cas d'erreur
     } finally {
         isLoadingEpisodeRef.current = false; // Clear loading flag
     }
-  }, [episodes, getPlaybackPosition, savePositionLocally, source]); // Dependencies look correct
+  }, [episodes, savePositionLocally, source, ]);
 
   // --- Main Initialization Effect ---
   useEffect(() => {
@@ -550,7 +565,7 @@ export default function PlayerScreen() {
       });
     };
   // Dependencies: Check if saveCurrentPlaybackState is stable now
-  }, [episodeId, offlinePath, source, loadCachedEpisodes, getOfflineEpisodeDetails, saveCurrentPlaybackState, _retry]);
+  }, [episodeId, offlinePath, source, getOfflineEpisodeDetails, saveCurrentPlaybackState, _retry]); // Removed loadCachedEpisodes
 
   // --- Effect to load sound when index changes ---
   useEffect(() => {
@@ -562,6 +577,7 @@ export default function PlayerScreen() {
         // If loading finished but no episodes, ensure sound is unloaded
         audioManager.unloadSound();
         currentEpisodeIdRef.current = null;
+        setCurrentEpisodeId(null); // <-- Ajout : vide le cache si aucun épisode
     }
     // Intentionally not depending on loadEpisodeAndPosition to avoid loops if it changes identity.
     // It's stable due to useCallback, but this pattern is safer.

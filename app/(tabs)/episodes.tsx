@@ -10,22 +10,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { theme } from '../../styles/global';
 import { componentStyle } from '../../styles/componentStyle';
+import { 
+  EPISODES_CACHE_KEY, 
+  PLAYBACK_POSITIONS_KEY,
+  LocalPositionInfo, 
+  LocalPositions,
+  getPositionLocally,
+  loadCachedEpisodes,
+  getCurrentEpisodeId // <-- Ajouté
+} from '../../utils/LocalStorageService';
 
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
 type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row'];
-
-// Structure for locally stored positions
-interface LocalPositionInfo {
-  position: number; // seconds
-  timestamp: number; // ms since epoch
-}
-type LocalPositions = Record<string, LocalPositionInfo>;
-
-const EPISODES_CACHE_KEY = 'cached_episodes';
-const PLAYBACK_POSITIONS_KEY = 'playbackPositions';
-const LAST_PLAYED_EPISODE_KEY = 'lastPlayedEpisodeId';
-const LAST_PLAYED_POSITION_KEY = 'lastPlayedPosition';
-const LAST_PLAYING_STATE_KEY = 'wasPlaying';
 
 export default function EpisodesScreen() {
   const router = useRouter();
@@ -35,6 +31,8 @@ export default function EpisodesScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
+  const [currentEpisodeId, setCurrentEpisodeIdState] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false); // Ajout état pour le pull-to-refresh
 
   // Vérifier l'état de la connexion
   const checkNetworkStatus = async () => {
@@ -48,37 +46,24 @@ export default function EpisodesScreen() {
     }
   };
 
-  const getPositionLocally = useCallback(async (epId: string): Promise<number | null> => {
-    if (!epId) return null;
-    try {
-      const existingPositionsString = await AsyncStorage.getItem(PLAYBACK_POSITIONS_KEY);
-      const positions: LocalPositions = existingPositionsString ? JSON.parse(existingPositionsString) : {};
-      if (positions[epId] && typeof positions[epId].position === 'number' && isFinite(positions[epId].position)) {
-        // console.log(`[EpisodesScreen] Found local position for ${epId}: ${positions[epId].position}s`);
-        return positions[epId].position * 1000; // Return in milliseconds
-      }
-    } catch (error) {
-      console.error("[EpisodesScreen] Error getting position locally:", error);
-    }
-    return null;
-  }, []);
-  
   const fetchAllEpisodeProgress = useCallback(async (currentEpisodes: Episode[]) => {
     const progressMap: Record<string, number | null> = {};
     for (const episode of currentEpisodes) {
-      progressMap[episode.id] = await getPositionLocally(episode.id);
+      progressMap[episode.id] = await getPositionLocally(episode.id); // Uses imported function
     }
     setEpisodeProgress(progressMap);
-  }, [getPositionLocally]);
+  }, []); // Removed getPositionLocally from here
 
   // Utiliser useFocusEffect pour rafraîchir la liste des épisodes vus à chaque fois que l'écran est affiché
   useFocusEffect(
     useCallback(() => {
       fetchWatchedEpisodes();
-      if (episodes.length > 0) { // Fetch progress if episodes are already loaded
+      if (episodes.length > 0) {
         fetchAllEpisodeProgress(episodes);
       }
-    }, [episodes, fetchAllEpisodeProgress]) // Add episodes and fetchAllEpisodeProgress to dependencies
+      // Recharge l'ID de l'épisode courant à chaque focus
+      getCurrentEpisodeId().then(setCurrentEpisodeIdState);
+    }, [episodes, fetchAllEpisodeProgress])
   );
 
   useEffect(() => {
@@ -91,32 +76,15 @@ export default function EpisodesScreen() {
     initialize();
   }, []); // Keep initial fetch logic
 
-  // Charger les épisodes depuis le cache
-  const loadCachedEpisodes = async (): Promise<Episode[]> => {
-    try {
-      const cachedData = await AsyncStorage.getItem(EPISODES_CACHE_KEY);
-      if (cachedData) {
-        const episodes = JSON.parse(cachedData);
-        //console.log(JSON.stringify(episodes, null, 2));
-        console.log(`Loaded ${episodes.length} episodes from cache for episodes tab`);
-        return episodes;
-      } else {
-        // Pas de cache trouvé, retourner un tableau vide
-        return [];
-      }
-    } catch (error) {
-      console.error('Error loading cached episodes:', error);
-    }
-    return [];
-  };
-
-  async function fetchEpisodes() {
+  async function fetchEpisodes(isRefresh = false) {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
     try {
       const offline = await checkNetworkStatus();
       let episodesToSet: Episode[] = [];
 
       if (offline) {
-        const cachedEpisodes = await loadCachedEpisodes();
+        const cachedEpisodes = await loadCachedEpisodes(); // Uses imported function
         if (cachedEpisodes.length > 0) {
           episodesToSet = cachedEpisodes;
           setError(null);
@@ -125,7 +93,7 @@ export default function EpisodesScreen() {
         }
       } else {
         // Try cache first even if online
-        const cachedEpisodes = await loadCachedEpisodes();
+        const cachedEpisodes = await loadCachedEpisodes(); // Uses imported function
         if (cachedEpisodes.length > 0) {
           console.log(`Loaded ${cachedEpisodes.length} episodes from cache for episodes tab (online mode)`);
           episodesToSet = cachedEpisodes;
@@ -166,11 +134,11 @@ export default function EpisodesScreen() {
       if (episodesToSet.length > 0) {
         await fetchAllEpisodeProgress(episodesToSet);
       }
-
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue');
     } finally {
-      setLoading(false);
+      if (isRefresh) setRefreshing(false);
+      else setLoading(false);
     }
   }
 
@@ -287,7 +255,9 @@ export default function EpisodesScreen() {
                     </View>
                   </View>
                 </View>
-                {watchedEpisodes.has(item.id) ? (
+                {currentEpisodeId === item.id ? (
+                  <MaterialIcons name="transcribe" size={36} color={theme.colors.primary} />
+                ) : watchedEpisodes.has(item.id) ? (
                   <MaterialIcons name="check-circle" size={36} color={theme.colors.primary} />
                 ) : (
                   <MaterialIcons name="play-circle-outline" size={30} color={theme.colors.text} />
@@ -298,10 +268,9 @@ export default function EpisodesScreen() {
 
           refreshControl={
             <RefreshControl
-              refreshing={loading}
+              refreshing={refreshing} // <-- Utilise refreshing ici
               onRefresh={() => {
-                checkNetworkStatus();
-                fetchEpisodes();
+                fetchEpisodes(true); // <-- Passe true pour indiquer un refresh
                 fetchWatchedEpisodes();
               }}
               tintColor={theme.colors.primary}
