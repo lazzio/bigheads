@@ -1,6 +1,7 @@
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl, ActivityIndicator } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useEffect, useState, useCallback } from 'react';
+import { Image } from 'expo-image';
 import { supabase } from '../../lib/supabase';
 import { Database } from '../../types/supabase';
 import { Episode } from '../../types/episode';
@@ -19,6 +20,7 @@ import {
   loadCachedEpisodes,
   getCurrentEpisodeId // <-- Ajouté
 } from '../../utils/LocalStorageService';
+import { getImageUrlFromDescription } from '../../components/GTPersons';
 
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
 type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row'];
@@ -237,6 +239,12 @@ export default function EpisodesScreen() {
                   });
                 }}
               >
+                <Image
+                  source={ getImageUrlFromDescription(item.description) }
+                  cachePolicy="memory-disk"
+                  contentFit="cover"
+                  style={{ width: 50, height: 50, borderRadius: 5 }} 
+                />
                 <View style={styles.episodeInfo}>
                   <Text style={styles.episodeTitle}>{item.title}</Text>
                   <Text style={styles.episodeDescription} numberOfLines={2}>
@@ -342,26 +350,27 @@ const styles = StyleSheet.create({
   },
   episodeItem: {
     flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 15,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
     backgroundColor: theme.colors.secondaryBackground,
     borderRadius: 10,
     marginBottom: 10,
-    marginHorizontal: 15,
+    marginHorizontal: 10,
     alignItems: 'center',
   },
   episodeInfo: {
     flex: 1,
-    marginRight: 15,
+    marginRight: 10,
+    paddingLeft: 10,
   },
   episodeTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 14,
+    // fontWeight: '600',
     color: theme.colors.text,
     marginBottom: 4,
   },
   episodeDescription: {
-    fontSize: 13,
+    fontSize: 12,
     color: theme.colors.description,
     marginBottom: 6,
     lineHeight: 18,
@@ -372,7 +381,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   episodeDuration: {
-    fontSize: 12,
+    fontSize: 11,
     color: theme.colors.text,
     marginRight: 8, // Space between duration and progress bar
   },

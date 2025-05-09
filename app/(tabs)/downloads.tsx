@@ -963,12 +963,12 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   episodeTitle: {
-    fontSize: 16,
+    fontSize: 14,
     color: theme.colors.text,
     marginBottom: 4,
   },
   episodeDate: {
-    fontSize: 12,
+    fontSize: 11,
     color: theme.colors.description,
   },
   downloadedIndicator: {

@@ -8,7 +8,7 @@ const config: ExpoConfig = {
   slug: "bigheads",
   description: "Les Intégrales BigHeads",
   owner: "lazzio",
-  orientation: "portrait",
+  orientation: "default",
   userInterfaceStyle: "light",
   scheme: "xyz.myops.bigheads",
   backgroundColor: "#121212", // Changed from #F6F6F6 to match app theme
@@ -26,6 +26,7 @@ const config: ExpoConfig = {
       foregroundImage: "./assets/images/bh_opti.png",
       backgroundColor: "#b48d7b"
     },
+    screenOrientation: "default",
     softwareKeyboardLayoutMode: "pan",
     modeConfig: {
       service: {
