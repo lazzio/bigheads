@@ -33,21 +33,6 @@ import {
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
 type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row'];
 
-// Structure for locally stored positions - REMOVED, now imported
-// interface LocalPositionInfo {
-//   position: number; // seconds
-//   timestamp: number; // ms since epoch
-// }
-// type LocalPositions = Record<string, LocalPositionInfo>;
-
-// --- Constants --- - REMOVED, now imported
-// const EPISODES_CACHE_KEY = 'cached_episodes';
-// const PLAYBACK_POSITIONS_KEY = 'playbackPositions';
-// const LAST_PLAYED_EPISODE_KEY = 'lastPlayedEpisodeId';
-// const LAST_PLAYED_POSITION_KEY = 'lastPlayedPosition';
-// const LAST_PLAYING_STATE_KEY = 'wasPlaying';
-
-
 export default function PlayerScreen() {
   const { episodeId, offlinePath, source, _retry } = useLocalSearchParams<{ episodeId?: string; offlinePath?: string; source?: string; _retry?: string }>();
   const router = useRouter();
