@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Slot, SplashScreen, useRouter, Stack } from 'expo-router';
+import { SplashScreen, useRouter, Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
@@ -150,13 +150,13 @@ export default function RootLayout() {
     return null; // Ou retourner un écran de chargement minimal si SplashScreen.hideAsync a échoué
   }
 
-  console.log('[RootLayout] App is ready, rendering Slot.');
+  console.log('[RootLayout] App is ready, rendering main navigator.');
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'black' }}>
       <SafeAreaProvider>
         <StatusBar style="light" backgroundColor="#000000" />
         <Stack screenOptions={{ headerShown: false }}>
-          <Slot />
+          {/* <Slot /> removed as Stack navigator handles screen rendering */}
           <Stack.Screen
             name="(tabs)"
             options={{ headerShown: false }}

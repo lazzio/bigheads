@@ -256,7 +256,7 @@ export default function EpisodesScreen() {
                   </View>
                 </View>
                 {currentEpisodeId === item.id ? (
-                  <MaterialIcons name="transcribe" size={36} color={theme.colors.primary} />
+                  <MaterialIcons name="equalizer" size={36} color={theme.colors.primary} />
                 ) : watchedEpisodes.has(item.id) ? (
                   <MaterialIcons name="check-circle" size={36} color={theme.colors.primary} />
                 ) : (
