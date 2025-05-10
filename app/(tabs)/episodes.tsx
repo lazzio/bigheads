@@ -183,13 +183,23 @@ export default function EpisodesScreen() {
 
   async function fetchWatchedEpisodes() {
     try {
-      const userResponse = await supabase.auth.getUser();
-      const userId = userResponse.data.user?.id;
-      if (!userId) {
-        console.log('Utilisateur non connecté, saut récupération épisodes vus');
-        setWatchedEpisodes(new Set()); // S'assurer que c'est vide si non connecté
+      // const userResponse = await supabase.auth.getUser(); // Old method
+      // const userId = userResponse.data.user?.id; // Old method
+
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        console.error('Error fetching session for watched episodes:', sessionError.message);
+        setWatchedEpisodes(new Set());
         return;
       }
+
+      if (!sessionData.session || !sessionData.session.user) {
+        console.log('Utilisateur non connecté (pas de session active ou utilisateur manquant dans la session), saut récupération épisodes vus');
+        setWatchedEpisodes(new Set()); // S\'assurer que c\'est vide si non connecté
+        return;
+      }
+      const userId = sessionData.session.user.id;
 
       const { data, error } = await supabase
         .from('watched_episodes')
