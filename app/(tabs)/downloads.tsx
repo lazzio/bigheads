@@ -253,7 +253,7 @@ export default function DownloadsScreen() {
         duration: parseDuration(meta.duration),
         publicationDate: meta.downloadDate || new Date().toISOString(),
         publication_date: meta.downloadDate || new Date().toISOString(),
-        offline_path: meta.filePath
+        offline_path: meta.filePath,
       }));
     }
   };
@@ -301,7 +301,7 @@ export default function DownloadsScreen() {
         publicationDate: ep.publication_date || '',
         publication_date: ep.publication_date || '',
         originalMp3Link: ep.original_mp3_link,
-        offline_path: ep.offline_path
+        offline_path: ep.offline_path,
       }));
       setEpisodes(normalizedEpisodes);
       

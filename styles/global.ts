@@ -31,8 +31,10 @@ export const gradientColors = [
     { start: '#a855f7'},
     { start: '#ec4899'},
     { start: '#ef4444'},
-    { start: '#fac308'},
     { start: '#0b133b'},
     { start: '#9333ea'},
     { start: '#f43f5e'},
+    { start: '#06b6d4'},
+    { start: '#0ea5e9'},
+
 ];

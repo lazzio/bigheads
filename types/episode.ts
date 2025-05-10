@@ -1,3 +1,5 @@
+import { ImageSourcePropType } from 'react-native';
+
 export interface Episode {
   id: string;
   title: string;
@@ -7,4 +9,5 @@ export interface Episode {
   duration: number | null;
   publicationDate: string;
   offline_path?: string;
+  artwork: ImageSourcePropType | undefined;
 }

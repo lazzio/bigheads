@@ -12,13 +12,10 @@ import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { theme } from '../../styles/global';
 import { componentStyle } from '../../styles/componentStyle';
 import { 
-  EPISODES_CACHE_KEY, 
-  PLAYBACK_POSITIONS_KEY,
-  LocalPositionInfo, 
-  LocalPositions,
+  EPISODES_CACHE_KEY,
   getPositionLocally,
   loadCachedEpisodes,
-  getCurrentEpisodeId // <-- Ajouté
+  getCurrentEpisodeId
 } from '../../utils/LocalStorageService';
 import { getImageUrlFromDescription } from '../../components/GTPersons';
 
@@ -86,9 +83,26 @@ export default function EpisodesScreen() {
       let episodesToSet: Episode[] = [];
 
       if (offline) {
-        const cachedEpisodes = await loadCachedEpisodes(); // Uses imported function
+        const cachedEpisodes = await loadCachedEpisodes();
         if (cachedEpisodes.length > 0) {
-          episodesToSet = cachedEpisodes;
+          let needsRecache = false;
+          const augmentedEpisodes = cachedEpisodes.map(ep => {
+            if (typeof ep.artwork === 'undefined' && ep.description) {
+              needsRecache = true;
+              return { ...ep, artwork: getImageUrlFromDescription(ep.description) };
+            }
+            return ep;
+          });
+          episodesToSet = augmentedEpisodes;
+
+          if (needsRecache) {
+            console.log('Augmenting offline cached episodes with artwork and re-saving...');
+            try {
+              await AsyncStorage.setItem(EPISODES_CACHE_KEY, JSON.stringify(episodesToSet));
+            } catch (cacheError) {
+              console.error('Error re-saving augmented offline episodes to cache:', cacheError);
+            }
+          }
           setError(null);
         } else {
           setError(null); 
@@ -98,7 +112,29 @@ export default function EpisodesScreen() {
         const cachedEpisodes = await loadCachedEpisodes(); // Uses imported function
         if (cachedEpisodes.length > 0) {
           console.log(`Loaded ${cachedEpisodes.length} episodes from cache for episodes tab (online mode)`);
-          episodesToSet = cachedEpisodes;
+          let needsRecache = false;
+          const augmentedEpisodes = cachedEpisodes.map(ep => {
+            if (typeof ep.artwork === 'undefined' && ep.description) { // Check if artwork is undefined and description exists
+              needsRecache = true;
+              return { ...ep, artwork: getImageUrlFromDescription(ep.description) };
+            }
+            return ep;
+          });
+          episodesToSet = augmentedEpisodes;
+
+          if (needsRecache) {
+            console.log('Augmenting cached episodes with artwork and re-saving...');
+            try {
+              await AsyncStorage.setItem(EPISODES_CACHE_KEY, JSON.stringify(episodesToSet));
+            } catch (cacheError) {
+              console.error('Error re-saving augmented episodes to cache:', cacheError);
+            }
+          }
+          // Uncomment to clear cache for testing
+          // await AsyncStorage.removeItem(EPISODES_CACHE_KEY);
+          // await AsyncStorage.clear();
+          // console.log('Cache cleared');
+          // console.log(JSON.stringify(episodesToSet, null, 2));
           setError(null);
         } else {
           // Fetch from Supabase if cache is empty
@@ -120,7 +156,8 @@ export default function EpisodesScreen() {
             offline_path: episode.offline_path,
             duration: episode.duration,
             publicationDate: episode.publication_date,
-            publication_date: episode.publication_date
+            publication_date: episode.publication_date,
+            artwork: getImageUrlFromDescription(episode.description)
           }));
           episodesToSet = formattedEpisodes;
           
@@ -195,8 +232,6 @@ export default function EpisodesScreen() {
         </View>
       )}
       </View>
-
-      {/* Afficher l'erreur si elle existe */}
       
       {error && (
         <View style={styles.errorContainer}>
@@ -240,7 +275,7 @@ export default function EpisodesScreen() {
                 }}
               >
                 <Image
-                  source={ getImageUrlFromDescription(item.description) }
+                  source={ item.artwork }
                   cachePolicy="memory-disk"
                   contentFit="cover"
                   style={{ width: 50, height: 50, borderRadius: 5 }} 
@@ -295,9 +330,9 @@ export default function EpisodesScreen() {
 const styles = StyleSheet.create({
   header: {
     paddingHorizontal: 15,
-    paddingTop: 15, // Adjust as needed for status bar height
+    paddingTop: 15,
     paddingBottom: 10,
-    // backgroundColor: theme.colors.primaryBackground, // Match screen background
+    backgroundColor: theme.colors.primaryBackground,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.borderColor,
   },
@@ -383,18 +418,18 @@ const styles = StyleSheet.create({
   episodeDuration: {
     fontSize: 11,
     color: theme.colors.text,
-    marginRight: 8, // Space between duration and progress bar
+    marginRight: 8,
   },
   progressBarContainer: {
-    flex: 1, // Take up remaining space in the durationContainer
-    height: 3, // Height of the progress bar track
-    backgroundColor: theme.colors.borderColor, // Color of the track
+    flex: 1,
+    height: 3,
+    backgroundColor: theme.colors.borderColor,
     borderRadius: 2.5,
-    marginLeft: 5, // Space from duration text
+    marginLeft: 5,
   },
   progressBarFilled: {
     height: '100%',
-    backgroundColor: theme.colors.primary, // Color of the filled progress
+    backgroundColor: theme.colors.primary,
     borderRadius: 2.5,
   },
   loadingText: {
