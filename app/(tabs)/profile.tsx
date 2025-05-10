@@ -185,7 +185,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   stickyBottom: {
-    paddingBottom: 65,
+    paddingBottom: 10,
     backgroundColor: theme.colors.secondaryBackground,
     borderRadius: 8,
     marginTop: 'auto',

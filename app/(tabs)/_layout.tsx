@@ -1,24 +1,18 @@
 import { Tabs } from 'expo-router';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { theme } from '../../styles/global';
+import { tabBarStyle } from '@/styles/componentStyle';
 
 export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarStyle: {
-          backgroundColor: 'rgba(0, 0, 0, 0.75)',
-          borderTopWidth: 0,
-          elevation: 0,
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: 60,
-        },
+        tabBarStyle: tabBarStyle.tabBar,
         tabBarActiveTintColor: theme.colors.text,
         tabBarInactiveTintColor: theme.colors.description,
+        tabBarShowLabel: true,
+        tabBarLabelPosition: 'below-icon',
       }}>
       <Tabs.Screen
         name="index"

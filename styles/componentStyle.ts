@@ -5,7 +5,6 @@ export const componentStyle = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.primaryBackground,
-    //marginBottom: 10,
   },
   loadingContainer: {
     flex: 1,
@@ -24,8 +23,6 @@ export const componentStyle = StyleSheet.create({
     marginTop: 25,
     marginBottom: 10,
     backgroundColor: theme.colors.darkBackground,
-    // borderBottomWidth: 0.7,
-    // borderBottomColor: theme.colors.borderColor,
   },
   headerTitle: {
     fontSize: 24,
@@ -33,3 +30,17 @@ export const componentStyle = StyleSheet.create({
     color: theme.colors.text,
   },
 });
+
+export const tabBarStyle = StyleSheet.create(
+  {
+    tabBar: {
+      height: 70,
+      paddingBottom: 10,
+      backgroundColor: theme.colors.darkBackground,
+      borderTopWidth: 0,
+    },
+    tabBarIcon: {
+      paddingBottom: 10,
+    },
+  }
+);
