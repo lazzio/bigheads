@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Slot, SplashScreen, useRouter } from 'expo-router';
+import { SplashScreen, useRouter, Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
@@ -47,7 +47,7 @@ export default function RootLayout() {
             const navigateToPlayer = () => {
               console.log('[NotificationHandler] Navigating to player tab');
               router.navigate({
-                pathname: '/(tabs)/player',
+                pathname: '/player/player',
                 params: { 
                   episodeId: episodeId, 
                   source: 'notification',
@@ -86,7 +86,7 @@ export default function RootLayout() {
                 
                 // Navigate to player with this episode
                 router.navigate({
-                  pathname: '/(tabs)/player',
+                  pathname: '/player/player',
                   params: { 
                     episodeId: lastEpisodeId, 
                     source: 'notification',
@@ -150,12 +150,27 @@ export default function RootLayout() {
     return null; // Ou retourner un écran de chargement minimal si SplashScreen.hideAsync a échoué
   }
 
-  console.log('[RootLayout] App is ready, rendering Slot.');
+  console.log('[RootLayout] App is ready, rendering main navigator.');
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'black' }}>
       <SafeAreaProvider>
         <StatusBar style="light" backgroundColor="#000000" />
-        <Slot />
+        <Stack screenOptions={{ headerShown: false }}>
+          {/* <Slot /> removed as Stack navigator handles screen rendering */}
+          <Stack.Screen
+            name="(tabs)"
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="player"
+            options={{
+              animation: 'slide_from_bottom',
+              presentation: 'modal',
+              gestureEnabled: true,
+              headerShown: false,
+            }}
+          />
+        </Stack>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

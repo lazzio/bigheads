@@ -8,8 +8,14 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: theme.colors.secondaryBackground,
-          borderTopColor: theme.colors.borderColor,
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          borderTopWidth: 0,
+          elevation: 0,
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 60,
         },
         tabBarActiveTintColor: theme.colors.text,
         tabBarInactiveTintColor: theme.colors.description,
@@ -20,15 +26,6 @@ export default function TabLayout() {
           title: 'Accueil',
           tabBarIcon: ({ size, color }) => (
             <MaterialIcons name="home" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="player"
-        options={{
-          title: 'Lecture',
-          tabBarIcon: ({ size, color }) => (
-            <MaterialIcons name="radio" size={size} color={color} />
           ),
         }}
       />

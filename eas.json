@@ -27,6 +27,7 @@
     "internal": {
       "extends": "base",
       "environment": "production",
+      "autoIncrement": true,
       "distribution": "internal",
       "android": {
         "buildType": "app-bundle"
@@ -39,7 +40,8 @@
   "submit": {
     "internal": {
       "android": {
-        "track": "internal"
+        "track": "internal",
+        "serviceAccountKeyPath": "./credentials/google-play-service-account.json"
       }
     }
   }
