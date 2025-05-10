@@ -253,7 +253,8 @@ export default function DownloadsScreen() {
         duration: parseDuration(meta.duration),
         publicationDate: meta.downloadDate || new Date().toISOString(),
         publication_date: meta.downloadDate || new Date().toISOString(),
-        offline_path: meta.filePath
+        offline_path: meta.filePath,
+        artwork: meta.artwork || undefined
       }));
     }
   };
@@ -301,7 +302,8 @@ export default function DownloadsScreen() {
         publicationDate: ep.publication_date || '',
         publication_date: ep.publication_date || '',
         originalMp3Link: ep.original_mp3_link,
-        offline_path: ep.offline_path
+        offline_path: ep.offline_path,
+        artwork: ep.artwork || undefined,
       }));
       setEpisodes(normalizedEpisodes);
       
@@ -716,7 +718,9 @@ export default function DownloadsScreen() {
       {isOffline && (
         <View style={styles.offlineMessageContainer}>
           <MaterialIcons name="wifi-off" size={20} color={theme.colors.description} />
-          <Text style={styles.offlineText}>Offline mode</Text>
+          <Text style={styles.offlineText}>
+            Mode hors-ligne
+          </Text>
         </View>
       )}
       <TouchableOpacity 
@@ -732,7 +736,7 @@ export default function DownloadsScreen() {
   const OfflineIndicator = () => (
     <View style={styles.offlineIndicator}>
       <MaterialIcons name="wifi-off" size={16} color={theme.colors.text} />
-      <Text style={styles.offlineIndicatorText}>Offline mode</Text>
+      <Text style={styles.offlineIndicatorText}>Mode hors-ligne</Text>
     </View>
   );
 
@@ -940,6 +944,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: theme.colors.borderColor,
+    marginLeft: 15,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 16,
@@ -963,12 +968,12 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   episodeTitle: {
-    fontSize: 16,
+    fontSize: 14,
     color: theme.colors.text,
     marginBottom: 4,
   },
   episodeDate: {
-    fontSize: 12,
+    fontSize: 11,
     color: theme.colors.description,
   },
   downloadedIndicator: {
