@@ -225,7 +225,7 @@ export default function EpisodesScreen() {
       
       {isOffline && (
         <View style={styles.offlineContainer}>
-          <MaterialIcons name="wifi-off" size={20} color={theme.colors.description} />
+          <MaterialIcons name="wifi-off" size={16} color={theme.colors.description} />
           <Text style={styles.offlineText}>
             Mode hors-ligne
           </Text>
@@ -343,17 +343,17 @@ const styles = StyleSheet.create({
   },
   offlineContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#333',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
+    alignItems: 'flex-end',
+    backgroundColor: theme.colors.borderColor,
+    marginLeft: 15,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 16,
   },
   offlineText: {
-    color: '#aaa',
-    fontSize: 14,
-    marginLeft: 8,
-    flex: 1,
+    color: theme.colors.text,
+    fontSize: 12,
+    marginLeft: 4,
   },
   errorContainer: {
     backgroundColor: 'rgba(239, 68, 68, 0.2)',
@@ -361,10 +361,10 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderRadius: 8,
     borderLeftWidth: 3,
-    borderLeftColor: '#ef4444',
+    borderLeftColor: theme.colors.error,
   },
   errorText: {
-    color: '#ff4444',
+    color: theme.colors.error,
     fontSize: 16,
   },
   emptyContainer: {
@@ -373,13 +373,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyText: {
-    color: '#888',
+    color: theme.colors.description,
     fontSize: 16,
     textAlign: 'center',
     marginBottom: 8,
   },
   hintText: {
-    color: '#666',
+    color: theme.colors.secondaryDescription,
     fontSize: 14,
     textAlign: 'center',
   },
