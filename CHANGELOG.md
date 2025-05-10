@@ -1,3 +1,22 @@
+## [3.4.0](https://github.com/lazzio/bigheads/-/compare/v3.3.3...v3.4.0) (2025-05-10)
+
+### Features
+
+* add a local cache to indentify which episode is currently played ([0695921](https://github.com/lazzio/bigheads/-/commit/0695921b491046f57acea00a4608da9862fffd8c))
+* drop down player with gesture ([#51](https://github.com/lazzio/bigheads/-/issues/51)) ([61ce8f7](https://github.com/lazzio/bigheads/-/commit/61ce8f7e9e70d1a9c1a829b08b1dc9dc38a52eae))
+* **eas:** autoincrement version of play store ([5eb9116](https://github.com/lazzio/bigheads/-/commit/5eb91165b158e6834e565241de68277bff066991))
+* **episodes:** show progress bar on the episodes list ([0f28da1](https://github.com/lazzio/bigheads/-/commit/0f28da17d35102754cab1e388d3b0da2415a1ea2))
+* header and tab styles ([02f1153](https://github.com/lazzio/bigheads/-/commit/02f115374f0ab329aade782a2c74b2869496b53e))
+* image per episode ([#52](https://github.com/lazzio/bigheads/-/issues/52)) ([80ef235](https://github.com/lazzio/bigheads/-/commit/80ef23592c40464f306429717c532ef64b0f20d1))
+* remove player tab and activate drop down gesture to close player ([a471d28](https://github.com/lazzio/bigheads/-/commit/a471d28a8c8039d09ab297c72f160e52d5a9e443))
+
+### Bug Fixes
+
+* change currently played icon & remove <slot> ([85df4f9](https://github.com/lazzio/bigheads/-/commit/85df4f9ade1651d5b1f15c3dcb652acfbb36288b))
+* cleanup ([a8a5b49](https://github.com/lazzio/bigheads/-/commit/a8a5b499dea0af4cd3745579ff34bfc535239cd4))
+* open player from bottom ([b9d769c](https://github.com/lazzio/bigheads/-/commit/b9d769c3bd1019f2a353fe85e58e6386d6f29d4c))
+* remove auth header when disconnected ([fc9ba60](https://github.com/lazzio/bigheads/-/commit/fc9ba605c7d4ba82b4edf42eeb4b87c620e76781))
+
 ## [3.3.3](https://github.com/lazzio/bigheads/-/compare/v3.3.2...v3.3.3) (2025-05-06)
 
 ### Bug Fixes
