@@ -25,7 +25,6 @@ const debugStorage = {
   getItem: async (key: string) => {
     try {
       const value = await storage.getItem(key);
-      console.log(`[Storage] Get ${key}: ${value ? 'Found' : 'Not found'}`);
       return value;
     } catch (error) {
       console.error(`[Storage] Error getting ${key}:`, error);

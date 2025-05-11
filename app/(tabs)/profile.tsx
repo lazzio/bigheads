@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Modal, SafeAreaView, Platform, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
@@ -6,11 +6,13 @@ import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { storage } from '../../lib/storage';
 import { theme } from '../../styles/global';
 import { componentStyle } from '../../styles/componentStyle';
+import { getGoogleUserInfo, GoogleUserInfo } from '../../lib/user';
 
 export default function ProfileScreen() {
   // State
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [userInfo, setUserInfo] = useState<GoogleUserInfo | null>(null);
   
   // Hook for navigation
   const router = useRouter();
@@ -54,6 +56,14 @@ export default function ProfileScreen() {
     setIsLoggingOut(false);
   }, []);
 
+  useEffect(() => {
+    const fetchUser = async () => {
+      const user = await getGoogleUserInfo();
+      setUserInfo(user);
+    };
+    fetchUser();
+  }, []);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={componentStyle.container}>
@@ -67,6 +77,12 @@ export default function ProfileScreen() {
         
         {/* Contenu principal */}
         <View style={styles.content}>
+          {userInfo && userInfo.email && (
+            <View style={styles.profileCard}>
+              <MaterialIcons name="email" size={24} color={theme.colors.text} />
+              <Text style={styles.profileText}>{userInfo.email}</Text>
+            </View>
+          )}
         </View>
         
         <View style={styles.stickyBottom}>
