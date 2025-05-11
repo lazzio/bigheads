@@ -14,7 +14,7 @@ const config: ExpoConfig = {
   backgroundColor: "#121212", // Changed from #F6F6F6 to match app theme
   icon: "./assets/images/bh_opti.png",
   platforms: ["android", "ios"],
-  newArchEnabled: true,
+  newArchEnabled: false,
 
   splash: {
     image: "./assets/images/bh_opti.png",

@@ -35,14 +35,12 @@ export async function getGoogleUserInfo(): Promise<GoogleUserInfo | null> {
     // Fallback to checking identities if app_metadata.provider is not set
     provider = user.identities[0].provider || 'unknown';
   }
-  
-  console.log('YYYYYYYYY User provider:', provider);
 
   // Information from Google is often in user_metadata.
   // The exact field names can vary based on Supabase project settings and Google's response.
   // Common fields include: name, full_name, picture, avatar_url.
   const fullName = user.user_metadata?.full_name || user.user_metadata?.name;
-  const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture;
+  const avatarUrl = user.user_metadata?.picture || user.user_metadata?.avatar_url;
 
   return {
     id: user.id,
