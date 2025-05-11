@@ -44,3 +44,39 @@ export const tabBarStyle = StyleSheet.create(
     },
   }
 );
+
+export const episodeStyle = StyleSheet.create({
+  episodeItem: {
+    flexDirection: 'row',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    backgroundColor: theme.colors.secondaryBackground,
+    borderRadius: 10,
+    marginBottom: 10,
+    alignItems: 'center',
+  },
+  episodeTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: theme.colors.text,
+    marginBottom: 3,
+  },
+  episodeDescription: {
+    fontSize: 12,
+    color: theme.colors.description,
+    marginBottom: 5,
+    lineHeight: 16,
+  },
+  episodeImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 10,
+    marginBottom: 20,
+  },
+  episodeActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+});

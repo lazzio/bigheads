@@ -7,6 +7,7 @@ import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as FileSystem from 'expo-file-system';
 import { GestureHandlerRootView, PanGestureHandler, State } from 'react-native-gesture-handler';
+import { getImageUrlFromDescription } from '../../components/GTPersons'; // Ensure this is imported
 
 import { supabase } from '../../lib/supabase';
 import { Database } from '../../types/supabase';
@@ -34,7 +35,7 @@ type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
 type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row'];
 
 export default function PlayerScreen() {
-  const { episodeId, offlinePath, source, _retry } = useLocalSearchParams<{ episodeId?: string; offlinePath?: string; source?: string; _retry?: string }>();
+  const { episodeId, offlinePath, source, _retry, startPositionMillis: startPositionMillisParam } = useLocalSearchParams<{ episodeId?: string; offlinePath?: string; source?: string; _retry?: string, startPositionMillis?: string }>();
   const router = useRouter();
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number | null>(null);
@@ -298,11 +299,12 @@ export default function PlayerScreen() {
           publicationDate: metadata.downloadDate || new Date().toISOString(),
           duration: parseDuration(metadata.duration), // Ensure duration is parsed
           offline_path: filePath,
-          originalMp3Link: metadata.originalMp3Link
+          originalMp3Link: metadata.originalMp3Link,
+          artwork: metadata.artwork || getImageUrlFromDescription(metadata.description || '') || undefined,
         };
       } return null;
     } catch (error) { console.error('Error getting offline episode details:', error); return null; }
-  }, []);
+  }, [parseDuration]); // getImageUrlFromDescription is imported, parseDuration is stable
 
   // --- Function to load the episode sound and set initial position ---
   const loadEpisodeAndPosition = useCallback(async (index: number | null) => {
@@ -343,16 +345,31 @@ export default function PlayerScreen() {
 
     // Set ref for the new episode *before* loading starts
     currentEpisodeIdRef.current = currentEp.id;
-    await setCurrentEpisodeId(currentEp.id); // <-- Ajout : stocke l'ID dans le cache
-    setError(null); // Clear previous errors
+    await setCurrentEpisodeId(currentEp.id);
+    setError(null);
     console.log(`[PlayerScreen] Preparing to load: ${currentEp.title} (Index: ${index}, ID: ${currentEp.id})`);
-    isLoadingEpisodeRef.current = true; // Set loading flag
+    isLoadingEpisodeRef.current = true;
 
     try {
       // --- Determine Initial Position ---
-      // 1. Get position specific to this episode (local or remote)
-      console.log(`[PlayerScreen] Getting playback position for ${currentEp.id}...`);
-      let initialPosition = await getPlaybackPosition(currentEp.id); // Uses the combined local/remote logic
+      let initialPosition: number | null = null;
+
+      // 0. Prioritize startPositionMillis from navigation params
+      if (startPositionMillisParam) {
+        const parsedStartPosition = Number(startPositionMillisParam);
+        if (isFinite(parsedStartPosition) && parsedStartPosition >= 0) {
+          initialPosition = parsedStartPosition;
+          console.log(`[PlayerScreen] Using startPositionMillis from param for ${currentEp.id}: ${initialPosition}ms`);
+        } else {
+          console.warn(`[PlayerScreen] Invalid startPositionMillis param: ${startPositionMillisParam}`);
+        }
+      }
+
+      // 1. Get position specific to this episode (local or remote) if not set by param
+      if (initialPosition === null) {
+        console.log(`[PlayerScreen] Getting playback position for ${currentEp.id}...`);
+        initialPosition = await getPlaybackPosition(currentEp.id);
+      }
 
       // 2. If no specific position, check if it was the *very last* played episode (app closed/reopened)
       if (initialPosition === null) {

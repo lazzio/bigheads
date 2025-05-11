@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Platform} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Sentry from '@sentry/react-native';
+import Constants from 'expo-constants';
 
 // Initialize the notification service
 export async function initEpisodeNotificationService(): Promise<void> {
@@ -96,8 +97,17 @@ async function registerForPushNotificationsAsync(): Promise<string | null> {
   
   // Get the token
   try {
+    // Retrieve the EAS project ID from expo-constants
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+
+    if (!projectId) {
+      console.error('[NotificationService] EAS Project ID not found in Constants.expoConfig.extra.eas.projectId. Ensure this is set in your app.config.js or app.json and you are using EAS Build.');
+      Sentry.captureMessage('EAS Project ID not found for push notifications. Cannot get ExpoPushToken.');
+      return null;
+    }
+
     const token = (await Notifications.getExpoPushTokenAsync({
-      projectId: process.env.EXPO_PROJECT_ID, // Add this to your app.config.ts or app.json
+      projectId: projectId, // UTILISATION DU projectId récupéré
     })).data;
     
     console.log('Push token:', token);

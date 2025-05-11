@@ -1,7 +1,8 @@
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl, ActivityIndicator } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react'; // Added useMemo
 import { Image } from 'expo-image';
+import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler'; // Added
 import { supabase } from '../../lib/supabase';
 import { Database } from '../../types/supabase';
 import { Episode } from '../../types/episode';
@@ -21,6 +22,142 @@ import { getImageUrlFromDescription } from '../../components/GTPersons';
 
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
 type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row'];
+
+// Define Prop Types for EpisodeListItem
+type EpisodeListItemProps = {
+  item: Episode;
+  episodeProgress: Record<string, number | null>;
+  currentEpisodeId: string | null;
+  watchedEpisodes: Set<string>;
+  theme: typeof theme; // Assuming theme is an object with a known structure
+  styles: typeof styles; // Type for styles object from StyleSheet.create
+  router: ReturnType<typeof useRouter>;
+  formatTime: (seconds: number) => string;
+  MaterialIcons: any; // Or a more specific type if available
+};
+
+const EpisodeListItem = ({
+  item,
+  episodeProgress,
+  currentEpisodeId,
+  watchedEpisodes,
+  theme,
+  styles,
+  router,
+  formatTime,
+  MaterialIcons,
+}: EpisodeListItemProps) => {
+  const [progressBarWidth, setProgressBarWidth] = useState(0);
+  const [isPanning, setIsPanning] = useState(false);
+  const [panProgress, setPanProgress] = useState(0); // Progress from 0 to 1, derived from pan
+
+  const totalDurationSeconds = item.duration;
+  const currentPositionMillis = episodeProgress[item.id] || 0;
+
+  const actualProgressPercentage = useMemo(() => {
+    if (totalDurationSeconds && totalDurationSeconds > 0 && currentPositionMillis !== null) {
+      const totalDurationMillis = totalDurationSeconds * 1000;
+      return Math.min(100, Math.max(0, (currentPositionMillis / totalDurationMillis) * 100));
+    }
+    return 0;
+  }, [totalDurationSeconds, currentPositionMillis]);
+
+  const panGesture = Gesture.Pan()
+    .onBegin(() => {
+      if (totalDurationSeconds && totalDurationSeconds > 0) {
+        setIsPanning(true);
+      }
+    })
+    .onUpdate((event) => {
+      if (progressBarWidth > 0 && totalDurationSeconds && totalDurationSeconds > 0) {
+        const x = event.x; // x position relative to the gesture detector (progress bar)
+        const progress = Math.min(1, Math.max(0, x / progressBarWidth));
+        setPanProgress(progress);
+      }
+    })
+    .onEnd((event) => {
+      if (progressBarWidth > 0 && totalDurationSeconds && totalDurationSeconds > 0) {
+        const x = event.x;
+        const progress = Math.min(1, Math.max(0, x / progressBarWidth));
+        
+        const totalDurationMillis = totalDurationSeconds * 1000;
+        const seekToMillis = Math.round(progress * totalDurationMillis);
+        // Ensure seekToMillis is within bounds [0, totalDurationMillis]
+        const finalSeekMillis = Math.min(totalDurationMillis, Math.max(0, seekToMillis));
+
+        // Navigate to player with startPositionMillis
+        // The player screen will need to handle this parameter
+        router.push({
+          pathname: '/player/player',
+          params: { episodeId: item.id, startPositionMillis: String(finalSeekMillis) },
+        });
+      }
+      setIsPanning(false);
+      // panProgress will be ignored once isPanning is false, no need to reset explicitly
+    })
+    .shouldCancelWhenOutside(true); // Cancels the gesture if the finger moves outside the component
+
+  // Display pan progress if panning, otherwise actual playback progress
+  const displayProgressPercentage = isPanning ? panProgress * 100 : actualProgressPercentage;
+
+  return (
+    <TouchableOpacity
+      style={styles.episodeItem}
+      onPress={() => {
+        // Default navigation if the item itself (not progress bar) is pressed
+        router.push({
+          pathname: '/player/player',
+          params: { episodeId: item.id }, 
+        });
+      }}
+    >
+      <Image
+        source={item.artwork} // Ensure item.artwork is a valid ImageSourcePropType
+        cachePolicy="memory-disk"
+        contentFit="cover"
+        style={{ width: 50, height: 50, borderRadius: 5 }}
+      />
+      <View style={styles.episodeInfo}>
+        <Text style={styles.episodeTitle} numberOfLines={1}>{item.title}</Text>
+        <Text style={styles.episodeDescription} numberOfLines={2}>
+          {item.description}
+        </Text>
+        <View style={styles.durationContainer}>
+          <Text style={styles.episodeDuration}>
+            {item.duration !== null ? formatTime(item.duration) : '--:--'}
+          </Text>
+          {/* GestureDetector wraps the visual progress bar area */}
+          <GestureDetector gesture={panGesture}>
+            <View
+              style={styles.progressBarContainer}
+              onLayout={(e) => {
+                // Set width only once or if it changes significantly to avoid re-renders
+                if (progressBarWidth === 0 && e.nativeEvent.layout.width > 0) {
+                   setProgressBarWidth(e.nativeEvent.layout.width);
+                }
+              }}
+            >
+              {/* Display progress: uses panProgress during gesture, otherwise actual progress */}
+              {(totalDurationSeconds && totalDurationSeconds > 0 && (currentPositionMillis >= 0 || isPanning)) ? (
+                <View style={[styles.progressBarFilled, { width: `${displayProgressPercentage}%` }]} />
+              ) : (
+                <View style={[styles.progressBarFilled, { width: `0%` }]} />
+              )}
+            </View>
+          </GestureDetector>
+        </View>
+      </View>
+      {/* Icons indicating playback state or watched status */}
+      {currentEpisodeId === item.id ? (
+        <MaterialIcons name="equalizer" size={36} color={theme.colors.primary} />
+      ) : watchedEpisodes.has(item.id) ? (
+        <MaterialIcons name="check-circle" size={36} color={theme.colors.primary} />
+      ) : (
+        <MaterialIcons name="play-circle-outline" size={30} color={theme.colors.text} />
+      )}
+    </TouchableOpacity>
+  );
+};
 
 export default function EpisodesScreen() {
   const router = useRouter();
@@ -140,24 +277,27 @@ export default function EpisodesScreen() {
           // Fetch from Supabase if cache is empty
           const { data, error: supabaseError } = await supabase
             .from('episodes')
-            .select('*')
+            .select('*') // Fetches all columns
             .order('publication_date', { ascending: false });
 
           if (supabaseError) throw supabaseError;
 
-          const formattedEpisodes: Episode[] = (data as SupabaseEpisode[]).map(episode => ({
-            id: episode.id,
-            title: episode.title,
-            description: episode.description,
-            originalMp3Link: episode.original_mp3_link,
-            original_mp3_link: episode.original_mp3_link,
-            mp3Link: episode.mp3_link,
-            mp3_link: episode.mp3_link,
-            offline_path: episode.offline_path,
-            duration: episode.duration,
-            publicationDate: episode.publication_date,
-            publication_date: episode.publication_date,
-            artwork: getImageUrlFromDescription(episode.description)
+          // Corrected mapping from SupabaseEpisode to Episode type
+          // Assumes Supabase client returns camelCase properties matching SupabaseEpisode type
+          // and Episode type defines properties as needed (e.g., offline_path as snake_case)
+          const formattedEpisodes: Episode[] = (data as SupabaseEpisode[]).map(dbEpisode => ({
+            id: dbEpisode.id,
+            title: dbEpisode.title,
+            description: dbEpisode.description,
+            originalMp3Link: dbEpisode.originalMp3Link, // From SupabaseEpisode (camelCase) to Episode (camelCase)
+            mp3Link: dbEpisode.mp3Link,                 // From SupabaseEpisode (camelCase) to Episode (camelCase)
+            duration: dbEpisode.duration,
+            publicationDate: dbEpisode.publicationDate, // From SupabaseEpisode (camelCase) to Episode (camelCase)
+            // offline_path is snake_case in Episode type.
+            // If dbEpisode has \'offline_path\' or \'offlinePath\', it would be mapped here.
+            // Casting to \'any\' to attempt access if type is incomplete.
+            offline_path: (dbEpisode as any).offline_path ?? (dbEpisode as any).offlinePath, 
+            artwork: getImageUrlFromDescription(dbEpisode.description)
           }));
           episodesToSet = formattedEpisodes;
           
@@ -228,10 +368,11 @@ export default function EpisodesScreen() {
   }
 
   return (
-    <View style={componentStyle.container}>
-      <View style={componentStyle.header}>
-        <MaterialIcons name="library-music" size={32} color={theme.colors.text} style={{marginRight: 8}} />
-        <Text style={componentStyle.headerTitle}>Episodes</Text>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View style={componentStyle.container}>
+        <View style={componentStyle.header}>
+          <MaterialIcons name="library-music" size={32} color={theme.colors.text} style={{marginRight: 8}} />
+          <Text style={componentStyle.headerTitle}>Episodes</Text>
       
       {isOffline && (
         <View style={styles.offlineContainer}>
@@ -264,60 +405,20 @@ export default function EpisodesScreen() {
         <FlatList
           data={episodes}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => {
-            const currentPositionMillis = episodeProgress[item.id] || 0;
-            const totalDurationSeconds = item.duration;
-            let progressPercentage = 0;
-
-            if (totalDurationSeconds && totalDurationSeconds > 0 && currentPositionMillis !== null) {
-              const totalDurationMillis = totalDurationSeconds * 1000;
-              progressPercentage = Math.min(100, Math.max(0, (currentPositionMillis / totalDurationMillis) * 100));
-            }
-
-            return (
-              <TouchableOpacity
-                style={styles.episodeItem}
-                onPress={() => {
-                  router.push({
-                    pathname: '/player/player',
-                    params: { episodeId: item.id },
-                  });
-                }}
-              >
-                <Image
-                  source={ item.artwork }
-                  cachePolicy="memory-disk"
-                  contentFit="cover"
-                  style={{ width: 50, height: 50, borderRadius: 5 }} 
-                />
-                <View style={styles.episodeInfo}>
-                  <Text style={styles.episodeTitle}>{item.title}</Text>
-                  <Text style={styles.episodeDescription} numberOfLines={2}>
-                    {item.description}
-                  </Text>
-                  <View style={styles.durationContainer}>
-                    <Text style={styles.episodeDuration}>
-                      {item.duration !== null ? formatTime(item.duration) : '--:--'}
-                    </Text>
-                      <View style={styles.progressBarContainer}>
-                      {totalDurationSeconds && totalDurationSeconds > 0 && currentPositionMillis !== null && currentPositionMillis > 0 ? (
-                        <View style={[styles.progressBarFilled, { width: `${progressPercentage}%` }]} />
-                        ) : (
-                          <View style={[styles.progressBarFilled, { width: `0%` }]} />
-                      )}
-                    </View>
-                  </View>
-                </View>
-                {currentEpisodeId === item.id ? (
-                  <MaterialIcons name="equalizer" size={36} color={theme.colors.primary} />
-                ) : watchedEpisodes.has(item.id) ? (
-                  <MaterialIcons name="check-circle" size={36} color={theme.colors.primary} />
-                ) : (
-                  <MaterialIcons name="play-circle-outline" size={30} color={theme.colors.text} />
-                )}
-              </TouchableOpacity>
-            );
-          }}
+          renderItem={({ item }) => (
+            // Use the new EpisodeListItem component
+            <EpisodeListItem
+              item={item}
+              episodeProgress={episodeProgress}
+              currentEpisodeId={currentEpisodeId}
+              watchedEpisodes={watchedEpisodes}
+              theme={theme}
+              styles={styles} // Pass the styles object
+              router={router}
+              formatTime={formatTime}
+              MaterialIcons={MaterialIcons}
+            />
+          )}
 
           refreshControl={
             <RefreshControl
@@ -334,6 +435,7 @@ export default function EpisodesScreen() {
         />
       )}
     </View>
+    </GestureHandlerRootView>
   );
 }
 
@@ -400,25 +502,24 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.secondaryBackground,
     borderRadius: 10,
     marginBottom: 10,
-    marginHorizontal: 10,
     alignItems: 'center',
   },
   episodeInfo: {
     flex: 1,
-    marginRight: 10,
-    paddingLeft: 10,
+    marginLeft: 10,
+    justifyContent: 'space-between',
   },
   episodeTitle: {
-    fontSize: 14,
-    // fontWeight: '600',
+    fontSize: 15,
+    fontWeight: 'bold',
     color: theme.colors.text,
-    marginBottom: 4,
+    marginBottom: 3,
   },
   episodeDescription: {
     fontSize: 12,
     color: theme.colors.description,
-    marginBottom: 6,
-    lineHeight: 18,
+    marginBottom: 5,
+    lineHeight: 16,
   },
   durationContainer: {
     flexDirection: 'row',
@@ -426,21 +527,22 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   episodeDuration: {
-    fontSize: 11,
-    color: theme.colors.text,
+    fontSize: 12,
+    color: theme.colors.description,
     marginRight: 8,
   },
   progressBarContainer: {
     flex: 1,
     height: 3,
     backgroundColor: theme.colors.borderColor,
-    borderRadius: 2.5,
-    marginLeft: 5,
+    borderRadius: 5,
+    overflow: 'hidden',
+    justifyContent: 'center',
   },
   progressBarFilled: {
     height: '100%',
     backgroundColor: theme.colors.primary,
-    borderRadius: 2.5,
+    borderRadius: 5,
   },
   loadingText: {
     color: '#fff',
