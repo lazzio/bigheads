@@ -17,134 +17,186 @@ SplashScreen.preventAutoHideAsync();
 export default function RootLayout() {
   const router = useRouter();
   const [isAppReady, setIsAppReady] = useState(false);
+  const [authCheckCompleted, setAuthCheckCompleted] = useState(false);
+  const [initialRedirectPath, setInitialRedirectPath] = useState<'/auth/login' | '/(tabs)' | null>(null); // Corrected type
   const appMounted = useRef(true);
+  const authSubscriptionRef = useRef<{ unsubscribe: () => void } | null>(null);
+  const netInfoUnsubscribeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const initializeApp = async () => {
+      let performedAuthenticatedInit = false;
+      let redirectPath: '/auth/login' | '/(tabs)' = '/auth/login'; // Default redirect path with specific type
+
       try {
-        // Écouter les changements d'état d'authentification
+        // 1. Setup onAuthStateChange listener (always active)
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-          console.log('Auth state changed:', event);
+          console.log('[RootLayout] Auth state changed:', event, !!session);
+          if (!appMounted.current || !isAppReady) { // Guard with isAppReady
+            console.log('[RootLayout] Auth state change ignored: app not ready or unmounted.');
+            return;
+          }
+
           if (event === 'SIGNED_IN') {
-            // Tenter de synchroniser le token push après connexion réussie
+            console.log('[RootLayout] Auth event: SIGNED_IN. Syncing token.');
             await syncPushTokenAfterLogin();
-            // Optionnel: rediriger si nécessaire, mais Tabs gère déjà cela
-            // router.replace('/(tabs)');
+            // Potentially navigate to tabs if coming from a login/register screen
+            // Check current route to avoid unnecessary navigation if already in tabs
+            // Conditional navigation to /(tabs)
+            router.replace('/(tabs)');
           } else if (event === 'SIGNED_OUT') {
-            // Rediriger vers l'écran de connexion
+            console.log('[RootLayout] Auth event: SIGNED_OUT. Redirecting to login.');
             router.replace('/auth/login');
           }
         });
+        authSubscriptionRef.current = subscription;
 
-        // Initialiser le service de notification
-        try {
-          await initEpisodeNotificationService();
-          // Configurer l'écouteur pour la navigation
-          setupNotificationListener((episodeId) => {
-            console.log(`[NotificationHandler] Received notification for episode ${episodeId}`);
-            
-            // Navigation vers l'écran player
-            const navigateToPlayer = () => {
-              console.log('[NotificationHandler] Navigating to player tab');
-              router.navigate({
-                pathname: '/player/player',
-                params: { 
-                  episodeId: episodeId, 
-                  source: 'notification',
-                  timestamp: Date.now() // Add timestamp to force refresh
+        // 2. Check initial session state for the very first load
+        const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
+
+        if (!appMounted.current) return;
+
+        if (sessionError) {
+          console.error('[RootLayout] Error fetching initial session:', sessionError.message);
+          Sentry.captureException(sessionError);
+          redirectPath = '/auth/login';
+        } else if (initialSession) {
+          console.log('[RootLayout] Initial session found. Proceeding with authenticated app init.');
+          await syncPushTokenAfterLogin(); // Sync for existing session
+          redirectPath = '/(tabs)'; // Set redirect path for authenticated user
+
+          // Initialiser le service de notification (et autres services authentifiés)
+          try {
+            await initEpisodeNotificationService();
+            setupNotificationListener((episodeId) => {
+              console.log(`[NotificationHandler] Received notification for episode ${episodeId}`);
+              const navigateToPlayer = () => {
+                if (!appMounted.current || !isAppReady) { // Guard with isAppReady
+                  console.log('[NotificationHandler] Navigation to player ignored: app not ready or unmounted.');
+                  return;
                 }
-              });
-            };
-
-            // Si l'app est prête, naviguer immédiatement
-            if (appMounted.current && isAppReady) {
-              navigateToPlayer();
-            } else {
-              // Sinon, attendre que l'app soit prête et naviguer ensuite
-              console.log('[NotificationHandler] App not ready, waiting...');
-              const readyCheckInterval = setInterval(() => {
-                if (appMounted.current && isAppReady) {
-                  console.log('[NotificationHandler] App now ready, navigating...');
-                  clearInterval(readyCheckInterval);
-                  navigateToPlayer();
-                }
-              }, 200);
-              
-              // Arrêter de vérifier après 10 secondes pour éviter une boucle infinie
-              setTimeout(() => clearInterval(readyCheckInterval), 10000);
-            }
-          });
-
-          // Check for last requested episode from killed state
-          const checkLastRequestedEpisode = async () => {
-            try {
-              const lastEpisodeId = await AsyncStorage.getItem('lastRequestedEpisodeId');
-              if (lastEpisodeId) {
-                console.log(`[Layout] Found last requested episode ${lastEpisodeId}, clearing and navigating`);
-                // Clear it so we don't keep reopening the same episode
-                await AsyncStorage.removeItem('lastRequestedEpisodeId');
-                
-                // Navigate to player with this episode
+                console.log('[NotificationHandler] Navigating to player tab');
                 router.navigate({
                   pathname: '/player/player',
-                  params: { 
-                    episodeId: lastEpisodeId, 
-                    source: 'notification',
-                    timestamp: Date.now()
-                  }
+                  params: { episodeId: episodeId, source: 'notification', timestamp: Date.now() }
                 });
+              };
+
+              if (appMounted.current && isAppReady) {
+                navigateToPlayer();
+              } else {
+                console.log('[NotificationHandler] App not ready or component unmounted, queuing navigation...');
+                const readyCheckInterval = setInterval(() => {
+                  if (!appMounted.current) {
+                    clearInterval(readyCheckInterval);
+                    return;
+                  }
+                  if (isAppReady) {
+                    console.log('[NotificationHandler] App now ready, navigating...');
+                    clearInterval(readyCheckInterval);
+                    navigateToPlayer();
+                  }
+                }, 200);
+                setTimeout(() => {
+                  if (appMounted.current) clearInterval(readyCheckInterval);
+                }, 10000); // Timeout
               }
-            } catch (error) {
-              console.error('[Layout] Error checking last requested episode:', error);
-            }
-          };
-          
-          // Check after app is ready with a small delay
-          setTimeout(checkLastRequestedEpisode, 1000);
+            });
 
-          console.log('Episode notification service initialized');
-        } catch (notificationError) {
-          console.error('Error initializing episode notification service:', notificationError);
-          Sentry.captureException(notificationError);
-        }
-
-        // Configurer l'écouteur NetInfo pour la synchro hors ligne (si nécessaire)
-        const unsubscribeNetInfo = NetInfo.addEventListener(state => {
-          if (state.isConnected && state.isInternetReachable) {
-            console.log('Device is online, syncing playback state...');
+            const checkLastRequestedEpisode = async () => {
+              if (!appMounted.current || !isAppReady) return; // Guard with isAppReady
+              try {
+                const lastEpisodeId = await AsyncStorage.getItem('lastRequestedEpisodeId');
+                if (lastEpisodeId) {
+                  console.log(`[Layout] Found last requested episode ${lastEpisodeId}, clearing and navigating`);
+                  await AsyncStorage.removeItem('lastRequestedEpisodeId');
+                  router.navigate({
+                    pathname: '/player/player',
+                    params: { episodeId: lastEpisodeId, source: 'notification', timestamp: Date.now() }
+                  });
+                }
+              } catch (error) { console.error('[Layout] Error checking last requested episode:', error); }
+            };
+            if (appMounted.current) setTimeout(checkLastRequestedEpisode, 1000);
+            
+            console.log('[RootLayout] Episode notification service initialized for authenticated user.');
+          } catch (notificationError) {
+            console.error('[RootLayout] Error initializing episode notification service:', notificationError);
+            Sentry.captureException(notificationError);
           }
-        });
 
-        // Cacher l'écran de démarrage
-        try {
-          await SplashScreen.hideAsync();
-        } catch (error) {
-          console.warn('SplashScreen.hideAsync failed:', error);
+          netInfoUnsubscribeRef.current = NetInfo.addEventListener(state => {
+            if (state.isConnected && state.isInternetReachable) {
+              console.log('Device is online, syncing playback state...');
+            }
+          });
+          performedAuthenticatedInit = true;
+        } else {
+          console.log('[RootLayout] No initial session. Setting redirect to login.');
+          redirectPath = '/auth/login';
         }
 
-        // Marquer l'application comme prête
-        if (appMounted.current) {
-          console.log('[RootLayout] App is now ready.');
-          setIsAppReady(true);
-        }
       } catch (error) {
-        console.error('Initialization error:', error);
+        console.error('[RootLayout] General initialization error:', error);
         Sentry.captureException(error);
+        redirectPath = '/auth/login'; // Fallback redirect
+      } finally {
+        if (appMounted.current) {
+          setInitialRedirectPath(redirectPath);
+          setAuthCheckCompleted(true);
+          console.log(`[RootLayout] Auth check completed. Initial redirect path set to: ${redirectPath}`);
+          if (performedAuthenticatedInit) {
+            console.log('[RootLayout] Authenticated app services initialized.');
+          } else {
+            console.log('[RootLayout] App will proceed to login or unauthenticated state.');
+          }
+        }
       }
     };
 
     initializeApp();
-
-    // Cleanup remaining positions of episodes that are no longer available
     cleanupStaleLocalPositions();
 
-    // Nettoyage au démontage
     return () => {
       appMounted.current = false;
+      if (authSubscriptionRef.current) {
+        console.log('[RootLayout] Unsubscribing from auth state changes.');
+        authSubscriptionRef.current.unsubscribe();
+      }
+      if (netInfoUnsubscribeRef.current) {
+        console.log('[RootLayout] Unsubscribing from NetInfo.');
+        netInfoUnsubscribeRef.current();
+      }
+      console.log('[RootLayout] Unmounted.');
     };
-  }, []);
+  }, []); // Removed router from dependencies
 
-  // Afficher Slot seulement quand l'app est prête pour éviter les flashs
+  // Effect to mark app as ready once auth check is complete
+  useEffect(() => {
+    if (authCheckCompleted) {
+      setIsAppReady(true);
+      console.log('[RootLayout] App is marked as ready to render navigator.');
+    }
+  }, [authCheckCompleted]);
+
+  // Effect to perform initial navigation and hide splash screen once app is ready and path is determined
+  useEffect(() => {
+    if (isAppReady && initialRedirectPath && appMounted.current) {
+      console.log(`[RootLayout] App ready, performing initial navigation to: ${initialRedirectPath}`);
+      try {
+        router.replace(initialRedirectPath);
+      } catch (e) {
+        console.error(`[RootLayout] Router replace to ${initialRedirectPath} failed:`, e);
+        if (initialRedirectPath !== '/auth/login') {
+          try { router.replace('/auth/login'); } catch (e2) { console.error("[RootLayout] Fallback router replace to login failed", e2); }
+        }
+      } finally {
+        SplashScreen.hideAsync().catch(e => console.warn('[RootLayout] SplashScreen.hideAsync failed:', e));
+        console.log('[RootLayout] Splash screen hidden.');
+      }
+    }
+  }, [isAppReady, initialRedirectPath, router]);
+
   if (!isAppReady) {
     console.log('[RootLayout] App not ready, rendering null.');
     return null; // Ou retourner un écran de chargement minimal si SplashScreen.hideAsync a échoué

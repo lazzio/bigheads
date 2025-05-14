@@ -14,6 +14,7 @@ const config: ExpoConfig = {
   backgroundColor: "#121212", // Changed from #F6F6F6 to match app theme
   icon: "./assets/images/bh_opti.png",
   platforms: ["android", "ios"],
+  newArchEnabled: false,
 
   splash: {
     image: "./assets/images/bh_opti.png",
@@ -62,6 +63,7 @@ const config: ExpoConfig = {
           targetSdkVersion: 35,
           buildToolsVersion: "35.0.0",
           kotlinVersion: "1.9.25",
+          enableProguardInReleaseBuilds: true,
         }
       }
     ],

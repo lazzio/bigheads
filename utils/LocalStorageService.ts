@@ -22,6 +22,35 @@ export type LocalPositions = Record<string, LocalPositionInfo>;
 // --- Functions ---
 
 /**
+ * Saves the playback position for a specific episode locally using AsyncStorage.
+ *
+ * @param epId - The unique identifier of the episode.
+ * @param positionMillis - The playback position in milliseconds.
+ * 
+ * @remarks
+ * - Converts the position from milliseconds to seconds before saving.
+ * - Stores the position along with a timestamp.
+ * - If `epId` is falsy, or if the position is not a finite number, the function returns early.
+ * - Errors during storage are silently ignored.
+ */
+export async function savePositionLocally(epId: string, positionMillis: number) {
+  if (!epId) return;
+  const positionSeconds = positionMillis / 1000;
+  if (isNaN(positionSeconds) || !isFinite(positionSeconds)) return;
+  try {
+    const existingPositionsString = await AsyncStorage.getItem(PLAYBACK_POSITIONS_KEY);
+    const positions: LocalPositions = existingPositionsString ? JSON.parse(existingPositionsString) : {};
+    positions[epId] = {
+      position: positionSeconds,
+      timestamp: Date.now(),
+    };
+    await AsyncStorage.setItem(PLAYBACK_POSITIONS_KEY, JSON.stringify(positions));
+  } catch (error) {
+    // Silent fail
+  }
+}
+
+/**
  * Retrieves the playback position for a given episode ID from local storage.
  * @param epId The ID of the episode.
  * @returns The position in milliseconds, or null if not found or an error occurs.

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { Database } from '../types/supabase';
 import { Platform } from 'react-native';
 import { storage } from './storage';
+import pako from 'pako';
 // Updated import for Sentry
 import * as Sentry from '@sentry/react-native';
 
@@ -23,21 +24,69 @@ if (!supabaseUrl || !supabaseAnonKey) {
 const debugStorage = {
   ...storage,
   getItem: async (key: string) => {
-    try {
-      const value = await storage.getItem(key);
-      console.log(`[Storage] Get ${key}: ${value ? 'Found' : 'Not found'}`);
-      return value;
-    } catch (error) {
-      console.error(`[Storage] Error getting ${key}:`, error);
+    try { // Outer try-catch for errors from storage.getItem() itself
+      const storedValue = await storage.getItem(key);
+      if (!storedValue) {
+        return null;
+      }
+
+      // Attempt to treat as new, compressed, base64-encoded data
+      try {
+        const uint8Array = Uint8Array.from(atob(storedValue), c => c.charCodeAt(0));
+        // If atob succeeded, storedValue was base64. Now try to decompress.
+        try {
+          const decompressedValue = pako.inflate(uint8Array, { to: 'string' });
+          return decompressedValue;
+        } catch (inflateError: any) {
+          // atob succeeded, but pako.inflate failed. Data is base64 but not valid compressed data.
+          console.error(`[Storage] Failed to decompress value for key '${key}' after base64 decoding. Error: ${inflateError.message}`);
+          Sentry.captureException(inflateError, {
+            extra: { key, operation: 'getItem', stage: 'decompression', originalValuePreview: storedValue.substring(0, 100) }, // Increased preview length
+            level: 'error',
+            fingerprint: ['storage-decompression-failure', key]
+          });
+          return null; // Data corruption or unexpected format
+        }
+      } catch (atobError: any) {
+        // atob failed, assume storedValue is old, plain, unencoded data.
+        console.warn(`[Storage] Value for key '${key}' is not valid base64. Assuming old format and returning raw value. Error: ${atobError.message}`);
+        // It's important to return the raw string here as it's the pre-compression/encoding data.
+        return storedValue;
+      }
+
+    } catch (storageError: any) { // Outer catch for errors from storage.getItem() itself
+      console.error(`[Storage] Error getting ${key} from underlying storage:`, storageError);
+      Sentry.captureException(storageError, {
+        extra: { key, operation: 'getItem', stage: 'storageRead' },
+        level: 'error'
+      });
       return null;
     }
   },
   setItem: async (key: string, value: string) => {
     try {
-      console.log(`[Storage] Set ${key}`);
-      await storage.setItem(key, value);
+      const compressedValue = pako.deflate(value);
+      // Encode Uint8Array to base64 string for storage
+      const base64CompressedValue = btoa(String.fromCharCode.apply(null, Array.from(compressedValue)));
+      const valueSizeBytes = new TextEncoder().encode(base64CompressedValue).length;
+      console.log(`[Storage] Set ${key}. Compressed value size: ${valueSizeBytes} bytes`);
+      if (valueSizeBytes > 2048 && Platform.OS !== 'web') {
+        // Log a specific warning if the size exceeds the SecureStore limit on native platforms
+        console.warn(`[Storage] Value for key '${key}' is ${valueSizeBytes} bytes, which exceeds the 2048 byte limit for SecureStore on native platforms. This may lead to storage failure or errors in future SDKs.`);
+        // Updated Sentry API call
+        Sentry.captureMessage(`SecureStore size limit exceeded for key: ${key}`, {
+          extra: { key, valueSizeBytes, operation: 'setItem' },
+          level: 'warning'
+        });
+      }
+      await storage.setItem(key, base64CompressedValue);
     } catch (error) {
       console.error(`[Storage] Error setting ${key}:`, error);
+      // Updated Sentry API call
+      Sentry.captureException(error, {
+        extra: { key, operation: 'setItem' },
+        level: 'error'
+      });
     }
   },
   removeItem: async (key: string) => {

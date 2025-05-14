@@ -19,8 +19,10 @@ import { Episode } from '../../types/episode';
 import Svg, { Circle } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { theme } from '../../styles/global';
-import { componentStyle } from '../../styles/componentStyle';
+import { componentStyle, episodeStyle } from '../../styles/componentStyle';
 import { parseDuration } from '../../utils/commons/timeUtils';
+import { getGoogleUserInfo } from '@/lib/user';
+import { Image } from 'expo-image';
 
 // Types
 interface DownloadStatus {
@@ -81,6 +83,16 @@ export default function DownloadsScreen() {
       setIsOffline(false);
     }
   };
+
+  const getAvatar = async () => {
+    try {
+      const userInfo = await getGoogleUserInfo();
+      return userInfo?.avatarUrl || '';
+    } catch (error) {
+      console.error('Error fetching user avatar:', error);
+      return '';
+    }
+  }
 
   // Initialize downloads
   const setupDownloads = async () => {
@@ -766,6 +778,12 @@ export default function DownloadsScreen() {
             </TouchableOpacity>
           )}
         </View>
+        {!isOffline && <View>
+          <Image source={{ uri: getAvatar }} 
+            style={{ width: 40, height: 40, borderRadius: 20 }} 
+            alt="User Avatar"
+          />
+        </View>}
       </View>
       
       {error && (
@@ -788,7 +806,7 @@ export default function DownloadsScreen() {
               onPress={() => playEpisode(episode, index)}
               activeOpacity={0.7}
             >
-              <Text style={styles.episodeTitle}>{episode.title}</Text>
+              <Text style={episodeStyle.episodeTitle}>{episode.title}</Text>
               {episode.publication_date && (
                 <Text style={styles.episodeDate}>
                   {new Date(episode.publication_date).toLocaleDateString()}
@@ -956,11 +974,11 @@ const styles = StyleSheet.create({
   },
   episodeCard: {
     flexDirection: 'row',
-    //backgroundColor: theme.colors.secondaryBackground,
-    // borderRadius: 12,
-    padding: 15,
-    marginHorizontal: 15,
-    // marginBottom: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    backgroundColor: theme.colors.secondaryBackground,
+    borderRadius: 10,
+    marginBottom: 10,
     alignItems: 'center',
   },
   episodeInfo: {

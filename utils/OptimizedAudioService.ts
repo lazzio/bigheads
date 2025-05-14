@@ -18,6 +18,7 @@ export interface AudioStatus {
   positionMillis: number;
   durationMillis: number;
   currentEpisodeId: string | null;
+  currentEpisode?: Episode | null;
 }
 
 // Classe singleton pour gérer l'état audio global
@@ -30,6 +31,8 @@ class AudioManager {
   private isPlaying = false;
   private isBuffering = false;
   private listeners: Set<(data: any) => void> = new Set();
+  private episodesList: Episode[] = [];
+  private currentEpisodeIndex: number = -1;
 
   private constructor() {
     // Constructeur privé pour le modèle singleton
@@ -87,6 +90,114 @@ class AudioManager {
     } catch (error) {
       console.error('[AudioManager] Error setting up TrackPlayer:', error);
       this.isPlayerReady = false; // Marquer comme non prêt en cas d'erreur
+    }
+  }
+
+  // 2. Méthode pour définir la liste des épisodes en cours de lecture
+  public setEpisodesList(episodes: Episode[], currentIndex: number = 0): void {
+    if (!episodes || episodes.length === 0) {
+      console.warn('[AudioManager] Attempted to set empty episodes list');
+      return;
+    }
+    
+    console.log(`[AudioManager] Setting episodes list with ${episodes.length} episodes, current index: ${currentIndex}`);
+    this.episodesList = [...episodes];
+    this.currentEpisodeIndex = Math.min(Math.max(0, currentIndex), episodes.length - 1);
+  }
+
+  // 3. Méthode pour naviguer à l'épisode suivant
+  public async skipToNext(): Promise<boolean> {
+    console.log('[AudioManager] skipToNext called');
+    
+    if (this.episodesList.length === 0) {
+      console.warn('[AudioManager] Cannot skip to next: No episodes list set');
+      return false;
+    }
+    
+    // Sauvegarder la position actuelle avant de changer
+    if (this.currentEpisode?.id) {
+      const status = await this.getStatusAsync();
+      if (status.isLoaded) {
+        // Utiliser savePositionLocally directement serait idéal,
+        // mais comme c'est une fonction externe, vous devrez gérer cela dans le composant appelant
+        this.notifyListeners({
+          type: 'save-position',
+          episodeId: this.currentEpisode.id,
+          position: status.positionMillis
+        });
+      }
+    }
+    
+    // Déterminer le prochain index (boucler si nécessaire)
+    const nextIndex = (this.currentEpisodeIndex + 1) % this.episodesList.length;
+    const nextEpisode = this.episodesList[nextIndex];
+    
+    console.log(`[AudioManager] Skipping to next episode: ${nextEpisode.title} (index: ${nextIndex})`);
+    
+    try {
+      // Charger le nouvel épisode
+      this.currentEpisodeIndex = nextIndex;
+      await this.loadSound(nextEpisode, 0);
+      
+      // Démarrer la lecture automatiquement
+      await this.play();
+      return true;
+    } catch (error) {
+      console.error('[AudioManager] Error skipping to next episode:', error);
+      return false;
+    }
+  }
+
+  // 4. Méthode pour naviguer à l'épisode précédent
+  public async skipToPrevious(): Promise<boolean> {
+    console.log('[AudioManager] skipToPrevious called');
+    
+    if (this.episodesList.length === 0) {
+      console.warn('[AudioManager] Cannot skip to previous: No episodes list set');
+      return false;
+    }
+    
+    // Sauvegarder la position actuelle avant de changer
+    if (this.currentEpisode?.id) {
+      const status = await this.getStatusAsync();
+      if (status.isLoaded) {
+        this.notifyListeners({
+          type: 'save-position',
+          episodeId: this.currentEpisode.id,
+          position: status.positionMillis
+        });
+      }
+    }
+    
+    // Si on est près du début, aller à l'épisode précédent
+    // Sinon, revenir au début de l'épisode actuel
+    const currentStatus = await this.getStatusAsync();
+    
+    // Si la position actuelle est < 3 secondes, aller à l'épisode précédent
+    if (currentStatus.positionMillis < 3000) {
+      // Déterminer l'index précédent (boucler si nécessaire)
+      const prevIndex = (this.currentEpisodeIndex - 1 + this.episodesList.length) % this.episodesList.length;
+      const prevEpisode = this.episodesList[prevIndex];
+      
+      console.log(`[AudioManager] Skipping to previous episode: ${prevEpisode.title} (index: ${prevIndex})`);
+      
+      try {
+        // Charger l'épisode précédent
+        this.currentEpisodeIndex = prevIndex;
+        await this.loadSound(prevEpisode, 0);
+        
+        // Démarrer la lecture automatiquement
+        await this.play();
+        return true;
+      } catch (error) {
+        console.error('[AudioManager] Error skipping to previous episode:', error);
+        return false;
+      }
+    } else {
+      // Si on est au-delà des 3 premières secondes, revenir au début de l'épisode actuel
+      console.log('[AudioManager] Returning to beginning of current episode');
+      await this.seekTo(0);
+      return true;
     }
   }
 
@@ -245,53 +356,64 @@ class AudioManager {
   }
 
   // --- MODIFICATION: getStatusAsync devient une pure requête ---
-  public async getStatusAsync(): Promise<AudioStatus> {
-    if (!this.isPlayerReady) {
-      return { isLoaded: false, isPlaying: false, isBuffering: false, positionMillis: 0, durationMillis: 0, currentEpisodeId: null };
-    }
-    try {
-      const [state, position, duration, buffered, currentTrackIdObject] = await Promise.all([
-        TrackPlayer.getState(),
-        TrackPlayer.getPosition(), // secondes
-        TrackPlayer.getDuration(), // secondes
-        TrackPlayer.getBufferedPosition(), // secondes
-        TrackPlayer.getTrack(await TrackPlayer.getCurrentTrack() ?? 0)
-      ]);
-
-      const isLoaded = state !== State.None && state !== State.Stopped && duration > 0;
-      const isPlaying = state === State.Playing;
-      // Consider buffering if loading, buffering, or playing near the end without enough buffer
-      const isBuffering = state === State.Buffering || state === State.Loading || (isPlaying && duration > 0 && buffered < position + 1 && position < duration - 1);
-      const currentTrackId = currentTrackIdObject?.id ?? null;
-
-      // Ensure the internal currentEpisode matches the actual track player state if possible
-      if (this.currentEpisode && this.currentEpisode.id !== currentTrackId) {
-          console.warn(`[AudioManager] getStatusAsync detected mismatch: Internal=${this.currentEpisode.id}, TrackPlayer=${currentTrackId}. Internal state might be stale.`);
-          // Optionally: Force update internal state here? Risky if called frequently.
-      }
-
-      // Retourner l'état fraîchement récupéré
-      return {
-        isLoaded,
-        isPlaying,
-        isBuffering,
-        // Retourner les valeurs directes de TrackPlayer (converties en ms)
-        positionMillis: position * 1000,
-        durationMillis: duration * 1000,
-        // --- MODIFICATION: Return current track ID from TrackPlayer ---
-        currentEpisodeId: currentTrackId ? String(currentTrackId) : null,
-      };
-    } catch (error) {
-      console.error('[AudioManager] Error in getStatusAsync:', error);
-      // Return default state on error, reset internal potentially?
-      this.currentEpisode = null; // Reset internal state if TP fails
-      this.isPlaying = false;
-      this.isBuffering = false;
-      this.position = 0;
-      this.duration = 0;
-      return { isLoaded: false, isPlaying: false, isBuffering: false, positionMillis: 0, durationMillis: 0, currentEpisodeId: null };
-    }
+public async getStatusAsync(): Promise<AudioStatus> {
+  if (!this.isPlayerReady) {
+    return { 
+      isLoaded: false, 
+      isPlaying: false, 
+      isBuffering: false, 
+      positionMillis: 0, 
+      durationMillis: 0, 
+      currentEpisodeId: null,
+      currentEpisode: null // Ajout de l'épisode complet
+    };
   }
+  
+  try {
+    // Votre code existant pour obtenir le statut...
+    const [state, position, duration, buffered, currentTrackIdObject] = await Promise.all([
+      TrackPlayer.getState(),
+      TrackPlayer.getPosition(), // secondes
+      TrackPlayer.getDuration(), // secondes
+      TrackPlayer.getBufferedPosition(), // secondes
+      TrackPlayer.getTrack(await TrackPlayer.getCurrentTrack() ?? 0)
+    ]);
+
+    const isLoaded = state !== State.None && state !== State.Stopped && duration > 0;
+    const isPlaying = state === State.Playing;
+    const isBuffering = state === State.Buffering || state === State.Loading || 
+                        (isPlaying && duration > 0 && buffered < position + 1 && position < duration - 1);
+    const currentTrackId = currentTrackIdObject?.id ?? null;
+
+    // Retourner le statut avec l'épisode courant
+    return {
+      isLoaded,
+      isPlaying,
+      isBuffering,
+      positionMillis: position * 1000,
+      durationMillis: duration * 1000,
+      currentEpisodeId: currentTrackId ? String(currentTrackId) : null,
+      currentEpisode: this.currentEpisode // Ajout de l'épisode complet
+    };
+  } catch (error) {
+    console.error('[AudioManager] Error in getStatusAsync:', error);
+    // Réinitialisation en cas d'erreur
+    this.currentEpisode = null;
+    this.isPlaying = false;
+    this.isBuffering = false;
+    this.position = 0;
+    this.duration = 0;
+    return { 
+      isLoaded: false, 
+      isPlaying: false, 
+      isBuffering: false, 
+      positionMillis: 0, 
+      durationMillis: 0, 
+      currentEpisodeId: null,
+      currentEpisode: null // Ajout de l'épisode complet
+    };
+  }
+}
 
   // --- NOUVELLE MÉTHODE: Décharger le son ---
   /**
@@ -300,25 +422,57 @@ class AudioManager {
   public async unloadSound(): Promise<void> {
     console.log('[AudioManager] Unloading sound...');
     if (!this.isPlayerReady) return;
+    
     try {
-      await TrackPlayer.reset(); // reset arrête, supprime la file d'attente et réinitialise
+      // Capturer l'ID de l'épisode avant de réinitialiser
+      const episodeId = this.currentEpisode?.id;
+      
+      await TrackPlayer.reset();
       this.currentEpisode = null;
       this.position = 0;
       this.duration = 0;
       this.isPlaying = false;
       this.isBuffering = false;
-      // Notify listeners about the unloaded state
-      this.notifyListeners({ type: 'status', position: 0, duration: 0, isPlaying: false, isBuffering: false, isLoaded: false, episodeId: null }); // <<< AJOUTER episodeId: null
+      
+      // Notifier avec l'événement "unloaded"
+      this.notifyListeners({ 
+        type: 'unloaded',
+        episodeId // Inclure l'ID de l'épisode qui vient d'être déchargé
+      });
+      
+      // Également notifier le statut mis à jour
+      this.notifyListeners({ 
+        type: 'status', 
+        position: 0, 
+        duration: 0, 
+        isPlaying: false, 
+        isBuffering: false, 
+        isLoaded: false, 
+        episodeId: null 
+      });
+      
       console.log('[AudioManager] Sound unloaded.');
     } catch (error) {
       console.error('[AudioManager] Error unloading sound:', error);
-      // Attempt to reset state even on error
+      // Même en cas d'erreur, réinitialiser l'état
       this.currentEpisode = null;
       this.position = 0;
       this.duration = 0;
       this.isPlaying = false;
       this.isBuffering = false;
-      this.notifyListeners({ type: 'status', position: 0, duration: 0, isPlaying: false, isBuffering: false, isLoaded: false, episodeId: null }); // <<< AJOUTER episodeId: null
+      this.notifyListeners({ 
+        type: 'unloaded',
+        episodeId: null
+      });
+      this.notifyListeners({ 
+        type: 'status', 
+        position: 0, 
+        duration: 0, 
+        isPlaying: false, 
+        isBuffering: false, 
+        isLoaded: false, 
+        episodeId: null 
+      });
     }
   }
 
@@ -547,10 +701,11 @@ class AudioManager {
                 this.currentEpisode = {
                     id: newTrackId,
                     title: data.nextTrack.title || 'Épisode inconnu',
-                    mp3Link: data.nextTrack.url as string, // Assume url is mp3Link
-                    description: '', // Missing info
-                    duration: data.nextTrack.duration ?? 0, // Use duration from track if available
-                    publicationDate: '', // Missing info
+                    mp3Link: data.nextTrack.url as string,
+                    description: '',
+                    duration: data.nextTrack.duration ?? 0,
+                    publicationDate: '',
+                    artwork: undefined,
                 };
                 // Reset position for the new track
                 this.position = 0;
