@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getStringItem, removeStringItem } from './cache/LocalStorageService';
 import { supabase } from '../lib/supabase';
 
 const OFFLINE_WATCHED_EPISODES_KEY = 'offline_watched_episodes';
@@ -10,7 +10,7 @@ const OFFLINE_WATCHED_EPISODES_KEY = 'offline_watched_episodes';
 export async function syncOfflineWatchedEpisodes(): Promise<void> {
   try {
     // Récupérer les épisodes vus hors ligne
-    const offlineWatchedEpisodesJSON = await AsyncStorage.getItem(OFFLINE_WATCHED_EPISODES_KEY);
+    const offlineWatchedEpisodesJSON = await getStringItem(OFFLINE_WATCHED_EPISODES_KEY);
     if (!offlineWatchedEpisodesJSON) {
       return;
     }
@@ -44,7 +44,7 @@ export async function syncOfflineWatchedEpisodes(): Promise<void> {
     }
 
     // Si tout s'est bien passé, effacer les épisodes vus hors ligne
-    await AsyncStorage.removeItem(OFFLINE_WATCHED_EPISODES_KEY);
+    await removeStringItem(OFFLINE_WATCHED_EPISODES_KEY);
     console.log(`Successfully synced ${watchedData.length} watched episodes`);
   } catch (error) {
     console.error('Error in syncOfflineWatchedEpisodes:', error);

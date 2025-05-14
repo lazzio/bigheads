@@ -2,13 +2,12 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, AppState, AppStateStatus, BackHandler, Platform } from 'react-native'; // Added Platform
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as FileSystem from 'expo-file-system';
 import { GestureHandlerRootView, PanGestureHandler, State } from 'react-native-gesture-handler';
-import { getImageUrlFromDescription } from '../../components/GTPersons'; // Ensure this is imported
-
+import { getImageUrlFromDescription } from '../../components/GTPersons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
 import { Database } from '../../types/supabase';
 import { Episode } from '../../types/episode';
@@ -19,15 +18,18 @@ import { parseDuration } from '../../utils/commons/timeUtils';
 import { 
   EPISODES_CACHE_KEY, 
   PLAYBACK_POSITIONS_KEY, 
-  LAST_PLAYED_EPISODE_KEY, 
-  LAST_PLAYED_POSITION_KEY, 
-  LAST_PLAYING_STATE_KEY,
-  LocalPositionInfo, 
-  LocalPositions,
   getPositionLocally,
+  savePositionLocally,
   loadCachedEpisodes,
+  getLastPlayedEpisodeId,
+  setLastPlayedEpisodeId,
+  getLastPlayedPosition,
+  setLastPlayedPosition,
+  getWasPlaying,
+  setWasPlaying,
+  LocalPositions,
   setCurrentEpisodeId
-} from '../../utils/LocalStorageService';
+} from '../../utils/cache/LocalStorageService';
 
 
 // --- Types ---
@@ -122,34 +124,34 @@ export default function PlayerScreen() {
   }, [episodes]); // episodes needed for duration
 
   // --- Local Storage Helpers ---
-  const savePositionLocally = useCallback(async (epId: string, positionMillis: number) => {
-    if (!epId) return;
-    const positionSeconds = positionMillis / 1000;
-    // Prevent saving NaN or excessively large/small numbers
-    if (isNaN(positionSeconds) || !isFinite(positionSeconds)) {
-        console.warn(`[PlayerScreen] Attempted to save invalid position (${positionSeconds}s) for ${epId}. Skipping.`);
-        return;
-    }
-    console.log(`[PlayerScreen] Saving position locally for ${epId}: ${positionSeconds.toFixed(2)}s`);
-    try {
-      const existingPositionsString = await AsyncStorage.getItem(PLAYBACK_POSITIONS_KEY);
-      const positions: LocalPositions = existingPositionsString ? JSON.parse(existingPositionsString) : {};
+  // const savePositionLocally = useCallback(async (epId: string, positionMillis: number) => {
+  //   if (!epId) return;
+  //   const positionSeconds = positionMillis / 1000;
+  //   // Prevent saving NaN or excessively large/small numbers
+  //   if (isNaN(positionSeconds) || !isFinite(positionSeconds)) {
+  //       console.warn(`[PlayerScreen] Attempted to save invalid position (${positionSeconds}s) for ${epId}. Skipping.`);
+  //       return;
+  //   }
+  //   console.log(`[PlayerScreen] Saving position locally for ${epId}: ${positionSeconds.toFixed(2)}s`);
+  //   try {
+  //     const existingPositionsString = await AsyncStorage.getItem(PLAYBACK_POSITIONS_KEY);
+  //     const positions: LocalPositions = existingPositionsString ? JSON.parse(existingPositionsString) : {};
       
-      // Update only if position has actually changed
-      const currentPos = positions[epId]?.position;
-      if (currentPos === undefined || Math.abs(currentPos - positionSeconds) > 0.5) {
-        positions[epId] = {
-          position: positionSeconds,
-          timestamp: Date.now(),
-        };
+  //     // Update only if position has actually changed
+  //     const currentPos = positions[epId]?.position;
+  //     if (currentPos === undefined || Math.abs(currentPos - positionSeconds) > 0.5) {
+  //       positions[epId] = {
+  //         position: positionSeconds,
+  //         timestamp: Date.now(),
+  //       };
         
-        await AsyncStorage.setItem(PLAYBACK_POSITIONS_KEY, JSON.stringify(positions));
-        console.log(`[PlayerScreen] Position for ${epId} updated in storage`);
-      }
-    } catch (error) {
-      console.error("[PlayerScreen] Error saving position locally:", error);
-    }
-  }, []);
+  //       await AsyncStorage.setItem(PLAYBACK_POSITIONS_KEY, JSON.stringify(positions));
+  //       console.log(`[PlayerScreen] Position for ${epId} updated in storage`);
+  //     }
+  //   } catch (error) {
+  //     console.error("[PlayerScreen] Error saving position locally:", error);
+  //   }
+  // }, []);
 
   // const getPositionLocally = useCallback(async (epId: string): Promise<number | null> => { // REMOVED, now imported
   //   if (!epId) return null;
@@ -188,9 +190,11 @@ export default function PlayerScreen() {
       await savePositionLocally(episodeIdToSave, status.positionMillis);
 
       // Save as the last played episode (for app resumption)
-      await AsyncStorage.setItem(LAST_PLAYED_EPISODE_KEY, episodeIdToSave);
-      await AsyncStorage.setItem(LAST_PLAYED_POSITION_KEY, String(status.positionMillis));
-      await AsyncStorage.setItem(LAST_PLAYING_STATE_KEY, String(status.isPlaying));
+      await setLastPlayedEpisodeId(episodeIdToSave);
+      // Pour sauvegarder la position :
+      await setLastPlayedPosition(String(status.positionMillis));
+      // Pour sauvegarder l'état playing :
+      await setWasPlaying(status.isPlaying);
 
       // Also sync to remote if possible (fire-and-forget)
       syncAllLocalPositionsToSupabase().catch(err =>
@@ -373,15 +377,12 @@ export default function PlayerScreen() {
 
       // 2. If no specific position, check if it was the *very last* played episode (app closed/reopened)
       if (initialPosition === null) {
-        const savedEpisodeId = await AsyncStorage.getItem(LAST_PLAYED_EPISODE_KEY);
-        const savedPositionStr = await AsyncStorage.getItem(LAST_PLAYED_POSITION_KEY);
+        const savedEpisodeId = await getLastPlayedEpisodeId();
+        const savedPosition = await getLastPlayedPosition();
 
-        if (savedEpisodeId === currentEp.id && savedPositionStr) {
-          const savedPosition = Number(savedPositionStr);
-          if (isFinite(savedPosition)) {
-            initialPosition = savedPosition;
-            console.log(`[PlayerScreen] Using last globally saved position for ${currentEp.id}: ${initialPosition}ms`);
-          }
+        if (savedEpisodeId === currentEp.id && savedPosition !== null) {
+          initialPosition = Number(savedPosition);
+          console.log(`[PlayerScreen] Using last globally saved position for ${currentEp.id}: ${initialPosition}ms`);
         }
       }
 
@@ -407,12 +408,12 @@ export default function PlayerScreen() {
 
       // --- Auto-Resume Playback? ---
       // Check if this episode was the last one playing when the app was backgrounded/closed
-      const wasPlayingStr = await AsyncStorage.getItem(LAST_PLAYING_STATE_KEY);
-      const lastPlayedId = await AsyncStorage.getItem(LAST_PLAYED_EPISODE_KEY);
-      if (wasPlayingStr === 'true' && lastPlayedId === currentEp.id) {
+      const wasPlaying = await getWasPlaying();
+      const lastPlayedId = await getLastPlayedEpisodeId();
+      if (wasPlaying && lastPlayedId === currentEp.id) {
         console.log('[PlayerScreen] Auto-resuming playback as episode was playing before');
         // Clear the flag after using it
-        await AsyncStorage.removeItem(LAST_PLAYING_STATE_KEY);
+        await setWasPlaying(false);
         await audioManager.play().catch(err =>
           console.error('[PlayerScreen] Error auto-resuming playback:', err)
         );
@@ -465,15 +466,16 @@ export default function PlayerScreen() {
 
           if (apiError) throw apiError;
 
-          fetchedEpisodes = (data as SupabaseEpisode[]).map(episode => ({
+          fetchedEpisodes = (data as any[]).map(episode => ({
             id: episode.id,
             title: episode.title,
             description: episode.description,
-            originalMp3Link: episode.original_mp3_link ?? undefined,
-            mp3Link: episode.mp3_link ?? '',
-            duration: parseDuration(episode.duration), // Ensure duration is parsed correctly
+            originalMp3Link: episode.original_mp3_link,
+            mp3Link: episode.offline_path || episode.mp3_link,
+            duration: parseDuration(episode.duration),
             publicationDate: episode.publication_date,
-            artwork: getImageUrlFromDescription(episode.description || '') || undefined,
+            offline_path: episode.offline_path,
+            artwork: episode.artwork || getImageUrlFromDescription(episode.description) || undefined,
           }));
           // Cache fetched episodes
           await AsyncStorage.setItem(EPISODES_CACHE_KEY, JSON.stringify(fetchedEpisodes));

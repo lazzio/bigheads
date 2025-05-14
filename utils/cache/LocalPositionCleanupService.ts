@@ -1,21 +1,11 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
-import { supabase } from '../lib/supabase';
-import { Episode } from '../types/episode';
-import { Database } from '../types/supabase';
-import { parseDuration } from './commons/timeUtils';
+import { supabase } from '../../lib/supabase';
+import { Episode } from '../../types/episode';
+import { Database } from '../../types/supabase';
+import { parseDuration } from '../commons/timeUtils';
+import { loadCachedEpisodes, saveEpisodesToCache, EPISODES_CACHE_KEY, PLAYBACK_POSITIONS_KEY, LocalPositions, getStringItem, setStringItem } from './LocalStorageService';
 
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
-
-const EPISODES_CACHE_KEY = 'cached_episodes';
-const PLAYBACK_POSITIONS_KEY = 'playbackPositions';
-
-// Structure for locally stored positions (copied from player.tsx for consistency)
-interface LocalPositionInfo {
-  position: number; // seconds
-  timestamp: number; // ms since epoch
-}
-type LocalPositions = Record<string, LocalPositionInfo>;
 
 /**
  * Fetches the IDs of all currently available episodes, either from API or cache.
@@ -37,9 +27,9 @@ async function fetchAvailableEpisodeIds(): Promise<Set<string> | null> {
                 console.error("[LocalPositionCleanup] Error fetching episodes from Supabase:", apiError.message);
                 // Fallback to cache if API fails
                 console.log("[LocalPositionCleanup] Falling back to cache due to API error.");
-                const cachedData = await AsyncStorage.getItem(EPISODES_CACHE_KEY);
+                const cachedData = await loadCachedEpisodes();
                  if (cachedData) {
-                    episodes = JSON.parse(cachedData);
+                    episodes = cachedData;
                  } else {
                      console.error("[LocalPositionCleanup] API failed and no cache available.");
                      return null; // Cannot determine available episodes
@@ -49,20 +39,21 @@ async function fetchAvailableEpisodeIds(): Promise<Set<string> | null> {
                     id: episode.id,
                     title: episode.title,
                     description: episode.description,
-                    originalMp3Link: episode.original_mp3_link ?? undefined,
-                    mp3Link: episode.mp3_link ?? '',
+                    originalMp3Link: episode.original_mp3_link,
+                    mp3Link: episode.offline_path || episode.mp3_link,
                     duration: parseDuration(episode.duration),
                     publicationDate: episode.publication_date,
-                    offline_path: episode.offline_path ?? undefined,
+                    offline_path: episode.offline_path,
+                    artwork: episode.artwork || undefined,
                 }));
                 // Update cache
-                await AsyncStorage.setItem(EPISODES_CACHE_KEY, JSON.stringify(episodes));
+                await saveEpisodesToCache(episodes);
             }
         } else {
             console.log("[LocalPositionCleanup] Offline, fetching episodes from cache...");
-            const cachedData = await AsyncStorage.getItem(EPISODES_CACHE_KEY);
+            const cachedData = await loadCachedEpisodes();
             if (cachedData) {
-                episodes = JSON.parse(cachedData);
+                episodes = cachedData;
             } else {
                 console.warn("[LocalPositionCleanup] Offline and no cached episodes found. Cannot perform cleanup.");
                 return null; // Cannot determine available episodes
@@ -104,7 +95,7 @@ export async function cleanupStaleLocalPositions(): Promise<void> {
     }
 
     try {
-        const existingPositionsString = await AsyncStorage.getItem(PLAYBACK_POSITIONS_KEY);
+        const existingPositionsString = await getStringItem(PLAYBACK_POSITIONS_KEY);
         if (!existingPositionsString) {
             console.log("[LocalPositionCleanup] No local positions found. Nothing to clean up.");
             return;
@@ -126,7 +117,7 @@ export async function cleanupStaleLocalPositions(): Promise<void> {
         }
 
         if (removedCount > 0) {
-            await AsyncStorage.setItem(PLAYBACK_POSITIONS_KEY, JSON.stringify(cleanedPositions));
+            await setStringItem(PLAYBACK_POSITIONS_KEY, JSON.stringify(cleanedPositions));
             console.log(`[LocalPositionCleanup] Removed ${removedCount} stale local position entries. ${Object.keys(cleanedPositions).length} entries remaining.`);
         } else {
             console.log("[LocalPositionCleanup] No stale local positions found. Cleanup complete.");

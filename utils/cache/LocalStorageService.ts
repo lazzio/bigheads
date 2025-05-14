@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Episode } from '../types/episode';
-import { parseDuration } from './commons/timeUtils';
+import { Episode } from '../../types/episode';
+import { parseDuration } from '../commons/timeUtils';
 
 // --- Constants ---
 export const EPISODES_CACHE_KEY = 'cached_episodes';
@@ -12,7 +12,6 @@ export const CURRENTLY_PLAYING_EPISODE_ID_KEY = 'currentlyPlayingEpisodeId';
 export const CURRENT_EPISODE_ID_KEY = 'CURRENT_EPISODE_ID';
 
 // --- Types ---
-// Structure for locally stored positions
 export interface LocalPositionInfo {
   position: number; // seconds
   timestamp: number; // ms since epoch
@@ -22,16 +21,7 @@ export type LocalPositions = Record<string, LocalPositionInfo>;
 // --- Functions ---
 
 /**
- * Saves the playback position for a specific episode locally using AsyncStorage.
- *
- * @param epId - The unique identifier of the episode.
- * @param positionMillis - The playback position in milliseconds.
- * 
- * @remarks
- * - Converts the position from milliseconds to seconds before saving.
- * - Stores the position along with a timestamp.
- * - If `epId` is falsy, or if the position is not a finite number, the function returns early.
- * - Errors during storage are silently ignored.
+ * Sauvegarde la position de lecture pour un épisode localement.
  */
 export async function savePositionLocally(epId: string, positionMillis: number) {
   if (!epId) return;
@@ -51,9 +41,7 @@ export async function savePositionLocally(epId: string, positionMillis: number) 
 }
 
 /**
- * Retrieves the playback position for a given episode ID from local storage.
- * @param epId The ID of the episode.
- * @returns The position in milliseconds, or null if not found or an error occurs.
+ * Récupère la position de lecture pour un épisode donné.
  */
 export const getPositionLocally = async (epId: string): Promise<number | null> => {
   if (!epId) return null;
@@ -61,38 +49,45 @@ export const getPositionLocally = async (epId: string): Promise<number | null> =
     const existingPositionsString = await AsyncStorage.getItem(PLAYBACK_POSITIONS_KEY);
     const positions: LocalPositions = existingPositionsString ? JSON.parse(existingPositionsString) : {};
     if (positions[epId] && typeof positions[epId].position === 'number' && isFinite(positions[epId].position)) {
-      // console.log(`[storageService] Found local position for ${epId}: ${positions[epId].position}s`);
       return positions[epId].position * 1000; // Return in milliseconds
     }
   } catch (error) {
-    console.error("[storageService] Error getting position locally:", error);
+    // Silent fail
   }
   return null;
 };
 
 /**
- * Loads episodes from the local cache.
- * @returns A promise that resolves to an array of Episode objects.
+ * Charge les épisodes depuis le cache local.
  */
 export const loadCachedEpisodes = async (): Promise<Episode[]> => {
   try {
     const cachedData = await AsyncStorage.getItem(EPISODES_CACHE_KEY);
     if (cachedData) {
-      const episodes: Episode[] = JSON.parse(cachedData);
-      // Normaliser la durée
-      const normalizedEpisodes = episodes.map(ep => ({ ...ep, duration: parseDuration(ep.duration) }));
-      console.log(`[storageService] Loaded ${normalizedEpisodes.length} episodes from cache`);
+      const episodes: any[] = JSON.parse(cachedData);
+      // Normaliser la durée et garantir mp3Link
+      const normalizedEpisodes = episodes.map(ep => ({
+        ...ep,
+        duration: parseDuration(ep.duration),
+        mp3Link: ep.offline_path || ep.mp3Link || '',
+      }));
       return normalizedEpisodes;
     }
-  } catch (error) { 
-    console.error('[storageService] Error loading cached episodes:', error); 
-  }
+  } catch (error) {}
   return [];
 };
 
 /**
- * Saves episodeID of currently played episode to the local cache.
- * @param episodeId The ID of the episode.
+ * Sauvegarde les épisodes dans le cache local.
+ */
+export const saveEpisodesToCache = async (episodes: Episode[]) => {
+  try {
+    await AsyncStorage.setItem(EPISODES_CACHE_KEY, JSON.stringify(episodes));
+  } catch (error) {}
+};
+
+/**
+ * Sauvegarde l'ID de l'épisode en cours de lecture.
  */
 export const saveCurrentlyPlayingEpisodeId = async (episodeId: string) => {
   try {
@@ -103,8 +98,7 @@ export const saveCurrentlyPlayingEpisodeId = async (episodeId: string) => {
 };
 
 /**
- * Get the ID of the currently played episode from the local cache.
- * @returns The ID of the currently played episode, or null if not found.
+ * Récupère l'ID de l'épisode en cours de lecture.
  */
 export const getCurrentlyPlayingEpisodeId = async (): Promise<string | null> => {
   try {
@@ -126,3 +120,32 @@ export async function setCurrentEpisodeId(episodeId: string | null) {
 export async function getCurrentEpisodeId(): Promise<string | null> {
   return await AsyncStorage.getItem(CURRENT_EPISODE_ID_KEY);
 }
+
+// Helpers génériques pour get/set/remove une clé string
+export async function getStringItem(key: string): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+export async function setStringItem(key: string, value: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(key, value);
+  } catch {}
+}
+export async function removeStringItem(key: string): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(key);
+  } catch {}
+}
+
+// Helpers spécifiques pour les clés courantes
+export const getLastPlayedEpisodeId = () => getStringItem(LAST_PLAYED_EPISODE_KEY);
+export const setLastPlayedEpisodeId = (id: string) => setStringItem(LAST_PLAYED_EPISODE_KEY, id);
+export const getLastPlayedPosition = () => getStringItem(LAST_PLAYED_POSITION_KEY);
+export const setLastPlayedPosition = (pos: string) => setStringItem(LAST_PLAYED_POSITION_KEY, pos);
+export const getWasPlaying = () => getStringItem(LAST_PLAYING_STATE_KEY);
+export const setWasPlaying = (val: boolean) => setStringItem(LAST_PLAYING_STATE_KEY, val.toString());
+export const getExpoPushToken = () => getStringItem('expoPushToken');
+export const setExpoPushToken = (token: string) => setStringItem('expoPushToken', token);

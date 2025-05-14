@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { theme } from '../styles/global';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getCurrentEpisodeId, getPositionLocally, getWasPlaying } from '../utils/cache/LocalStorageService';
 
 export default function NotFoundScreen() {
   const router = useRouter();
@@ -13,9 +13,12 @@ export default function NotFoundScreen() {
         console.log('[NotFound] Tentative de redirection automatique vers le player...');
         
         // Récupérer les données de lecture sauvegardées
-        const lastEpisodeId = await AsyncStorage.getItem('lastPlayedEpisodeId');
-        const lastPosition = await AsyncStorage.getItem('lastPlayedPosition');
-        const wasPlaying = await AsyncStorage.getItem('wasPlaying');
+        const lastEpisodeId = await getCurrentEpisodeId();
+        let lastPosition = null;
+        if (lastEpisodeId) {
+          lastPosition = await getPositionLocally(lastEpisodeId);
+        }
+        const wasPlaying = await getWasPlaying();
         
         if (lastEpisodeId) {
           console.log(`[NotFound] Redirection avec l'épisode ${lastEpisodeId} à la position ${lastPosition || 0}`);

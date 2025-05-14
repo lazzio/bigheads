@@ -3,12 +3,12 @@ import { SplashScreen, useRouter, Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
-import { initEpisodeNotificationService, setupNotificationListener, syncPushTokenAfterLogin } from '../utils/EpisodeNotificationService';
+import { initEpisodeNotificationService, setupNotificationListener, syncPushTokenAfterLogin } from '../utils/notifications/EpisodeNotificationService';
 import NetInfo from '@react-native-community/netinfo';
 import * as Sentry from '@sentry/react-native';
 import { StatusBar } from 'expo-status-bar';
-import { cleanupStaleLocalPositions } from '../utils/LocalPositionCleanupService';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { cleanupStaleLocalPositions } from '../utils/cache/LocalPositionCleanupService';
+import { getCurrentlyPlayingEpisodeId, setCurrentEpisodeId, getStringItem, removeStringItem } from '../utils/cache/LocalStorageService';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -106,10 +106,10 @@ export default function RootLayout() {
             const checkLastRequestedEpisode = async () => {
               if (!appMounted.current || !isAppReady) return; // Guard with isAppReady
               try {
-                const lastEpisodeId = await AsyncStorage.getItem('lastRequestedEpisodeId');
+                const lastEpisodeId = await getStringItem('lastRequestedEpisodeId');
                 if (lastEpisodeId) {
                   console.log(`[Layout] Found last requested episode ${lastEpisodeId}, clearing and navigating`);
-                  await AsyncStorage.removeItem('lastRequestedEpisodeId');
+                  await removeStringItem('lastRequestedEpisodeId');
                   router.navigate({
                     pathname: '/player/player',
                     params: { episodeId: lastEpisodeId, source: 'notification', timestamp: Date.now() }

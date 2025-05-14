@@ -15,7 +15,7 @@ import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { audioManager, formatTime } from '../utils/OptimizedAudioService';
 import { theme } from '../styles/global';
 import { Episode } from '../types/episode';
-import { savePositionLocally } from '../utils/LocalStorageService';
+import { savePositionLocally } from '../utils/cache/LocalStorageService';
 
 // Dimensions de l'écran
 const { height } = Dimensions.get('window');
