@@ -1,3 +1,19 @@
+## [3.5.0](https://github.com/lazzio/bigheads/-/compare/v3.4.0...v3.5.0) (2025-05-14)
+
+### Features
+
+* github actions npm cache ([9c8bb9d](https://github.com/lazzio/bigheads/-/commit/9c8bb9d683e69be291167a68cbf734a66f94201b))
+* github actions npm cache ([#53](https://github.com/lazzio/bigheads/-/issues/53)) ([38b3a33](https://github.com/lazzio/bigheads/-/commit/38b3a33a85d2e08e152364fb6755ce793fad0969))
+* miniplayer on episodes page ([6b6edc7](https://github.com/lazzio/bigheads/-/commit/6b6edc7b718b54c5fafa5aa8126a631b3498eb12))
+* move tab fields a little upper ([dfa1f7d](https://github.com/lazzio/bigheads/-/commit/dfa1f7d75db55c74615841391280b881b6cd5a9f))
+
+### Bug Fixes
+
+* authentification session not totally detected even if connected ([3c979b9](https://github.com/lazzio/bigheads/-/commit/3c979b9f896d97c611906bba89ee02c325d53bfc))
+* check session exists on open ([a5a925c](https://github.com/lazzio/bigheads/-/commit/a5a925c092c6abb0cdbf916c7ca5363943b70eda))
+* improve lists and player ([58bc06f](https://github.com/lazzio/bigheads/-/commit/58bc06f6cece22a16da7ec266917bf4d92b28a77))
+* securecache too long ([1146876](https://github.com/lazzio/bigheads/-/commit/11468760709b953a701d593805dcaad47409ca14))
+
 ## [3.4.0](https://github.com/lazzio/bigheads/-/compare/v3.3.3...v3.4.0) (2025-05-10)
 
 ### Features
