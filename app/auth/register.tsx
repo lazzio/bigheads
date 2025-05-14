@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Alert } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
-import { syncPushTokenAfterLogin } from '../../utils/EpisodeNotificationService'; // <<< Importer la nouvelle fonction
+import { syncPushTokenAfterLogin } from '../../utils/notifications/EpisodeNotificationService'; // <<< Importer la nouvelle fonction
 
 export default function RegisterScreen() {
   const [email, setEmail] = useState('');

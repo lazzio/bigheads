@@ -6,7 +6,7 @@ import { usePathname } from 'expo-router';
 import { theme } from '../../styles/global';
 import { tabBarStyle } from '@/styles/componentStyle';
 import { audioManager } from '../../utils/OptimizedAudioService';
-import { getCurrentEpisodeId } from '../../utils/LocalStorageService';
+import { getCurrentEpisodeId } from '../../utils/cache/LocalStorageService';
 import MiniPlayer from '../../components/MiniPlayer';
 
 // Créer un composant séparé pour le TabBar personnalisé

@@ -14,15 +14,17 @@ import NetInfo from '@react-native-community/netinfo';
 import { supabase } from '../../lib/supabase';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
 import * as FileSystem from 'expo-file-system';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { Episode } from '../../types/episode';
 import Svg, { Circle } from 'react-native-svg';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { loadCachedEpisodes, saveEpisodesToCache, EPISODES_CACHE_KEY } from '../../utils/cache/LocalStorageService';
 import { theme } from '../../styles/global';
 import { componentStyle, episodeStyle } from '../../styles/componentStyle';
 import { parseDuration } from '../../utils/commons/timeUtils';
 import { getGoogleUserInfo } from '@/lib/user';
 import { Image } from 'expo-image';
+import { getImageUrlFromDescription } from '../../components/GTPersons';
 
 // Types
 interface DownloadStatus {
@@ -36,7 +38,6 @@ interface DownloadStatus {
 
 // Constants
 const DOWNLOADS_DIR = FileSystem.documentDirectory + 'downloads/';
-const EPISODES_CACHE_KEY = 'cached_episodes';
 const CLEANUP_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 const MAX_DOWNLOAD_AGE_DAYS = 7;
 
@@ -146,21 +147,6 @@ export default function DownloadsScreen() {
     }
   };
 
-  // Load episodes from cache
-  const loadCachedEpisodes = async (): Promise<Episode[]> => {
-    try {
-      const cachedData = await AsyncStorage.getItem(EPISODES_CACHE_KEY);
-      if (cachedData) {
-        const episodes = JSON.parse(cachedData);
-        console.log(`Loaded ${episodes.length} episodes from cache`);
-        return episodes;
-      }
-    } catch (error) {
-      console.error('Error loading cached episodes:', error);
-    }
-    return [];
-  };
-
   // Save episodes to cache for offline use
   const saveEpisodesToCache = async (episodes: Episode[]) => {
     try {
@@ -260,11 +246,9 @@ export default function DownloadsScreen() {
         id: meta.id,
         title: meta.title || 'Downloaded Episode',
         description: meta.description || '',
-        mp3Link: '',
-        mp3_link: '',
+        mp3Link: meta.filePath || meta.mp3Link || meta.mp3_link || '',
         duration: parseDuration(meta.duration),
         publicationDate: meta.downloadDate || new Date().toISOString(),
-        publication_date: meta.downloadDate || new Date().toISOString(),
         offline_path: meta.filePath,
         artwork: meta.artwork || undefined
       }));
@@ -308,14 +292,12 @@ export default function DownloadsScreen() {
         id: ep.id,
         title: ep.title,
         description: ep.description,
-        mp3Link: ep.mp3_link || '',
-        mp3_link: ep.mp3_link || '',
-        duration: ep.duration || '',
-        publicationDate: ep.publication_date || '',
-        publication_date: ep.publication_date || '',
         originalMp3Link: ep.original_mp3_link,
+        mp3Link: ep.offline_path || ep.mp3_link,
+        duration: parseDuration(ep.duration),
+        publicationDate: ep.publication_date,
         offline_path: ep.offline_path,
-        artwork: ep.artwork || undefined,
+        artwork: ep.artwork || getImageUrlFromDescription(ep.description) || undefined,
       }));
       setEpisodes(normalizedEpisodes);
       
@@ -361,7 +343,7 @@ export default function DownloadsScreen() {
       const newStatus: DownloadStatus = {};
       
       for (const episode of episodes) {
-        if (!episode?.mp3_link && !episode?.offline_path) continue;
+        if (!episode?.mp3Link && !episode?.offline_path) continue;
         
         let isDownloaded = false;
         let filePath: string | undefined;
@@ -371,9 +353,9 @@ export default function DownloadsScreen() {
           const fileInfo = await FileSystem.getInfoAsync(episode.offline_path);
           isDownloaded = fileInfo.exists;
           filePath = isDownloaded ? episode.offline_path : undefined;
-        } else if (episode.mp3_link) {
+        } else if (episode.mp3Link) {
           // Otherwise, check by filename
-          const filename = getFilename(episode.mp3_link);
+          const filename = getFilename(episode.mp3Link);
           isDownloaded = files.includes(filename);
           filePath = isDownloaded ? DOWNLOADS_DIR + filename : undefined;
         }
@@ -398,13 +380,13 @@ export default function DownloadsScreen() {
   // Download an episode
   const downloadEpisode = async (episode: Episode) => {
     // Check if the episode has a valid mp3 link
-    if (!episode?.mp3_link) {
+    if (!episode?.mp3Link) {
       setError('Download link not available');
       return;
     }
     
     if (Platform.OS === 'web') {
-      window.open(episode.mp3_link, '_blank');
+      window.open(episode.mp3Link, '_blank');
       return;
     }
 
@@ -412,7 +394,7 @@ export default function DownloadsScreen() {
       setError(null);
       await ensureDownloadsDirectory();
       
-      const filename = getFilename(episode.mp3_link);
+      const filename = getFilename(episode.mp3Link);
       const fileUri = DOWNLOADS_DIR + filename;
 
       // Update status
@@ -428,7 +410,7 @@ export default function DownloadsScreen() {
 
       // Create the download
       const downloadResumable = FileSystem.createDownloadResumable(
-        episode.mp3_link,
+        episode.mp3Link,
         fileUri,
         {},
         (downloadProgress) => {
@@ -512,9 +494,9 @@ export default function DownloadsScreen() {
         // If we have a direct offline path
         filePath = episode.offline_path;
         metaPath = episode.offline_path + '.meta';
-      } else if (episode.mp3_link) {
+      } else if (episode.mp3Link) {
         // Otherwise, build path from URL
-        const filename = getFilename(episode.mp3_link);
+        const filename = getFilename(episode.mp3Link);
         filePath = DOWNLOADS_DIR + filename;
         metaPath = filePath + '.meta';
       } else {
@@ -807,9 +789,9 @@ export default function DownloadsScreen() {
               activeOpacity={0.7}
             >
               <Text style={episodeStyle.episodeTitle}>{episode.title}</Text>
-              {episode.publication_date && (
+              {episode.publicationDate && (
                 <Text style={styles.episodeDate}>
-                  {new Date(episode.publication_date).toLocaleDateString()}
+                  {new Date(episode.publicationDate).toLocaleDateString()}
                 </Text>
               )}
               {downloadStatus[episode.id]?.downloaded && (

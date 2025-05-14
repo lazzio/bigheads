@@ -7,6 +7,7 @@ import { supabase } from '../../lib/supabase';
 import { Database } from '../../types/supabase';
 import { Episode } from '../../types/episode';
 import { formatTime } from '../../utils/commons/timeUtils';
+import { parseDuration } from '../../utils/commons/timeUtils';
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
@@ -14,10 +15,10 @@ import { theme } from '../../styles/global';
 import { componentStyle } from '../../styles/componentStyle';
 import { 
   EPISODES_CACHE_KEY,
-  getPositionLocally,
   loadCachedEpisodes,
+  getPositionLocally,
   getCurrentEpisodeId
-} from '../../utils/LocalStorageService';
+} from '../../utils/cache/LocalStorageService';
 import { getImageUrlFromDescription } from '../../components/GTPersons';
 
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
@@ -285,19 +286,16 @@ export default function EpisodesScreen() {
           // Corrected mapping from SupabaseEpisode to Episode type
           // Assumes Supabase client returns camelCase properties matching SupabaseEpisode type
           // and Episode type defines properties as needed (e.g., offline_path as snake_case)
-          const formattedEpisodes: Episode[] = (data as SupabaseEpisode[]).map(dbEpisode => ({
-            id: dbEpisode.id,
-            title: dbEpisode.title,
-            description: dbEpisode.description,
-            originalMp3Link: dbEpisode.originalMp3Link, // From SupabaseEpisode (camelCase) to Episode (camelCase)
-            mp3Link: dbEpisode.mp3Link,                 // From SupabaseEpisode (camelCase) to Episode (camelCase)
-            duration: dbEpisode.duration,
-            publicationDate: dbEpisode.publicationDate, // From SupabaseEpisode (camelCase) to Episode (camelCase)
-            // offline_path is snake_case in Episode type.
-            // If dbEpisode has \'offline_path\' or \'offlinePath\', it would be mapped here.
-            // Casting to \'any\' to attempt access if type is incomplete.
-            offline_path: (dbEpisode as any).offline_path ?? (dbEpisode as any).offlinePath, 
-            artwork: getImageUrlFromDescription(dbEpisode.description)
+          const formattedEpisodes: Episode[] = (data as any[]).map(ep => ({
+            id: ep.id,
+            title: ep.title,
+            description: ep.description,
+            originalMp3Link: ep.original_mp3_link,
+            mp3Link: ep.offline_path || ep.mp3_link,
+            duration: parseDuration(ep.duration),
+            publicationDate: ep.publication_date,
+            offline_path: ep.offline_path,
+            artwork: ep.artwork || getImageUrlFromDescription(ep.description) || undefined,
           }));
           episodesToSet = formattedEpisodes;
           

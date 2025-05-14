@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../../lib/supabase';
 import { Platform} from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getCurrentlyPlayingEpisodeId, setCurrentEpisodeId, getExpoPushToken, setExpoPushToken } from '../cache/LocalStorageService';
 import * as Sentry from '@sentry/react-native';
 import Constants from 'expo-constants';
 
@@ -49,7 +49,7 @@ export function setupNotificationListener(onNotificationReceived: (episodeId: st
       
       // Save this as the last requested episode in case the app gets killed before loading
       try {
-        AsyncStorage.setItem('lastRequestedEpisodeId', episodeId);
+        setCurrentEpisodeId(episodeId);
         console.log(`[NotificationService] Saved ${episodeId} as the last requested episode`);
       } catch (error) {
         console.error('[NotificationService] Error saving last requested episode:', error);
@@ -113,7 +113,7 @@ async function registerForPushNotificationsAsync(): Promise<string | null> {
     console.log('Push token:', token);
     
     // Store the token in AsyncStorage for later use
-    await AsyncStorage.setItem('expoPushToken', token);
+    await setExpoPushToken(token);
     
     return token;
   }
@@ -161,7 +161,7 @@ async function savePushTokenToSupabase(token: string): Promise<void> {
  */
 export async function syncPushTokenAfterLogin(): Promise<void> {
   try {
-    const token = await AsyncStorage.getItem('expoPushToken');
+    const token = await getExpoPushToken();
     if (token) {
       console.log('[syncPushTokenAfterLogin] Found token in storage, attempting to sync with user ID.');
       await savePushTokenToSupabase(token); // This will now likely have the user ID
