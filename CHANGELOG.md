@@ -1,3 +1,9 @@
+## [3.5.1](https://github.com/lazzio/bigheads/-/compare/v3.5.0...v3.5.1) (2025-05-14)
+
+### Refactor
+
+* cache and episode map ([#54](https://github.com/lazzio/bigheads/-/issues/54)) ([c2bc5fa](https://github.com/lazzio/bigheads/-/commit/c2bc5fa0d700f738365988ff2b6320dcc12ab3ba))
+
 ## [3.5.0](https://github.com/lazzio/bigheads/-/compare/v3.4.0...v3.5.0) (2025-05-14)
 
 ### Features
