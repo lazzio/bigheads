@@ -473,7 +473,7 @@ export default function PlayerScreen() {
             mp3Link: episode.mp3_link ?? '',
             duration: parseDuration(episode.duration), // Ensure duration is parsed correctly
             publicationDate: episode.publication_date,
-            offline_path: episode.offline_path ?? undefined, // Ensure offline_path is handled
+            artwork: getImageUrlFromDescription(episode.description || '') || undefined,
           }));
           // Cache fetched episodes
           await AsyncStorage.setItem(EPISODES_CACHE_KEY, JSON.stringify(fetchedEpisodes));
