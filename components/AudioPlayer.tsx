@@ -2,10 +2,12 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, AppState } from 'react-native';
 import { Episode } from '../types/episode';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { audioManager, formatTime, AudioStatus } from '../utils/OptimizedAudioService';
+import { audioManager } from '../utils/OptimizedAudioService';
+import { formatTime } from '../utils/commons/timeUtils';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { throttle } from 'lodash';
 import { theme } from '../styles/global';
+import { LoadingIndicator, EmptyState, RetryButton } from './SharedUI';
 
 interface AudioPlayerProps {
   episode: Episode;
@@ -211,6 +213,7 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
       } else {
         // Attempt to play even if duration is initially 0.
         // TrackPlayer might still be able to play or determine duration later.
+        // (Legacy comment: TrackPlayer is no longer used. All playback is handled by expo-av.)
         // We can also try fetching the status again to get a potentially updated duration.
         let currentDuration = duration;
         if (currentDuration <= 0) {
@@ -233,8 +236,7 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
                 console.error("[AudioPlayer] Error fetching status before play:", statusError);
             }
         }
-
-        // Now, attempt to play. If duration is still 0, TrackPlayer might handle it.
+        // Now, attempt to play. If duration is still 0, playback might still work.
         console.log(`[AudioPlayer] Attempting to play (duration known: ${currentDuration > 0})`);
         await audioManager.play();
         // --- MODIFICATION END ---
@@ -311,7 +313,7 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
           }
         }, 200);
         
-        // Re-sync with TrackPlayer state
+        // Re-sync with audioManager state (expo-av)
         audioManager.getStatusAsync().then(status => {
           if (status.isLoaded && status.currentEpisodeId === episode.id) {
             console.log('[AudioPlayer] Updating UI with current playback state');
@@ -334,24 +336,15 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
 
   // Loading State UI
   if (isLoading) {
-    console.log('[AudioPlayer] Rendering Loading State');
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color={theme.colors.primary}/>
-      </View>
-    );
+    return <LoadingIndicator message="Chargement..." style={styles.container} />;
   }
 
   // Error State UI
   if (error) {
     return (
-      <View style={styles.container}>
-        <MaterialIcons name="error-outline" size={48} color={theme.colors.error} />
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={onRetry}>
-          <Text style={styles.retryText}>Réessayer</Text>
-        </TouchableOpacity>
-      </View>
+      <EmptyState message={error}>
+        {onRetry && <RetryButton onPress={onRetry} text="Réessayer" style={styles.retryButton} />}
+      </EmptyState>
     );
   }
 
@@ -383,18 +376,12 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
         >
           <View style={styles.progressBackground} />
           <View style={[styles.progressBar, { width: `${progress}%` }]} />
-          <View
-            style={[
-              styles.progressKnob,
-              { left: `${progress}%` },
-              { transform: [{ translateX: -8 }] }
-            ]}
-          />
+          {/* Move the knob to the end of the progress bar */}
+          <View style={[styles.progressKnob, { left: `${progress}%` }]} />
         </TouchableOpacity>
-
         <View style={styles.timeContainer}>
-          <Text style={styles.timeText}>{formatTime(position)}</Text>
-          <Text style={styles.timeText}>-{formatTime(remainingTime)}</Text>
+          <Text style={styles.timeText}>{formatTime(Math.floor(position / 1000))}</Text>
+          <Text style={styles.timeText}>-{formatTime(Math.floor(remainingTime / 1000))}</Text>
         </View>
       </View>
 
@@ -459,8 +446,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingBottom: 20, // Add padding at the bottom
-    justifyContent: 'flex-end', // Align content towards the bottom
+    paddingBottom: 20,
+    justifyContent: 'flex-end',
     alignItems: 'center',
     width: '100%',
   },
@@ -469,7 +456,7 @@ const styles = StyleSheet.create({
       height: 250,
       borderRadius: 12,
       marginBottom: 30,
-      backgroundColor: theme.colors.borderColor, // Placeholder background
+      backgroundColor: theme.colors.borderColor,
   },
   title: {
     fontSize: 20,
@@ -479,30 +466,29 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   description: {
-    fontSize: 14, // Slightly smaller description
+    fontSize: 14,
     color: theme.colors.description,
     marginBottom: 25,
     textAlign: 'center',
-    paddingHorizontal: 10, // Add horizontal padding
+    paddingHorizontal: 10,
   },
   progressContainer: {
     width: '100%',
     marginBottom: 20,
   },
-  progressBarTouchable: { // Renamed for clarity
+  progressBarTouchable: {
     width: '100%',
-    height: 24, // Increased touch area height
+    height: 24,
     justifyContent: 'center',
-    // backgroundColor: 'rgba(255,0,0,0.1)', // Optional: Visualize touch area
   },
   progressBackground: {
     position: 'absolute',
     width: '100%',
-    height: 6, // Slightly thinner bar
+    height: 6,
     backgroundColor: theme.colors.borderColor,
     borderRadius: 3,
     top: '50%',
-    marginTop: -3, // Adjust vertical centering
+    marginTop: -3,
   },
   progressBar: {
     position: 'absolute',
@@ -514,15 +500,15 @@ const styles = StyleSheet.create({
   },
   progressKnob: {
     position: 'absolute',
-    width: 14, // Slightly smaller knob
+    width: 14,
     height: 14,
     backgroundColor: theme.colors.primary,
     borderRadius: 7,
-    borderWidth: 2, // Thinner border
+    borderWidth: 2,
     borderColor: theme.colors.text,
     top: '50%',
-    marginLeft: -7, // Adjust for knob size
-    marginTop: -7, // Adjust for knob size
+    marginLeft: -7,
+    marginTop: -7,
     elevation: 3,
     shadowColor: theme.colors.shadowColor,
     shadowOffset: { width: 0, height: 1 },
@@ -530,15 +516,15 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
   },
   progressKnobActive: {
-    transform: [{ scale: 1.3 }], // Slightly larger when active
-    backgroundColor: theme.colors.text, // Change color when active
+    transform: [{ scale: 1.3 }],
+    backgroundColor: theme.colors.text,
     borderColor: theme.colors.primary,
   },
   timeContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
-    marginTop: 8, // Add margin top
+    marginTop: 8,
   },
   timeText: {
     color: theme.colors.description,
@@ -549,16 +535,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     alignItems: 'center',
     width: '100%',
-    marginBottom: 20, // Add margin below main controls
+    marginBottom: 20,
   },
   button: {
-    padding: 10, // Add padding for easier touch
+    padding: 10,
   },
   playButton: {
     backgroundColor: theme.colors.buttonBackground,
     width: 76,
     height: 76,
-    borderRadius: 38, // Half of width/height for perfect circle
+    borderRadius: 38,
     marginHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
@@ -613,36 +599,14 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 16,
     position: 'absolute',
-    bottom: 10, // Position near bottom
+    bottom: 10,
     alignSelf: 'center',
     zIndex: 10,
-  },
-  bufferingText: {
-    color: theme.colors.text,
-    fontSize: 12,
-    marginLeft: 6,
-  },
-  statusText: {
-      color: theme.colors.description,
-      marginTop: 15,
-      fontSize: 16,
-  },
-  errorText: {
-    color: theme.colors.error,
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 16,
-    paddingHorizontal: 20,
   },
   retryButton: {
     backgroundColor: theme.colors.borderColor,
     paddingVertical: 10,
     paddingHorizontal: 25,
     borderRadius: 8,
-  },
-  retryText: {
-    color: theme.colors.text,
-    fontSize: 16,
-    fontWeight: '500',
   },
 });

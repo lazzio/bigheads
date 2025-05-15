@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import { supabase } from '../../lib/supabase';
 import { Platform} from 'react-native';
-import { getCurrentlyPlayingEpisodeId, setCurrentEpisodeId, getExpoPushToken, setExpoPushToken } from '../cache/LocalStorageService';
+import { setCurrentEpisodeId, getExpoPushToken, setExpoPushToken } from '../cache/LocalStorageService';
 import * as Sentry from '@sentry/react-native';
 import Constants from 'expo-constants';
 

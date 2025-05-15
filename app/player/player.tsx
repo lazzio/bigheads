@@ -30,6 +30,7 @@ import {
   LocalPositions,
   setCurrentEpisodeId
 } from '../../utils/cache/LocalStorageService';
+import { ErrorBanner, LoadingIndicator, EmptyState, OfflineIndicator, RetryButton } from '../../components/SharedUI';
 
 
 // --- Types ---
@@ -746,53 +747,36 @@ export default function PlayerScreen() {
   // --- Rendering Logic ---
   const currentEpisode = !loading && currentIndex !== null && episodes.length > currentIndex ? episodes[currentIndex] : null;
 
-  // Loading State
-  if (loading) {
+  // Error State
+  if (error) {
     return (
-      <View style={[styles.container, styles.centerContent, { backgroundColor: theme.colors.primaryBackground }]}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
-      </View>
-    );
-  }
-
-  // Error State (Full screen error if loading failed and no episode is displayable)
-  if (error && !currentEpisode && !loading) {
-    return (
-      <View style={[styles.container, styles.centerContent, { backgroundColor: theme.colors.primaryBackground }]}>
-        <MaterialIcons name="error-outline" size={48} color={theme.colors.error} />
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity onPress={handleRetryLoad} style={styles.retryButton}>
-          <Text style={styles.retryButtonText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
+      <EmptyState message={error}>
+        <RetryButton onPress={handleRetryLoad} text="Retry" style={styles.retryButton} />
+      </EmptyState>
     );
   }
 
   // No Episodes State
   if (!loading && !error && episodes.length === 0) {
     return (
-      <View style={[styles.container, styles.centerContent, { backgroundColor: theme.colors.primaryBackground }]}>
-        <MaterialIcons name="hourglass-empty" size={48} color={theme.colors.description} />
-        <Text style={styles.statusText}>No episodes available</Text>
-        <TouchableOpacity onPress={handleRetryLoad} style={styles.retryButton}>
-          <Text style={styles.retryButtonText}>Refresh</Text>
-        </TouchableOpacity>
-      </View>
+      <EmptyState message="No episodes available">
+        <RetryButton onPress={handleRetryLoad} text="Refresh" style={styles.retryButton} />
+      </EmptyState>
     );
   }
 
-  // Episode Not Found State (Should ideally be covered by error state now)
-  // This might occur if index is somehow invalid after loading finishes
+  // Episode Not Found State
   if (!loading && !error && episodes.length > 0 && !currentEpisode) {
     return (
-      <View style={[styles.container, styles.centerContent, { backgroundColor: theme.colors.primaryBackground }]}>
-        <MaterialIcons name="warning" size={48} color={theme.colors.description} />
-        <Text style={styles.statusText}>Episode not found</Text>
-         <TouchableOpacity onPress={() => router.back()} style={styles.retryButton}>
-          <Text style={styles.retryButtonText}>Go Back</Text>
-        </TouchableOpacity>
-      </View>
+      <EmptyState message="Episode not found">
+        <RetryButton onPress={() => router.back()} text="Go Back" style={styles.retryButton} />
+      </EmptyState>
     );
+  }
+
+  // Loading State
+  if (loading) {
+    return <LoadingIndicator message="Loading..." style={styles.centerContent} />;
   }
 
   // Main Player View
@@ -805,10 +789,7 @@ export default function PlayerScreen() {
         >
           {/* Display error as a banner if an episode is loaded but a playback error occurred */}
           {error && currentEpisode && (
-              <View style={styles.errorBanner}>
-                  <Text style={styles.errorBannerText}>{error}</Text>
-                  {/* Optionally add a dismiss button */}
-              </View>
+              <ErrorBanner message={error} />
           )}
 
           {/* Render Player if an episode is ready */}

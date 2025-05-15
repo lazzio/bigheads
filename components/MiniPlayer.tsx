@@ -12,7 +12,7 @@ import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
-import { audioManager, formatTime } from '../utils/OptimizedAudioService';
+import { audioManager } from '../utils/OptimizedAudioService';
 import { theme } from '../styles/global';
 import { Episode } from '../types/episode';
 import { savePositionLocally } from '../utils/cache/LocalStorageService';

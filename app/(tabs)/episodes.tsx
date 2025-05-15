@@ -7,7 +7,6 @@ import { supabase } from '../../lib/supabase';
 import { Database } from '../../types/supabase';
 import { Episode } from '../../types/episode';
 import { formatTime } from '../../utils/commons/timeUtils';
-import { parseDuration } from '../../utils/commons/timeUtils';
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
@@ -20,6 +19,7 @@ import {
   getCurrentEpisodeId
 } from '../../utils/cache/LocalStorageService';
 import { getImageUrlFromDescription } from '../../components/GTPersons';
+import { normalizeEpisodes } from '../../utils/commons/episodeUtils';
 
 type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
 type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row'];
@@ -160,6 +160,14 @@ const EpisodeListItem = ({
   );
 };
 
+/**
+ * Écran Episodes : utilise les utilitaires factorisés pour la gestion du cache, la normalisation des épisodes,
+ * et le formatage du temps. Toute logique de transformation d'épisode ou de gestion du temps doit passer par ces utilitaires.
+ * - Utilise loadCachedEpisodes, getPositionLocally, getCurrentEpisodeId (LocalStorageService)
+ * - Utilise formatTime (timeUtils)
+ * - Utilise normalizeEpisodes (episodeUtils)
+ */
+
 export default function EpisodesScreen() {
   const router = useRouter();
   const [episodes, setEpisodes] = useState<Episode[]>([]);
@@ -268,11 +276,6 @@ export default function EpisodesScreen() {
               console.error('Error re-saving augmented episodes to cache:', cacheError);
             }
           }
-          // Uncomment to clear cache for testing
-          // await AsyncStorage.removeItem(EPISODES_CACHE_KEY);
-          // await AsyncStorage.clear();
-          // console.log('Cache cleared');
-          // console.log(JSON.stringify(episodesToSet, null, 2));
           setError(null);
         } else {
           // Fetch from Supabase if cache is empty
@@ -283,22 +286,9 @@ export default function EpisodesScreen() {
 
           if (supabaseError) throw supabaseError;
 
-          // Corrected mapping from SupabaseEpisode to Episode type
-          // Assumes Supabase client returns camelCase properties matching SupabaseEpisode type
-          // and Episode type defines properties as needed (e.g., offline_path as snake_case)
-          const formattedEpisodes: Episode[] = (data as any[]).map(ep => ({
-            id: ep.id,
-            title: ep.title,
-            description: ep.description,
-            originalMp3Link: ep.original_mp3_link,
-            mp3Link: ep.offline_path || ep.mp3_link,
-            duration: parseDuration(ep.duration),
-            publicationDate: ep.publication_date,
-            offline_path: ep.offline_path,
-            artwork: ep.artwork || getImageUrlFromDescription(ep.description) || undefined,
-          }));
+          // Utilise la fonction utilitaire factorisée pour normaliser les épisodes
+          const formattedEpisodes: Episode[] = normalizeEpisodes(data as any[]);
           episodesToSet = formattedEpisodes;
-          
           try {
             await AsyncStorage.setItem(EPISODES_CACHE_KEY, JSON.stringify(formattedEpisodes));
           } catch (cacheError) {

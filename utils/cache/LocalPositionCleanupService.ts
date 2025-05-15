@@ -1,11 +1,8 @@
 import NetInfo from '@react-native-community/netinfo';
 import { supabase } from '../../lib/supabase';
 import { Episode } from '../../types/episode';
-import { Database } from '../../types/supabase';
-import { parseDuration } from '../commons/timeUtils';
-import { loadCachedEpisodes, saveEpisodesToCache, EPISODES_CACHE_KEY, PLAYBACK_POSITIONS_KEY, LocalPositions, getStringItem, setStringItem } from './LocalStorageService';
-
-type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
+import { loadCachedEpisodes, saveEpisodesToCache, PLAYBACK_POSITIONS_KEY, LocalPositions, getStringItem, setStringItem } from './LocalStorageService';
+import { normalizeEpisodes } from '../commons/episodeUtils';
 
 /**
  * Fetches the IDs of all currently available episodes, either from API or cache.
@@ -35,17 +32,7 @@ async function fetchAvailableEpisodeIds(): Promise<Set<string> | null> {
                      return null; // Cannot determine available episodes
                  }
             } else {
-                 episodes = (data as any[]).map(episode => ({
-                    id: episode.id,
-                    title: episode.title,
-                    description: episode.description,
-                    originalMp3Link: episode.original_mp3_link,
-                    mp3Link: episode.offline_path || episode.mp3_link,
-                    duration: parseDuration(episode.duration),
-                    publicationDate: episode.publication_date,
-                    offline_path: episode.offline_path,
-                    artwork: episode.artwork || undefined,
-                }));
+                episodes = normalizeEpisodes(data as any[]);
                 // Update cache
                 await saveEpisodesToCache(episodes);
             }
