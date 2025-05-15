@@ -16,7 +16,6 @@
       "reactNativeDirectoryCheck": {
         "exclude": [
           "lucide-react-native",
-          "react-native-track-player",
           "@lucide/lab",
           "eas-cli",
           "expo-core",
@@ -80,6 +79,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
+    "@eslint/js": "^9.26.0",
     "@expo/config": "^10.0.11",
     "@tsconfig/react-native": "^3.0.5",
     "@types/babel__core": "^7.20.5",
@@ -88,7 +88,10 @@
     "@types/babel__traverse": "^7.20.7",
     "@types/pako": "^2.0.3",
     "@types/react": "~18.3.12",
+    "eslint": "^9.26.0",
     "expo-module-scripts": "^4.0.4",
-    "typescript": "^5.3.3"
+    "globals": "^16.1.0",
+    "typescript": "^5.3.3",
+    "typescript-eslint": "^8.32.1"
   }
 }

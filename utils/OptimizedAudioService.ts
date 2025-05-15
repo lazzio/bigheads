@@ -9,6 +9,7 @@ import TrackPlayer, {
 import { Episode } from '../types/episode';
 import { Platform, PermissionsAndroid, Linking } from 'react-native';
 import * as IntentLauncher from 'expo-intent-launcher';
+import { formatTime, isValidAudioUrl, normalizeAudioUrl } from './commons/timeUtils';
 
 // Interface pour le statut retourné par getStatusAsync
 export interface AudioStatus {
@@ -31,8 +32,6 @@ class AudioManager {
   private isPlaying = false;
   private isBuffering = false;
   private listeners: Set<(data: any) => void> = new Set();
-  private episodesList: Episode[] = [];
-  private currentEpisodeIndex: number = -1;
 
   private constructor() {
     // Constructeur privé pour le modèle singleton
@@ -90,114 +89,6 @@ class AudioManager {
     } catch (error) {
       console.error('[AudioManager] Error setting up TrackPlayer:', error);
       this.isPlayerReady = false; // Marquer comme non prêt en cas d'erreur
-    }
-  }
-
-  // 2. Méthode pour définir la liste des épisodes en cours de lecture
-  public setEpisodesList(episodes: Episode[], currentIndex: number = 0): void {
-    if (!episodes || episodes.length === 0) {
-      console.warn('[AudioManager] Attempted to set empty episodes list');
-      return;
-    }
-    
-    console.log(`[AudioManager] Setting episodes list with ${episodes.length} episodes, current index: ${currentIndex}`);
-    this.episodesList = [...episodes];
-    this.currentEpisodeIndex = Math.min(Math.max(0, currentIndex), episodes.length - 1);
-  }
-
-  // 3. Méthode pour naviguer à l'épisode suivant
-  public async skipToNext(): Promise<boolean> {
-    console.log('[AudioManager] skipToNext called');
-    
-    if (this.episodesList.length === 0) {
-      console.warn('[AudioManager] Cannot skip to next: No episodes list set');
-      return false;
-    }
-    
-    // Sauvegarder la position actuelle avant de changer
-    if (this.currentEpisode?.id) {
-      const status = await this.getStatusAsync();
-      if (status.isLoaded) {
-        // Utiliser savePositionLocally directement serait idéal,
-        // mais comme c'est une fonction externe, vous devrez gérer cela dans le composant appelant
-        this.notifyListeners({
-          type: 'save-position',
-          episodeId: this.currentEpisode.id,
-          position: status.positionMillis
-        });
-      }
-    }
-    
-    // Déterminer le prochain index (boucler si nécessaire)
-    const nextIndex = (this.currentEpisodeIndex + 1) % this.episodesList.length;
-    const nextEpisode = this.episodesList[nextIndex];
-    
-    console.log(`[AudioManager] Skipping to next episode: ${nextEpisode.title} (index: ${nextIndex})`);
-    
-    try {
-      // Charger le nouvel épisode
-      this.currentEpisodeIndex = nextIndex;
-      await this.loadSound(nextEpisode, 0);
-      
-      // Démarrer la lecture automatiquement
-      await this.play();
-      return true;
-    } catch (error) {
-      console.error('[AudioManager] Error skipping to next episode:', error);
-      return false;
-    }
-  }
-
-  // 4. Méthode pour naviguer à l'épisode précédent
-  public async skipToPrevious(): Promise<boolean> {
-    console.log('[AudioManager] skipToPrevious called');
-    
-    if (this.episodesList.length === 0) {
-      console.warn('[AudioManager] Cannot skip to previous: No episodes list set');
-      return false;
-    }
-    
-    // Sauvegarder la position actuelle avant de changer
-    if (this.currentEpisode?.id) {
-      const status = await this.getStatusAsync();
-      if (status.isLoaded) {
-        this.notifyListeners({
-          type: 'save-position',
-          episodeId: this.currentEpisode.id,
-          position: status.positionMillis
-        });
-      }
-    }
-    
-    // Si on est près du début, aller à l'épisode précédent
-    // Sinon, revenir au début de l'épisode actuel
-    const currentStatus = await this.getStatusAsync();
-    
-    // Si la position actuelle est < 3 secondes, aller à l'épisode précédent
-    if (currentStatus.positionMillis < 3000) {
-      // Déterminer l'index précédent (boucler si nécessaire)
-      const prevIndex = (this.currentEpisodeIndex - 1 + this.episodesList.length) % this.episodesList.length;
-      const prevEpisode = this.episodesList[prevIndex];
-      
-      console.log(`[AudioManager] Skipping to previous episode: ${prevEpisode.title} (index: ${prevIndex})`);
-      
-      try {
-        // Charger l'épisode précédent
-        this.currentEpisodeIndex = prevIndex;
-        await this.loadSound(prevEpisode, 0);
-        
-        // Démarrer la lecture automatiquement
-        await this.play();
-        return true;
-      } catch (error) {
-        console.error('[AudioManager] Error skipping to previous episode:', error);
-        return false;
-      }
-    } else {
-      // Si on est au-delà des 3 premières secondes, revenir au début de l'épisode actuel
-      console.log('[AudioManager] Returning to beginning of current episode');
-      await this.seekTo(0);
-      return true;
     }
   }
 
@@ -636,8 +527,7 @@ public async getStatusAsync(): Promise<AudioStatus> {
 
       // Notify listeners with the updated state, including position/duration
       // Avoid notifying redundantly for states like Error/Ended/Stopped where specific notifications already happened?
-      // Let's notify always for status consistency, except maybe after error/finished?
-      // Re-evaluating: Notify always to ensure UI reflects the final state (e.g., isPlaying=false after Ended)
+      // Let's notify always to ensure UI reflects the final state (e.g., isPlaying=false after Ended)
       this.notifyListeners({
           type: 'status',
           position: this.position, // Use potentially updated position (e.g., after Ended)
@@ -812,65 +702,7 @@ public async getStatusAsync(): Promise<AudioStatus> {
 // Exporter l'instance singleton
 export const audioManager = AudioManager.getInstance();
 
-// Exporter des fonctions utilitaires
-export function formatTime(milliseconds: number): string {
-  if (isNaN(milliseconds) || milliseconds < 0) {
-    return "0:00"; // Retourner une valeur par défaut pour les entrées invalides
-  }
-
-  const totalSeconds = Math.floor(milliseconds / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  const paddedSeconds = seconds.toString().padStart(2, '0');
-  const paddedMinutes = minutes.toString().padStart(2, '0');
-
-  if (hours > 0) {
-    const paddedHours = hours.toString().padStart(2, '0');
-    return `${paddedHours}:${paddedMinutes}:${paddedSeconds}`;
-  } else {
-    return `${minutes}:${paddedSeconds}`; // Garder MM:SS si moins d'une heure
-  }
-}
-
-export function isValidAudioUrl(url: string | undefined): boolean {
-  if (!url) return false;
-  
-  const trimmedUrl = url.trim();
-  if (trimmedUrl === '') return false;
-  
-  // Accepter aussi les chemins de fichiers locaux
-  if (trimmedUrl.startsWith('file://')) return true;
-  
-  try {
-    const urlToCheck = trimmedUrl.startsWith('http')
-      ? trimmedUrl
-      : `https://${trimmedUrl}`;
-      
-    new URL(urlToCheck);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function normalizeAudioUrl(url: string | undefined): string {
-  if (!url) return '';
-  
-  const trimmedUrl = url.trim();
-  if (trimmedUrl === '') return '';
-  
-  // Ne pas modifier les chemins de fichiers locaux
-  if (trimmedUrl.startsWith('file://')) return trimmedUrl;
-  
-  if (!trimmedUrl.startsWith('http')) {
-    return `https://${trimmedUrl}`;
-  }
-  
-  return trimmedUrl;
-}
-
+// La fonction requestBatteryOptimizationExemption reste ici si elle n'existe pas ailleurs
 export async function requestBatteryOptimizationExemption(): Promise<boolean> {
   if (Platform.OS !== 'android') return true;
   

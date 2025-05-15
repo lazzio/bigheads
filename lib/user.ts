@@ -1,5 +1,4 @@
 import { supabase } from './supabase';
-import { User } from '@supabase/supabase-js';
 
 export interface GoogleUserInfo {
   id: string;
@@ -49,4 +48,16 @@ export async function getGoogleUserInfo(): Promise<GoogleUserInfo | null> {
     avatarUrl,
     provider,
   };
+}
+
+/**
+ * Récupère l'URL de l'avatar de l'utilisateur actuellement connecté (Google ou autre).
+ * Retourne une chaîne vide si aucune URL n'est disponible ou si l'utilisateur n'est pas connecté.
+ * @returns Promise<string> L'URL de l'avatar ou une chaîne vide.
+ * @example
+ *   const avatarUrl = await getUserAvatarUrl();
+ */
+export async function getUserAvatarUrl(): Promise<string> {
+  const userInfo = await getGoogleUserInfo();
+  return userInfo?.avatarUrl || '';
 }

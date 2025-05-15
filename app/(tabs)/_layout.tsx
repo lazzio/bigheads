@@ -58,7 +58,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
   return (
     <View style={styles.tabContainer}>
       {/* TabBar standard - implémentation manuelle */}
-      <View style={[tabBarStyle.tabBar, styles.tabBar]}>
+      <View style={[tabBarStyle.tabBar, styles.tabBar ]}>
         {state.routes.map((route: any, index: number) => {
           const { options } = descriptors[route.key];
           const label = options.title || route.name;
@@ -165,14 +165,12 @@ const styles = StyleSheet.create({
   tabContainer: {
     // Conteneur global pour le TabBar + MiniPlayer
     width: '100%',
-    backgroundColor: theme.colors.primaryBackground,
     position: 'relative',
+    backgroundColor: theme.colors.darkBackground,
   },
   tabBar: {
     // Style spécifique pour le TabBar
     flexDirection: 'row',
-    height: 60,
-    borderTopWidth: 0,
     position: 'relative',
     zIndex: 1,
   },

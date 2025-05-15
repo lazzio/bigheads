@@ -8,7 +8,7 @@ import NetInfo from '@react-native-community/netinfo';
 import * as Sentry from '@sentry/react-native';
 import { StatusBar } from 'expo-status-bar';
 import { cleanupStaleLocalPositions } from '../utils/cache/LocalPositionCleanupService';
-import { getCurrentlyPlayingEpisodeId, setCurrentEpisodeId, getStringItem, removeStringItem } from '../utils/cache/LocalStorageService';
+import { getStringItem, removeStringItem } from '../utils/cache/LocalStorageService';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();

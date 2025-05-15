@@ -12,7 +12,7 @@ import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
-import { audioManager, formatTime } from '../utils/OptimizedAudioService';
+import { audioManager } from '../utils/OptimizedAudioService';
 import { theme } from '../styles/global';
 import { Episode } from '../types/episode';
 import { savePositionLocally } from '../utils/cache/LocalStorageService';
@@ -20,8 +20,7 @@ import { savePositionLocally } from '../utils/cache/LocalStorageService';
 // Dimensions de l'écran
 const { height } = Dimensions.get('window');
 const MINI_PLAYER_HEIGHT = 60;
-const FULL_PLAYER_HEIGHT = height * 0.9;
-const TAB_BAR_HEIGHT = 55;
+const TAB_BAR_HEIGHT = 65;
 
 export default function MiniPlayer() {
   const router = useRouter();
@@ -184,7 +183,7 @@ export default function MiniPlayer() {
       console.log(`[MiniPlayer] Navigating to player for episode ${currentEpisode.id}`);
       router.push({
         pathname: '/player/player',
-        params: { episodeId: currentEpisode.id }
+        params: { episodeId: currentEpisode.id },
       });
     }
   }, [currentEpisode, router, position]);
@@ -241,10 +240,12 @@ const styles = StyleSheet.create({
     width: '100%',
     left: 0,
     right: 0,
-    backgroundColor: theme.colors.primaryBackground,
+    backgroundColor: theme.colors.darkerBackground,
     elevation: 10,
     overflow: 'hidden',
     zIndex: 1000,
+    borderTopRightRadius: 10,
+    borderTopLeftRadius: 10,
   },
   miniPlayer: {
     height: MINI_PLAYER_HEIGHT,
