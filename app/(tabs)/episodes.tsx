@@ -20,6 +20,7 @@ import {
 } from '../../utils/cache/LocalStorageService';
 import { getImageUrlFromDescription } from '../../components/GTPersons';
 import { normalizeEpisodes } from '../../utils/commons/episodeUtils';
+import MusicEqualizer from '../../components/Equalizer';
 
 // Define Prop Types for EpisodeListItem
 type EpisodeListItemProps = {
@@ -147,11 +148,12 @@ const EpisodeListItem = ({
       </View>
       {/* Icons indicating playback state or watched status */}
       {currentEpisodeId === item.id ? (
-        <MaterialIcons name="equalizer" size={36} color={theme.colors.primary} />
+        // <MaterialIcons name="equalizer" size={36} color={theme.colors.primary} />
+        <MusicEqualizer />
       ) : watchedEpisodes.has(item.id) ? (
         <MaterialIcons name="check-circle" size={36} color={theme.colors.primary} />
       ) : (
-        <MaterialIcons name="play-circle-outline" size={30} color={theme.colors.text} />
+        <MaterialIcons name="play-circle" size={30} color={theme.colors.text} />
       )}
     </TouchableOpacity>
   );
