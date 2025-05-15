@@ -8,17 +8,16 @@ import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { throttle } from 'lodash';
 import { theme } from '../styles/global';
 import { LoadingIndicator, EmptyState, RetryButton } from './SharedUI';
+import { playlistManager } from '../utils/PlaylistManager';
 
 interface AudioPlayerProps {
   episode: Episode;
-  onNext?: () => void;
-  onPrevious?: () => void;
   onComplete?: () => void;
   onRetry?: () => void;
   onPositionUpdate?: (positionMillis: number) => void;
 }
 
-export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, onRetry, onPositionUpdate }: AudioPlayerProps) {
+export default function AudioPlayer({ episode, onComplete, onRetry, onPositionUpdate }: AudioPlayerProps) {
   const initialDurationMs = episode.duration ? episode.duration * 1000 : 0;
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -133,10 +132,34 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
           break;
         // Remote events don't change internal state directly, they trigger actions
         case 'remote-next':
-          if (onNext) onNext();
+          // Gestion interne via playlistManager si disponible
+          if (playlistManager) {
+            const nextEpisode = playlistManager.next();
+            if (nextEpisode) {
+              console.log(`[AudioPlayer] Navigating to next episode: ${nextEpisode.id}`);
+              // Ici, vous pouvez charger le nouvel épisode, par exemple en appelant une fonction de chargement d'épisode
+              // loadEpisode(nextEpisode.id);
+            } else {
+              console.log('[AudioPlayer] No next episode found in playlist');
+            }
+          } else {
+            console.warn('[AudioPlayer] playlistManager not available, cannot navigate to next episode');
+          }
           break;
         case 'remote-previous':
-          if (onPrevious) onPrevious();
+          // Gestion interne via playlistManager si disponible
+          if (playlistManager) {
+            const prevEpisode = playlistManager.previous();
+            if (prevEpisode) {
+              console.log(`[AudioPlayer] Navigating to previous episode: ${prevEpisode.id}`);
+              // Ici, vous pouvez charger le nouvel épisode, par exemple en appelant une fonction de chargement d'épisode
+              // loadEpisode(prevEpisode.id);
+            } else {
+              console.log('[AudioPlayer] No previous episode found in playlist');
+            }
+          } else {
+            console.warn('[AudioPlayer] playlistManager not available, cannot navigate to previous episode');
+          }
           break;
       }
     });
@@ -330,6 +353,22 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
     };
   }, [episode.id]);
 
+  // Gestion playlist fallback uniquement via playlistManager
+  const handleNext = () => {
+    const nextEp = playlistManager.next();
+    if (nextEp) {
+      // Exemple : audioManager.loadSound(nextEp)
+    }
+  };
+  const handlePrevious = () => {
+    const prevEp = playlistManager.previous();
+    if (prevEp) {
+      // Exemple : audioManager.loadSound(prevEp)
+    }
+  };
+  const hasNext = playlistManager.hasNext();
+  const hasPrevious = playlistManager.hasPrevious();
+
   // --- Rendering ---
   const progress = duration > 0 ? Math.min(100, Math.max(0, (position / duration) * 100)) : 0; // Ensure progress is between 0 and 100
   const remainingTime = duration > 0 && position >= 0 ? Math.max(0, duration - position) : 0;
@@ -387,7 +426,7 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
 
       {/* Playback Controls */}
       <View style={styles.controls}>
-         <TouchableOpacity onPress={onPrevious} style={styles.button} disabled={!onPrevious}>
+         <TouchableOpacity onPress={handlePrevious} style={styles.button} disabled={!hasPrevious}>
           <MaterialIcons name="skip-previous" size={32} color={theme.colors.text} />
          </TouchableOpacity>
 
@@ -407,7 +446,7 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
           <MaterialIcons name="forward-30" size={32} color={theme.colors.text} />
          </TouchableOpacity>
 
-         <TouchableOpacity onPress={onNext} style={styles.button} disabled={!onNext}>
+         <TouchableOpacity onPress={handleNext} style={styles.button} disabled={!hasNext}>
           <MaterialIcons name="skip-next" size={32} color={theme.colors.text} />
          </TouchableOpacity>
        </View>

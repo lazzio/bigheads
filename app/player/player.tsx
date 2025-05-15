@@ -32,11 +32,6 @@ import {
 } from '../../utils/cache/LocalStorageService';
 import { ErrorBanner, LoadingIndicator, EmptyState, OfflineIndicator, RetryButton } from '../../components/SharedUI';
 
-
-// --- Types ---
-type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
-type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row'];
-
 export default function PlayerScreen() {
   const { episodeId, offlinePath, source, _retry, startPositionMillis: startPositionMillisParam } = useLocalSearchParams<{ episodeId?: string; offlinePath?: string; source?: string; _retry?: string, startPositionMillis?: string }>();
   const router = useRouter();
@@ -123,51 +118,6 @@ export default function PlayerScreen() {
       console.log('[PlayerScreen] Sync process finished.');
     }
   }, [episodes]); // episodes needed for duration
-
-  // --- Local Storage Helpers ---
-  // const savePositionLocally = useCallback(async (epId: string, positionMillis: number) => {
-  //   if (!epId) return;
-  //   const positionSeconds = positionMillis / 1000;
-  //   // Prevent saving NaN or excessively large/small numbers
-  //   if (isNaN(positionSeconds) || !isFinite(positionSeconds)) {
-  //       console.warn(`[PlayerScreen] Attempted to save invalid position (${positionSeconds}s) for ${epId}. Skipping.`);
-  //       return;
-  //   }
-  //   console.log(`[PlayerScreen] Saving position locally for ${epId}: ${positionSeconds.toFixed(2)}s`);
-  //   try {
-  //     const existingPositionsString = await AsyncStorage.getItem(PLAYBACK_POSITIONS_KEY);
-  //     const positions: LocalPositions = existingPositionsString ? JSON.parse(existingPositionsString) : {};
-      
-  //     // Update only if position has actually changed
-  //     const currentPos = positions[epId]?.position;
-  //     if (currentPos === undefined || Math.abs(currentPos - positionSeconds) > 0.5) {
-  //       positions[epId] = {
-  //         position: positionSeconds,
-  //         timestamp: Date.now(),
-  //       };
-        
-  //       await AsyncStorage.setItem(PLAYBACK_POSITIONS_KEY, JSON.stringify(positions));
-  //       console.log(`[PlayerScreen] Position for ${epId} updated in storage`);
-  //     }
-  //   } catch (error) {
-  //     console.error("[PlayerScreen] Error saving position locally:", error);
-  //   }
-  // }, []);
-
-  // const getPositionLocally = useCallback(async (epId: string): Promise<number | null> => { // REMOVED, now imported
-  //   if (!epId) return null;
-  //   try {
-  //     const existingPositionsString = await AsyncStorage.getItem(PLAYBACK_POSITIONS_KEY);
-  //     const positions: LocalPositions = existingPositionsString ? JSON.parse(existingPositionsString) : {};
-  //     if (positions[epId] && typeof positions[epId].position === 'number' && isFinite(positions[epId].position)) {
-  //       console.log(`[PlayerScreen] Found local position for ${epId}: ${positions[epId].position}s`);
-  //       return positions[epId].position * 1000; // Return in milliseconds
-  //     }
-  //   } catch (error) {
-  //     console.error("[PlayerScreen] Error getting position locally:", error);
-  //   }
-  //   return null;
-  // }, []);
 
   // --- Save Current Playback State (Position + Last Played Info) ---
   const saveCurrentPlaybackState = useCallback(async () => {
@@ -272,21 +222,6 @@ export default function PlayerScreen() {
     console.log(`[PlayerScreen] No position found for ${epId}, starting from beginning.`);
     return null;
   }, [savePositionLocally]); // Removed getPositionLocally from here as it's now imported and stable
-
-  // --- Function to load episodes from cache ---
-  // const loadCachedEpisodes = useCallback(async (): Promise<Episode[]> => { // REMOVED, now imported
-  //   try {
-  //     const cachedData = await AsyncStorage.getItem(EPISODES_CACHE_KEY);
-  //     if (cachedData) {
-  //       const episodes: Episode[] = JSON.parse(cachedData);
-  //       // Normaliser la durée
-  //       const normalizedEpisodes = episodes.map(ep => ({ ...ep, duration: parseDuration(ep.duration) }));
-  //       console.log(`Loaded ${normalizedEpisodes.length} episodes from cache for player`);
-  //       return normalizedEpisodes;
-  //     }
-  //   } catch (error) { console.error('Error loading cached episodes:', error); }
-  //   return [];
-  // }, []);
 
   // --- Function to get offline episode details ---
   const getOfflineEpisodeDetails = useCallback(async (filePath: string): Promise<Episode | null> => {

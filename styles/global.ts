@@ -11,6 +11,7 @@ export const theme = {
         secondaryDescription: '#666666',
         buttonBackground: '#0ea5e9',
         borderColor: '#333333',
+        darkerBackground: '#101010',
         linkColor: '#0ea5e9',
         modal: '#1a1a1a',
         error: '#ef4444',

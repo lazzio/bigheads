@@ -36,8 +36,8 @@ export const tabBarStyle = StyleSheet.create(
     tabBar: {
       height: 70,
       paddingBottom: 10,
-      backgroundColor: theme.colors.darkBackground,
-      borderTopWidth: 0,
+      backgroundColor: theme.colors.darkerBackground,
+      borderRadius: 10,
     },
     tabBarIcon: {
       paddingBottom: 10,

@@ -21,9 +21,6 @@ import {
 import { getImageUrlFromDescription } from '../../components/GTPersons';
 import { normalizeEpisodes } from '../../utils/commons/episodeUtils';
 
-type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
-type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row'];
-
 // Define Prop Types for EpisodeListItem
 type EpisodeListItemProps = {
   item: Episode;
