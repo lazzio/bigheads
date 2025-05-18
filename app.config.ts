@@ -11,7 +11,7 @@ const config: ExpoConfig = {
   orientation: "default",
   userInterfaceStyle: "light",
   scheme: "xyz.myops.bigheads",
-  backgroundColor: "#121212", // Changed from #F6F6F6 to match app theme
+  backgroundColor: "#121212",
   icon: "./assets/images/bh_opti.png",
   platforms: ["android", "ios"],
   newArchEnabled: false,
@@ -55,6 +55,8 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    "expo-secure-store",
+    "expo-web-browser",
     [
       "expo-build-properties",
       {
