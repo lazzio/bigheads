@@ -1,4 +1,4 @@
-import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
+import { AudioPlayer, setAudioModeAsync, createAudioPlayer, InterruptionMode, InterruptionModeAndroid } from 'expo-audio';
 import { Episode } from '../types/episode';
 import { normalizeAudioUrl } from './commons/timeUtils';
 
@@ -7,26 +7,39 @@ export interface AudioStatus {
   isLoaded: boolean;
   isPlaying: boolean;
   isBuffering: boolean;
-  positionMillis: number;
-  durationMillis: number;
+  currentTime: number; // en secondes
+  duration: number; // en secondes
   currentEpisodeId: string | null;
   currentEpisode?: Episode | null;
 }
 
+// Type for expo-audio's playback status update
+type ExpoAudioPlayerStatus = {
+  currentTime?: number;
+  duration?: number;
+  playing?: boolean;
+  isBuffering?: boolean;
+  isLoaded?: boolean;
+  didJustFinish?: boolean;
+  // ... other properties from expo-audio status if needed
+};
+
 // Classe singleton pour gérer l'état audio global
 class AudioManager {
   private static instance: AudioManager;
-  private sound: Audio.Sound | null = null;
+  private player: AudioPlayer | null = null;
   private isPlayerReady = false;
   private currentEpisode: Episode | null = null;
-  private position = 0;
-  private duration = 0;
+  private position = 0; // en secondes
+  private duration = 0; // en secondes
   private isPlaying = false;
   private isBuffering = false;
   private listeners: Set<(data: any) => void> = new Set();
   private episodesList: Episode[] = [];
   private currentEpisodeIndex: number = -1;
-  private statusUpdateInterval: any = null;
+  
+  private initialSeekPositionMillis: number | null = null;
+  private isLoadingNewSound: boolean = false;
 
   private constructor() {
     // Constructeur privé pour le modèle singleton
@@ -42,14 +55,13 @@ class AudioManager {
   public async setupAudio(): Promise<void> {
     if (this.isPlayerReady) return;
 
-    await Audio.setAudioModeAsync({
-      staysActiveInBackground: true,
-      allowsRecordingIOS: false,
-      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
-      playsInSilentModeIOS: true,
-      shouldDuckAndroid: true,
-      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
-      playThroughEarpieceAndroid: false,
+    await setAudioModeAsync({
+      shouldPlayInBackground: true,
+      allowsRecording: false,
+      interruptionMode: 'doNotMix' as InterruptionMode, // Corrected: Use InterruptionMode for iOS
+      playsInSilentMode: true,
+      interruptionModeAndroid: 'doNotMix' as InterruptionModeAndroid,
+      shouldRouteThroughEarpiece: false,
     });
 
     this.isPlayerReady = true;
@@ -76,18 +88,14 @@ class AudioManager {
       return false;
     }
     
-    // Déterminer le prochain index (boucler si nécessaire)
     const nextIndex = (this.currentEpisodeIndex + 1) % this.episodesList.length;
     const nextEpisode = this.episodesList[nextIndex];
     
     console.log(`[AudioManager] Skipping to next episode: ${nextEpisode.title} (index: ${nextIndex})`);
     
     try {
-      // Charger le nouvel épisode
       this.currentEpisodeIndex = nextIndex;
-      await this.loadSound(nextEpisode, 0);
-      
-      // Démarrer la lecture automatiquement
+      await this.loadSound(nextEpisode, 0); // position in ms
       await this.play();
       return true;
     } catch (error) {
@@ -105,24 +113,17 @@ class AudioManager {
       return false;
     }
     
-    // Si on est près du début, aller à l'épisode précédent
-    // Sinon, revenir au début de l'épisode actuel
     const currentStatus = await this.getStatusAsync();
     
-    // Si la position actuelle est < 3 secondes, aller à l'épisode précédent
-    if (currentStatus.positionMillis < 3000) {
-      // Déterminer l'index précédent (boucler si nécessaire)
+    if (currentStatus.currentTime < 3) { // currentTime is in seconds
       const prevIndex = (this.currentEpisodeIndex - 1 + this.episodesList.length) % this.episodesList.length;
       const prevEpisode = this.episodesList[prevIndex];
       
       console.log(`[AudioManager] Skipping to previous episode: ${prevEpisode.title} (index: ${prevIndex})`);
       
       try {
-        // Charger l'épisode précédent
         this.currentEpisodeIndex = prevIndex;
-        await this.loadSound(prevEpisode, 0);
-        
-        // Démarrer la lecture automatiquement
+        await this.loadSound(prevEpisode, 0); // position in ms
         await this.play();
         return true;
       } catch (error) {
@@ -130,25 +131,18 @@ class AudioManager {
         return false;
       }
     } else {
-      // Si on est au-delà des 3 premières secondes, revenir au début de l'épisode actuel
       console.log('[AudioManager] Returning to beginning of current episode');
-      await this.seekTo(0);
+      await this.seekTo(0); // position in ms
       return true;
     }
   }
 
-  // --- NOUVELLE MÉTHODE: Charger un son avec position initiale ---
-  /**
-   * Charge un épisode et démarre optionnellement la lecture à une position donnée.
-   * @param episode L'épisode à charger.
-   * @param initialPositionMillis Position initiale en millisecondes.
-   */
   public async loadSound(episode: Episode, initialPositionMillis: number = 0): Promise<void> {
     await this.setupAudio();
-    if (this.sound) {
-      await this.sound.unloadAsync();
-      this.sound.setOnPlaybackStatusUpdate(null);
-      this.sound = null;
+    if (this.player) {
+      this.player.removeListener('playbackStatusUpdate', this.onPlaybackStatusUpdate);
+      this.player.remove();
+      this.player = null;
     }
     
     let audioSourceUri: string;
@@ -164,166 +158,189 @@ class AudioManager {
       throw new Error('Episode has no valid audio source (offline_path or mp3Link).');
     }
 
-    this.currentEpisode = { ...episode }; // Stocker l'épisode actuel
-    // Réinitialiser l'état avant le chargement
+    this.currentEpisode = { ...episode };
     this.position = 0;
-    // Utiliser la durée de l'épisode si dispo, convertir en ms
-    this.duration = episode.duration ? Number(episode.duration) * 1000 : 0;
+    this.duration = episode.duration ? Number(episode.duration) : 0; 
     this.isPlaying = false;
-    this.isBuffering = true; // Considérer en buffering pendant le chargement
+    this.isBuffering = true;
+    this.isLoadingNewSound = true;
+    this.initialSeekPositionMillis = initialPositionMillis;
 
-    const { sound } = await Audio.Sound.createAsync(
-      { uri: audioSourceUri },
-      { shouldPlay: false, positionMillis: initialPositionMillis },
-      this.onPlaybackStatusUpdate
-    );
-    this.sound = sound;
-
-    // Obtenir le statut initial
-    const status = await sound.getStatusAsync();
-    if ('isLoaded' in status && status.isLoaded) {
-      this.duration = status.durationMillis || this.duration;
-      this.position = status.positionMillis || 0;
-      this.isBuffering = status.isBuffering || false;
+    // Corrected: Use createAudioPlayer directly
+    this.player = createAudioPlayer({ uri: audioSourceUri }, 1000);
+    // Null check for player before adding listener
+    if (this.player) {
+      this.player.addListener('playbackStatusUpdate', this.onPlaybackStatusUpdate);
     }
 
-    // Notifier les écouteurs
-    this.notifyListeners({
-      type: 'loaded',
-      episode: this.currentEpisode,
-      duration: this.duration,
-      isLocalFile: isLocal,
-    });
-    
-    // Envoyer le statut initial
     this.notifyListeners({
       type: 'status',
       position: this.position,
       duration: this.duration,
       isPlaying: this.isPlaying,
       isBuffering: this.isBuffering,
-      isLoaded: 'isLoaded' in status ? status.isLoaded : false,
+      isLoaded: false,
       episodeId: this.currentEpisode?.id ?? null,
     });
-
-    this.startStatusInterval();
   }
 
-  private onPlaybackStatusUpdate = (status: any) => {
-    if (!status) return;
-    if ('isLoaded' in status && status.isLoaded) {
-      this.position = status.positionMillis || 0;
-      this.duration = status.durationMillis || this.duration;
-      this.isPlaying = status.isPlaying || false;
-      this.isBuffering = status.isBuffering || false;
-      if (status.didJustFinish && !status.isLooping) {
+  private onPlaybackStatusUpdate = (status: ExpoAudioPlayerStatus) => {
+    if (!this.player || !this.currentEpisode) {
+      // If player or episode is null (e.g., after unloadSound), don't process.
+      // Also, if status is somehow empty.
+      if (!status || Object.keys(status).length === 0) {
+        this.isBuffering = false;
         this.isPlaying = false;
-        this.notifyListeners({ type: 'finished', episodeId: this.currentEpisode?.id ?? null });
+         this.notifyListeners({ type: 'status', position: 0, duration: 0, isPlaying: false, isBuffering: false, isLoaded: false, episodeId: null });
       }
-      this.notifyListeners({ type: 'status', position: this.position, duration: this.duration, isPlaying: this.isPlaying, isBuffering: this.isBuffering, isLoaded: status.isLoaded, episodeId: this.currentEpisode?.id ?? null });
-    } else {
-      this.isPlaying = false;
-      this.isBuffering = false;
-      this.notifyListeners({ type: 'status', position: 0, duration: 0, isPlaying: false, isBuffering: false, isLoaded: false, episodeId: null });
+      return;
     }
+
+    this.position = status.currentTime ?? this.position;
+    this.duration = status.duration ?? this.duration;
+    this.isPlaying = status.playing ?? false;
+    this.isBuffering = status.isBuffering ?? false;
+
+    if (this.isLoadingNewSound && status.isLoaded) {
+      this.isBuffering = status.isBuffering ?? false; // Update buffering state based on actual loaded status
+      this.notifyListeners({
+        type: 'loaded',
+        episode: this.currentEpisode,
+        episodeId: this.currentEpisode?.id ?? null, // Ajouter explicitement episodeId
+        duration: this.duration, // in seconds
+        isLocalFile: !!this.currentEpisode.offline_path,
+      });
+
+      if (this.initialSeekPositionMillis !== null && this.player) {
+        // seekTo takes seconds
+        this.player.seekTo(this.initialSeekPositionMillis / 1000);
+      }
+      this.isLoadingNewSound = false; // Reset flag after initial load handling
+      this.initialSeekPositionMillis = null; // Reset seek position
+    }
+
+    if (status.didJustFinish) {
+      this.isPlaying = false;
+      this.notifyListeners({ type: 'finished', episodeId: this.currentEpisode.id });
+    }
+
+    this.notifyListeners({
+      type: 'status',
+      position: this.position,
+      duration: this.duration,
+      isPlaying: this.isPlaying,
+      isBuffering: this.isBuffering,
+      isLoaded: status.isLoaded ?? false,
+      episodeId: this.currentEpisode.id,
+    });
   };
 
-  // --- MODIFICATION: getStatusAsync devient une pure requête ---
 public async getStatusAsync(): Promise<AudioStatus> {
-  if (!this.sound) {
+  if (!this.player || !this.player.isLoaded) { // Check player.isLoaded
     return { 
       isLoaded: false, 
       isPlaying: false, 
-      isBuffering: false, 
-      positionMillis: 0, 
-      durationMillis: 0, 
-      currentEpisodeId: null,
-      currentEpisode: null // Ajout de l'épisode complet
+      isBuffering: this.isBuffering, // Reflect ongoing buffering if any
+      currentTime: 0, 
+      duration: 0, 
+      currentEpisodeId: this.currentEpisode?.id ?? null,
+      currentEpisode: this.currentEpisode ?? null
     };
   }
   
-  const status = await this.sound.getStatusAsync();
-  if ('isLoaded' in status && status.isLoaded) {
-    return {
-      isLoaded: true,
-      isPlaying: status.isPlaying,
-      isBuffering: status.isBuffering,
-      positionMillis: status.positionMillis || 0,
-      durationMillis: status.durationMillis || 0,
-      currentEpisodeId: this.currentEpisode?.id ?? null,
-      currentEpisode: this.currentEpisode,
-    };
-  } else {
-    return { isLoaded: false, isPlaying: false, isBuffering: false, positionMillis: 0, durationMillis: 0, currentEpisodeId: null, currentEpisode: null };
-  }
+  // Properties from AudioPlayer are directly in seconds
+  return {
+    isLoaded: this.player.isLoaded,
+    isPlaying: this.player.playing,
+    isBuffering: this.player.isBuffering,
+    currentTime: this.player.currentTime ?? 0,
+    duration: this.player.duration ?? 0,
+    currentEpisodeId: this.currentEpisode?.id ?? null,
+    currentEpisode: this.currentEpisode,
+  };
 }
 
-  // --- NOUVELLE MÉTHODE: Décharger le son ---
-  /**
-   * Arrête la lecture et décharge la piste actuelle.
-   */
   public async unloadSound(): Promise<void> {
-    if (this.sound) {
-      await this.sound.unloadAsync();
-      this.sound.setOnPlaybackStatusUpdate(null);
-      this.sound = null;
+    if (this.player) {
+      this.player.removeListener('playbackStatusUpdate', this.onPlaybackStatusUpdate);
+      this.player.remove(); // Replaces unloadAsync
+      this.player = null;
     }
+    const unloadedEpisodeId = this.currentEpisode?.id;
     this.currentEpisode = null;
     this.position = 0;
     this.duration = 0;
     this.isPlaying = false;
     this.isBuffering = false;
-    this.notifyListeners({ type: 'unloaded', episodeId: null });
-    this.notifyListeners({ type: 'status', position: 0, duration: 0, isPlaying: false, isBuffering: false, isLoaded: false, episodeId: null });
-    this.stopStatusInterval();
-  }
+    this.isLoadingNewSound = false;
+    this.initialSeekPositionMillis = null;
 
-  // --- Méthodes existantes (play, pause, seekTo, stop, etc.) ---
-  // Assurez-vous qu'elles mettent à jour l'état local (this.isPlaying, etc.)
-  // et utilisent updateLocalStatus ou getStatusAsync si nécessaire.
+    this.notifyListeners({ type: 'unloaded', episodeId: unloadedEpisodeId ?? null }); // Notify with the ID of the unloaded episode
+    this.notifyListeners({ type: 'status', position: 0, duration: 0, isPlaying: false, isBuffering: false, isLoaded: false, episodeId: null });
+  }
 
   public async play(): Promise<void> {
-    if (!this.sound) return;
-    await this.sound.playAsync();
-  }
-
-  public async pause(): Promise<void> {
-    if (!this.sound) return;
-    await this.sound.pauseAsync();
-  }
-
-  // seekTo prend maintenant des millisecondes pour la cohérence interne
-  public async seekTo(positionMillis: number): Promise<void> {
-    if (!this.sound) return;
-    await this.sound.setPositionAsync(positionMillis);
-  }
-
-  // --- NOUVELLE MÉTHODE: Avancer/Reculer relativement ---
-  /**
-   * Avance ou recule la lecture d'un certain nombre de secondes.
-   * @param offsetSeconds Nombre de secondes à ajouter (positif pour avancer, négatif pour reculer).
-   */
-  public async seekRelative(offsetSeconds: number): Promise<void> {
-    if (!this.sound) return;
-    const status = await this.sound.getStatusAsync();
-    if ('isLoaded' in status && status.isLoaded) {
-      const newPosition = Math.max(0, Math.min((status.positionMillis || 0) + offsetSeconds * 1000, status.durationMillis || 0));
-      await this.sound.setPositionAsync(newPosition);
+    if (!this.player || !this.player.isLoaded) return;
+    try {
+      this.player.play(); // expo-audio play is synchronous
+      this.isPlaying = true; // Reflect state immediately
+      // Status update will be handled by onPlaybackStatusUpdate
+    } catch (error) {
+      console.error('[AudioManager] Error playing sound:', error);
     }
   }
 
-  // --- GESTION DES LISTENERS ---
+  public async pause(): Promise<void> {
+    if (!this.player || !this.player.isLoaded) return;
+    try {
+      this.player.pause(); // expo-audio pause is synchronous
+      this.isPlaying = false; // Reflect state immediately
+      // Status update will be handled by onPlaybackStatusUpdate
+    } catch (error) {
+      console.error('[AudioManager] Error pausing sound:', error);
+    }
+  }
+
+  // seekTo takes milliseconds for consistency with original public API, but converts to seconds for player
+  public async seekTo(positionMillis: number): Promise<void> {
+    if (!this.player || !this.player.isLoaded) return;
+    try {
+      await this.player.seekTo(positionMillis / 1000); // seekTo takes seconds
+      // Update internal position immediately for consistency if needed, though event should cover it
+      // this.position = positionMillis / 1000;
+      // this.notifyListeners({ type: 'status', /* ... */ });
+    } catch (error) {
+      console.error('[AudioManager] Error seeking sound:', error);
+    }
+  }
+
+  public async seekRelative(offsetSeconds: number): Promise<number | undefined> { // Return new position in seconds
+    if (!this.player || !this.player.isLoaded) return undefined;
+    try {
+      const currentPositionSeconds = this.player.currentTime ?? 0;
+      const durationSeconds = this.player.duration ?? 0;
+      const newPositionSeconds = Math.max(0, Math.min(currentPositionSeconds + offsetSeconds, durationSeconds));
+      await this.player.seekTo(newPositionSeconds);
+      // this.position = newPositionSeconds; // Update internal position
+      // this.notifyListeners({ type: 'status', /* ... */ });
+      return newPositionSeconds; // Return the calculated new position
+    } catch (error) {
+      console.error('[AudioManager] Error seeking relative:', error);
+      return undefined;
+    }
+  }
+
 public addListener(callback: (data: any) => void): () => void {
   this.listeners.add(callback);
   // Envoyer l'état interne actuel immédiatement après l'ajout
   callback({
     type: 'status',
-    position: this.position,
-    duration: this.duration,
+    position: this.position, // seconds
+    duration: this.duration, // seconds
     isPlaying: this.isPlaying,
     isBuffering: this.isBuffering,
-    isLoaded: !!this.sound,
-    currentEpisodeId: this.currentEpisode?.id ?? null,
+    isLoaded: !!(this.player && this.player.isLoaded),
+    episodeId: this.currentEpisode?.id ?? null, // Utiliser episodeId au lieu de currentEpisodeId pour être cohérent
   });
   return () => {
     this.listeners.delete(callback);
@@ -340,28 +357,13 @@ private notifyListeners(data: any): void {
   });
 }
 
-private startStatusInterval() {
-  this.stopStatusInterval();
-  this.statusUpdateInterval = setInterval(async () => {
-    if (this.sound) {
-      const status = await this.sound.getStatusAsync();
-      this.onPlaybackStatusUpdate(status);
-    }
-  }, 1000);
-}
-
-private stopStatusInterval() {
-  if (this.statusUpdateInterval) {
-    clearInterval(this.statusUpdateInterval);
-    this.statusUpdateInterval = null;
-  }
-}
+// Removed startStatusInterval and stopStatusInterval as expo-audio handles updates via events
 
 public async cleanup(): Promise<void> {
-  await this.unloadSound();
+  await this.unloadSound(); // This now also removes listeners and the player
   this.listeners.clear();
   this.isPlayerReady = false;
-  this.stopStatusInterval();
+  // No interval to clear
   }
 }
 // --- FIN DE LA CLASSE ---

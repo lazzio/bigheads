@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { SplashScreen, useRouter, Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { supabase } from '../lib/supabase';
 import { initEpisodeNotificationService, setupNotificationListener, syncPushTokenAfterLogin } from '../utils/notifications/EpisodeNotificationService';
 import NetInfo from '@react-native-community/netinfo';
 import * as Sentry from '@sentry/react-native';
-import { StatusBar } from 'expo-status-bar';
 import { cleanupStaleLocalPositions } from '../utils/cache/LocalPositionCleanupService';
 import { getStringItem, removeStringItem } from '../utils/cache/LocalStorageService';
 
@@ -207,7 +207,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'black' }}>
       <SafeAreaProvider>
         <StatusBar style="light" backgroundColor="#000000" />
-        <Stack screenOptions={{ headerShown: false }}>
+        <Stack>
           {/* <Slot /> removed as Stack navigator handles screen rendering */}
           <Stack.Screen
             name="(tabs)"

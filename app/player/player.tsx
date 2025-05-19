@@ -13,6 +13,7 @@ import { Database } from '../../types/supabase';
 import { Episode } from '../../types/episode';
 import { audioManager } from '../../utils/OptimizedAudioService';
 import AudioPlayer from '../../components/AudioPlayer';
+import { ErrorBanner, EmptyState, LoadingIndicator, RetryButton } from '../../components/SharedUI';
 import { theme, gradientColors } from '../../styles/global';
 import { parseDuration } from '../../utils/commons/timeUtils';
 import { 
@@ -30,7 +31,6 @@ import {
   LocalPositions,
   setCurrentEpisodeId
 } from '../../utils/cache/LocalStorageService';
-import { ErrorBanner, LoadingIndicator, EmptyState, OfflineIndicator, RetryButton } from '../../components/SharedUI';
 
 
 // --- Types ---
@@ -185,15 +185,15 @@ export default function PlayerScreen() {
          return;
       }
 
-      console.log(`[PlayerScreen] Saving complete playback state for ${episodeIdToSave} at position ${status.positionMillis}ms, playing=${status.isPlaying}`);
+      console.log(`[PlayerScreen] Saving complete playback state for ${episodeIdToSave} at position ${status.currentTime}ms, playing=${status.isPlaying}`);
 
       // Save to local position storage (for episode-specific positions)
-      await savePositionLocally(episodeIdToSave, status.positionMillis);
+      await savePositionLocally(episodeIdToSave, status.currentTime);
 
       // Save as the last played episode (for app resumption)
       await setLastPlayedEpisodeId(episodeIdToSave);
       // Pour sauvegarder la position :
-      await setLastPlayedPosition(String(status.positionMillis));
+      await setLastPlayedPosition(String(status.currentTime));
       // Pour sauvegarder l'état playing :
       await setWasPlaying(status.isPlaying);
 
@@ -209,11 +209,12 @@ export default function PlayerScreen() {
   }, [savePositionLocally]);
 
   // --- Position Update Handler (from AudioPlayer) ---
-  const handlePositionUpdate = useCallback((positionMillis: number) => {
+  const handlePositionUpdate = useCallback((positionSeconds: number) => {
     if (currentEpisodeIdRef.current) {
       // Log every position update to help with debugging
-      console.log(`[PlayerScreen] Position update for ${currentEpisodeIdRef.current}: ${(positionMillis/1000).toFixed(2)}s`);
-      savePositionLocally(currentEpisodeIdRef.current, positionMillis);
+      console.log(`[PlayerScreen] Position update for ${currentEpisodeIdRef.current}: ${positionSeconds.toFixed(2)}s`);
+      // Convert seconds to milliseconds for savePositionLocally
+      savePositionLocally(currentEpisodeIdRef.current, positionSeconds * 1000);
     }
   }, [savePositionLocally]);
 
@@ -345,7 +346,7 @@ export default function PlayerScreen() {
     // Save position of the *previous* episode before loading the new one
     if (currentStatus.isLoaded && currentStatus.currentEpisodeId && currentStatus.currentEpisodeId !== currentEp.id) {
         console.log(`[PlayerScreen] Saving position for previous episode ${currentStatus.currentEpisodeId} before loading ${currentEp.id}`);
-        await savePositionLocally(currentStatus.currentEpisodeId, currentStatus.positionMillis);
+        await savePositionLocally(currentStatus.currentEpisodeId, currentStatus.currentTime);
     }
 
     // Set ref for the new episode *before* loading starts
@@ -655,7 +656,7 @@ export default function PlayerScreen() {
       try {
         // Get duration accurately one last time
         const status = await audioManager.getStatusAsync();
-        finalDurationMillis = status.durationMillis;
+        finalDurationMillis = status.currentTime;
       } catch(e) {
           console.warn("[PlayerScreen] Could not get final duration on completion.");
           // Fallback: use duration from episode object if available
@@ -678,8 +679,8 @@ export default function PlayerScreen() {
     const status = await audioManager.getStatusAsync();
     // --- MODIFICATION START: Save position before changing index ---
     if (status?.isLoaded && currentEpisodeIdRef.current) {
-      console.log(`[PlayerScreen] Saving position ${status.positionMillis}ms for ${currentEpisodeIdRef.current} before going Next`);
-      await savePositionLocally(currentEpisodeIdRef.current, status.positionMillis);
+      console.log(`[PlayerScreen] Saving position ${status.currentTime}ms for ${currentEpisodeIdRef.current} before going Next`);
+      await savePositionLocally(currentEpisodeIdRef.current, status.currentTime);
     }
     // --- MODIFICATION END ---
     if (currentIndex !== null && currentIndex < episodes.length - 1) {
@@ -692,8 +693,8 @@ export default function PlayerScreen() {
     const status = await audioManager.getStatusAsync();
     // --- MODIFICATION START: Save position before changing index ---
     if (status?.isLoaded && currentEpisodeIdRef.current) {
-      console.log(`[PlayerScreen] Saving position ${status.positionMillis}ms for ${currentEpisodeIdRef.current} before going Previous`);
-      await savePositionLocally(currentEpisodeIdRef.current, status.positionMillis);
+      console.log(`[PlayerScreen] Saving position ${status.currentTime}ms for ${currentEpisodeIdRef.current} before going Previous`);
+      await savePositionLocally(currentEpisodeIdRef.current, status.currentTime);
     }
     // --- MODIFICATION END ---
     if (currentIndex !== null && currentIndex > 0) {

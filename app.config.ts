@@ -57,6 +57,7 @@ const config: ExpoConfig = {
     "expo-router",
     "expo-secure-store",
     "expo-web-browser",
+    "expo-audio",
     [
       "expo-build-properties",
       {
@@ -64,7 +65,7 @@ const config: ExpoConfig = {
           compileSdkVersion: 35,
           targetSdkVersion: 35,
           buildToolsVersion: "35.0.0",
-          kotlinVersion: "1.9.25",
+          kotlinVersion: "2.0.21",
           enableProguardInReleaseBuilds: true,
         }
       }
