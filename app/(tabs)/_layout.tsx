@@ -165,13 +165,13 @@ const styles = StyleSheet.create({
   tabContainer: {
     // Conteneur global pour le TabBar + MiniPlayer
     width: '100%',
-    backgroundColor: theme.colors.primaryBackground,
+    backgroundColor: theme.colors.darkBackground,
     position: 'relative',
   },
   tabBar: {
     // Style spécifique pour le TabBar
     flexDirection: 'row',
-    height: 60,
+    height: 70,
     borderTopWidth: 0,
     position: 'relative',
     zIndex: 1,

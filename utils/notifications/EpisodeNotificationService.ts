@@ -31,10 +31,15 @@ export function setupNotificationListener(onNotificationReceived: (episodeId: st
   // Make sure to set the correct behavior for foreground notifications
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: false,
-      shouldSetBadge: false,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
       priority: Notifications.AndroidNotificationPriority.HIGH,
+      // Set the visibility to public to show the full content
+      visibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      // Set the importance to high to ensure it shows up
+      importance: Notifications.AndroidImportance.HIGH,
     }),
   });
 
@@ -42,21 +47,28 @@ export function setupNotificationListener(onNotificationReceived: (episodeId: st
   const subscription = Notifications.addNotificationResponseReceivedListener(response => {
     console.log('[NotificationService] User tapped on notification', response);
     
-    // Get episodeId from the notification
     const episodeId = response.notification.request.content.data?.episodeId;
+    // Check if episodeId exists and is truthy first
     if (episodeId) {
-      console.log(`[NotificationService] Processing notification tap for episode ${episodeId}`);
-      
-      // Save this as the last requested episode in case the app gets killed before loading
-      try {
-        setCurrentEpisodeId(episodeId);
-        console.log(`[NotificationService] Saved ${episodeId} as the last requested episode`);
-      } catch (error) {
-        console.error('[NotificationService] Error saving last requested episode:', error);
+      // Then, ensure episodeId is a string before proceeding
+      if (typeof episodeId === 'string') {
+        console.log(`[NotificationService] Processing notification tap for episode ${episodeId}`);
+        
+        try {
+          setCurrentEpisodeId(episodeId); // setCurrentEpisodeId expects a string
+          console.log(`[NotificationService] Saved ${episodeId} as the last requested episode`);
+        } catch (error) {
+          console.error('[NotificationService] Error saving last requested episode:', error);
+          Sentry.captureException(error); // It's good practice to capture this error too
+        }
+        
+        onNotificationReceived(episodeId); // Now episodeId is guaranteed to be a string
+      } else {
+        console.warn(`[NotificationService] Received notification with episodeId, but it is not a string. Type: ${typeof episodeId}, Value:`, episodeId);
+        Sentry.captureMessage(`Received notification with non-string episodeId. Type: ${typeof episodeId}`);
       }
-      
-      // Call the callback to handle navigation
-      onNotificationReceived(episodeId);
+    } else {
+      console.log('[NotificationService] Notification data does not contain episodeId or episodeId is falsy.');
     }
   });
 

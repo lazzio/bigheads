@@ -20,8 +20,8 @@ import { savePositionLocally } from '../utils/cache/LocalStorageService';
 // Dimensions de l'écran
 const { height } = Dimensions.get('window');
 const MINI_PLAYER_HEIGHT = 60;
-const FULL_PLAYER_HEIGHT = height * 0.9;
-const TAB_BAR_HEIGHT = 55;
+const FULL_PLAYER_HEIGHT = height;
+const TAB_BAR_HEIGHT = 65;
 
 export default function MiniPlayer() {
   const router = useRouter();
@@ -241,7 +241,7 @@ const styles = StyleSheet.create({
     width: '100%',
     left: 0,
     right: 0,
-    backgroundColor: theme.colors.primaryBackground,
+    backgroundColor: theme.colors.darkerBackground,
     elevation: 10,
     overflow: 'hidden',
     zIndex: 1000,

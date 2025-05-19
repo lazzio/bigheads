@@ -12,6 +12,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { theme } from '../../styles/global';
 import { componentStyle } from '../../styles/componentStyle';
+import MusicEqualizer from '../../components/Equalizer';
 import { 
   EPISODES_CACHE_KEY,
   loadCachedEpisodes,
@@ -150,11 +151,11 @@ const EpisodeListItem = ({
       </View>
       {/* Icons indicating playback state or watched status */}
       {currentEpisodeId === item.id ? (
-        <MaterialIcons name="equalizer" size={36} color={theme.colors.primary} />
+        <MusicEqualizer />
       ) : watchedEpisodes.has(item.id) ? (
-        <MaterialIcons name="check-circle" size={36} color={theme.colors.primary} />
+        <MaterialIcons name="check-circle" size={30} color={theme.colors.primary} />
       ) : (
-        <MaterialIcons name="play-circle-outline" size={30} color={theme.colors.text} />
+        <MaterialIcons name="play-circle" size={30} color={theme.colors.text} />
       )}
     </TouchableOpacity>
   );
@@ -311,9 +312,6 @@ export default function EpisodesScreen() {
 
   async function fetchWatchedEpisodes() {
     try {
-      // const userResponse = await supabase.auth.getUser(); // Old method
-      // const userId = userResponse.data.user?.id; // Old method
-
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
 
       if (sessionError) {
