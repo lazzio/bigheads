@@ -10,6 +10,7 @@ import * as Sentry from '@sentry/react-native';
 import { cleanupStaleLocalPositions } from '../utils/cache/LocalPositionCleanupService';
 import { getStringItem, removeStringItem } from '../utils/cache/LocalStorageService';
 import { AudioProvider } from '../components/AudioContext';
+import { theme } from '@/styles/global';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -209,7 +210,13 @@ export default function RootLayout() {
       <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'black' }}>
         <SafeAreaProvider>
           <StatusBar style="light" backgroundColor="#000000" />
-          <Stack>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: {
+                backgroundColor: theme.colors.darkBackground
+              },
+            }}>
             {/* <Slot /> removed as Stack navigator handles screen rendering */}
             <Stack.Screen
               name="(tabs)"
