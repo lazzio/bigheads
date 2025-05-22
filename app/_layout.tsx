@@ -9,6 +9,7 @@ import NetInfo from '@react-native-community/netinfo';
 import * as Sentry from '@sentry/react-native';
 import { cleanupStaleLocalPositions } from '../utils/cache/LocalPositionCleanupService';
 import { getStringItem, removeStringItem } from '../utils/cache/LocalStorageService';
+import { AudioProvider } from '../components/AudioContext';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -77,7 +78,7 @@ export default function RootLayout() {
                 }
                 console.log('[NotificationHandler] Navigating to player tab');
                 router.navigate({
-                  pathname: '/player/player',
+                  pathname: '/player/play',
                   params: { episodeId: episodeId, source: 'notification', timestamp: Date.now() }
                 });
               };
@@ -111,7 +112,7 @@ export default function RootLayout() {
                   console.log(`[Layout] Found last requested episode ${lastEpisodeId}, clearing and navigating`);
                   await removeStringItem('lastRequestedEpisodeId');
                   router.navigate({
-                    pathname: '/player/player',
+                    pathname: '/player/play',
                     params: { episodeId: lastEpisodeId, source: 'notification', timestamp: Date.now() }
                   });
                 }
@@ -204,26 +205,28 @@ export default function RootLayout() {
 
   console.log('[RootLayout] App is ready, rendering main navigator.');
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'black' }}>
-      <SafeAreaProvider>
-        <StatusBar style="light" backgroundColor="#000000" />
-        <Stack>
-          {/* <Slot /> removed as Stack navigator handles screen rendering */}
-          <Stack.Screen
-            name="(tabs)"
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="player"
-            options={{
-              animation: 'slide_from_bottom',
-              presentation: 'modal',
-              gestureEnabled: true,
-              headerShown: false,
-            }}
-          />
-        </Stack>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <AudioProvider>
+      <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'black' }}>
+        <SafeAreaProvider>
+          <StatusBar style="light" backgroundColor="#000000" />
+          <Stack>
+            {/* <Slot /> removed as Stack navigator handles screen rendering */}
+            <Stack.Screen
+              name="(tabs)"
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="player"
+              options={{
+                animation: 'slide_from_bottom',
+                presentation: 'modal',
+                gestureEnabled: true,
+                headerShown: false,
+              }}
+            />
+          </Stack>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </AudioProvider>
   );
 }

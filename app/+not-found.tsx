@@ -24,7 +24,7 @@ export default function NotFoundScreen() {
           console.log(`[NotFound] Redirection avec l'épisode ${lastEpisodeId} à la position ${lastPosition || 0}`);
           // Navigue vers le player avec l'épisode courant, la position et l'état de lecture
           router.replace({
-            pathname: '/player/player',
+            pathname: '/playe/play',
             params: {
               episodeId: lastEpisodeId,
               position: lastPosition ? Number(lastPosition) : undefined,
@@ -35,11 +35,11 @@ export default function NotFoundScreen() {
           });
         } else {
           console.log('[NotFound] Aucun épisode en cours trouvé, redirection vers le player par défaut');
-          router.replace('/player/player');
+          router.replace('/playe/play');
         }
       } catch (error) {
         console.error('[NotFound] Erreur lors de la redirection:', error);
-        router.replace('/player/player');
+        router.replace('/playe/play');
       }
     };
 

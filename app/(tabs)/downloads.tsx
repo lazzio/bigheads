@@ -581,7 +581,7 @@ export default function DownloadsScreen() {
       
       // For a downloaded episode, pass the local path
       router.push({
-        pathname: '/player/player',
+        pathname: '/playe/play',
         params: { 
           episodeId: episode.id,
           offlinePath: filePath
@@ -590,7 +590,7 @@ export default function DownloadsScreen() {
     } else {
       // For an online episode, use the index
       router.push({
-        pathname: '/player/player',
+        pathname: '/playe/play',
         params: { episodeId: episode.id }
       });
     }

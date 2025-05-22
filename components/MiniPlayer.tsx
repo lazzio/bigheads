@@ -1,108 +1,81 @@
+// --- Imports ---
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  StyleSheet, 
-  Dimensions, 
-  Animated,
-  PanResponder,
-} from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions, Animated, PanResponder, AppState } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
-import { audioManager } from '../utils/OptimizedAudioService';
+import { useAudio } from './AudioContext';
 import { theme } from '../styles/global';
 import { Episode } from '../types/episode';
 import { savePositionLocally } from '../utils/cache/LocalStorageService';
+import NetInfo from '@react-native-community/netinfo';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '../lib/supabase';
 
-// Dimensions de l'écran
+// --- Constants ---
 const { height } = Dimensions.get('window');
 const MINI_PLAYER_HEIGHT = 60;
 const FULL_PLAYER_HEIGHT = height;
 const TAB_BAR_HEIGHT = 65;
+const OFFLINE_SYNC_QUEUE_KEY = 'offline_sync_queue';
 
+// --- Main Component ---
 export default function MiniPlayer() {
+  const audioManager = useAudio();
   const router = useRouter();
-  
-  // États du player
+  // Player state
   const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  
-  // États de l'animation
+  // Animation state
   const playerHeight = useRef(new Animated.Value(MINI_PLAYER_HEIGHT)).current;
   const playerY = useRef(new Animated.Value(height - MINI_PLAYER_HEIGHT - TAB_BAR_HEIGHT)).current;
-  // Utiliser une position fixe au lieu de transformer par translateY
   const [isExpanded, setIsExpanded] = useState(false);
-  
-  // Progress calculation
+  // Progress
   const progress = duration > 0 ? Math.min(100, Math.max(0, (position / duration) * 100)) : 0;
-
   const miniTitle = currentEpisode?.title.replace(/L'INTÉGRALE - /, '') || '';
-  
-  // Gestionnaire de pan pour le glissement
-  const panResponder = PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-  });
-  
-  // Effect pour s'abonner aux événements du lecteur audio
+  // Pan gesture
+  const panResponder = PanResponder.create({ onStartShouldSetPanResponder: () => true });
+
+  // --- Effects ---
   useEffect(() => {
     let isMounted = true;
-    console.log('[MiniPlayer] Setting up audio event listener');
-    
+    // Listen to AudioManager for all state changes
     const unsubscribe = audioManager.addListener((data: any) => {
       if (!isMounted) return;
-      
       switch (data.type) {
         case 'loaded':
           if (data.episode) {
-            console.log(`[MiniPlayer] Episode loaded: ${data.episode.title}`);
             setCurrentEpisode(data.episode);
             setError(null);
-            if (data.duration > 0) {
-              setDuration(data.duration);
-            }
+            if (data.duration > 0) setDuration(data.duration);
+            // If loaded and isPlaying, update state
+            setIsPlaying(data.isPlaying ?? false);
+            setPosition(data.position ?? 0);
           }
           break;
-          
         case 'status':
-          // Mettre à jour la position
-          setPosition(data.position);
-          
-          // Mettre à jour l'état de lecture
-          setIsPlaying(data.isPlaying);
-          setIsBuffering(data.isBuffering);
-          
-          // Si la durée est définie dans le statut
-          if (data.duration > 0) {
-            setDuration(data.duration);
-          }
-          
-          // Effacer l'erreur si présente
+          setPosition(data.position ?? 0);
+          setIsPlaying(data.isPlaying ?? false);
+          setIsBuffering(data.isBuffering ?? false);
+          if (data.duration > 0) setDuration(data.duration);
           if (error) setError(null);
           break;
-          
         case 'error':
-          console.error(`[MiniPlayer] Received error: ${data.error}`);
           setError(data.error);
           setIsPlaying(false);
           setIsBuffering(false);
           break;
-          
         case 'finished':
-          console.log('[MiniPlayer] Playback finished');
           setPosition(duration);
           setIsPlaying(false);
           setIsBuffering(false);
           break;
-          
         case 'unloaded':
-          console.log('[MiniPlayer] Audio unloaded');
           setCurrentEpisode(null);
           setPosition(0);
           setDuration(0);
@@ -111,87 +84,82 @@ export default function MiniPlayer() {
           break;
       }
     });
-    
-    // Vérifier s'il y a déjà un épisode en cours
+    // On mount, sync with AudioManager's current status
     audioManager.getStatusAsync().then(status => {
       if (status.isLoaded && status.currentEpisodeId) {
-        console.log(`[MiniPlayer] Retrieved current status: ${status.currentEpisodeId}, isPlaying=${status.isPlaying}`);
-        setPosition(status.positionMillis);
+        setPosition(status.currentTime);
         setIsPlaying(status.isPlaying);
-        setDuration(status.durationMillis);
-        
-        // Récupérer les détails de l'épisode actuel
-        if (status.currentEpisode) {
-          setCurrentEpisode(status.currentEpisode);
-        }
+        setDuration(status.duration);
+        if (status.currentEpisode) setCurrentEpisode(status.currentEpisode);
       } else {
-        console.log('[MiniPlayer] No episode currently loaded');
+        setCurrentEpisode(null);
+        setIsPlaying(false);
+        setPosition(0);
+        setDuration(0);
       }
-    }).catch(err => {
-      console.error('[MiniPlayer] Error checking status:', err);
     });
-    
+    const unsubscribeNet = NetInfo.addEventListener(async state => {
+      if (state.isConnected && state.isInternetReachable) triggerOfflineSyncFlush();
+    });
+    const appStateListener = AppState.addEventListener('change', nextState => {
+      if (nextState === 'active') triggerOfflineSyncFlush();
+    });
     return () => {
-      console.log('[MiniPlayer] Cleaning up audio event listener');
       isMounted = false;
       unsubscribe();
+      unsubscribeNet();
+      appStateListener.remove();
     };
-  }, []);
-  
-  const minimizePlayer = useCallback(() => {
-    console.log('[MiniPlayer] Minimizing player');
-    setIsExpanded(false);
-  }, []);
-  
-  // Fonction pour étendre/agrandir le player
+  }, [duration, error]);
+
+  // --- Handlers ---
+  const minimizePlayer = useCallback(() => setIsExpanded(false), []);
   const expandPlayer = useCallback(() => {
-    console.log('[MiniPlayer] Expanding player');
     setIsExpanded(true);
-    
-    // Vérifier si l'épisode est toujours chargé
     if (currentEpisode?.id) {
-      // Mettre à jour l'état de lecture actuel si nécessaire
       audioManager.getStatusAsync().then(status => {
         if (status.isLoaded) {
           setIsPlaying(status.isPlaying);
-          setPosition(status.positionMillis);
+          setPosition(status.currentTime);
         }
-      }).catch(err => {
-        console.error("[MiniPlayer] Error refreshing status while expanding:", err);
       });
     }
   }, [currentEpisode]);
-  
-  // Contrôles du lecteur
   const handlePlayPause = useCallback(async () => {
-    console.log(`[MiniPlayer] Play/Pause pressed. Current state: isPlaying=${isPlaying}`);
     try {
-      if (isPlaying) {
+      const status = await audioManager.getStatusAsync();
+      if (status.isLoaded && status.isPlaying) {
         await audioManager.pause();
-      } else {
+      } else if (status.isLoaded) {
+        await audioManager.play();
+      } else if (currentEpisode) {
+        // If not loaded, stop all sounds before loading and playing
+        await audioManager.stopAllSounds();
+        await audioManager.loadSound(currentEpisode, position);
         await audioManager.play();
       }
     } catch (err) {
       console.error("[MiniPlayer] Error toggling play/pause:", err);
     }
-  }, [isPlaying]);
-  
-  // Fonction pour gérer le clic sur le mini-player
+    const net = await NetInfo.fetch();
+    if (!net.isConnected || !net.isInternetReachable) {
+      if (currentEpisode?.id) await queueOfflineSync(currentEpisode.id, position, duration);
+    }
+  }, [currentEpisode, position, duration]);
   const handleMiniPlayerPress = useCallback(() => {
     if (currentEpisode?.id) {
-      // Sauvegarder la position de lecture actuelle dans le cache local avant d'ouvrir le player
       savePositionLocally(currentEpisode.id, position);
-      console.log(`[MiniPlayer] Navigating to player for episode ${currentEpisode.id}`);
-      router.push({
-        pathname: '/player/player',
-        params: { episodeId: currentEpisode.id }
+      NetInfo.fetch().then(net => {
+        if (!net.isConnected || !net.isInternetReachable) {
+          queueOfflineSync(currentEpisode.id, position, duration);
+        }
       });
+      router.push({ pathname: '/player/play', params: { episodeId: currentEpisode.id } });
     }
-  }, [currentEpisode, router, position]);
+  }, [currentEpisode, router, position, duration]);
 
-  // Si pas d'épisode en cours, ne pas afficher le mini-player
+  // --- Render ---
   if (!currentEpisode) return null;
-
   return (
     <GestureHandlerRootView style={{ width: '100%' }}>
       <Animated.View
@@ -206,7 +174,6 @@ export default function MiniPlayer() {
         ]}
         {...panResponder.panHandlers}
       >
-
         <TouchableOpacity 
           style={[
             styles.miniPlayer,
@@ -233,6 +200,61 @@ export default function MiniPlayer() {
       </Animated.View>
     </GestureHandlerRootView>
   );
+}
+
+// --- Helpers ---
+function isFinished(position: number, duration: number) {
+  if (!duration || duration === 0) return false;
+  return position / (duration * 1000) >= 0.98;
+}
+
+export async function triggerOfflineSyncFlush() {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) await flushOfflineSync(user.id);
+  } catch (e) { /* ignore */ }
+}
+
+async function queueOfflineSync(episodeId: string, position: number, duration?: number) {
+  try {
+    const queueStr = await AsyncStorage.getItem(OFFLINE_SYNC_QUEUE_KEY);
+    const queue = queueStr ? JSON.parse(queueStr) : [];
+    queue.push({ episodeId, position, duration, timestamp: Date.now() });
+    await AsyncStorage.setItem(OFFLINE_SYNC_QUEUE_KEY, JSON.stringify(queue));
+  } catch (e) { console.error('[MiniPlayer] Failed to queue offline sync', e); }
+}
+
+async function flushOfflineSync(userId: string) {
+  try {
+    const queueStr = await AsyncStorage.getItem(OFFLINE_SYNC_QUEUE_KEY);
+    if (!queueStr) return;
+    const queue = JSON.parse(queueStr);
+    if (!Array.isArray(queue) || queue.length === 0) return;
+    const latestByEpisode: Record<string, { position: number, timestamp: number, duration?: number }> = {};
+    for (const item of queue) {
+      if (!latestByEpisode[item.episodeId] || item.timestamp > latestByEpisode[item.episodeId].timestamp) {
+        latestByEpisode[item.episodeId] = { position: item.position, timestamp: item.timestamp, duration: item.duration };
+      }
+    }
+    const upsertData = Object.entries(latestByEpisode).map(([episodeId, { position, timestamp, duration }]) => ({
+      user_id: userId,
+      episode_id: episodeId,
+      playback_position: position / 1000,
+      watched_at: new Date(timestamp).toISOString(),
+      is_finished: isFinished(position, duration || 0)
+    }));
+    if (upsertData.length > 0) {
+      const { error } = await supabase
+        .from('watched_episodes')
+        .upsert(upsertData, { onConflict: 'user_id, episode_id' });
+      if (!error) {
+        await AsyncStorage.removeItem(OFFLINE_SYNC_QUEUE_KEY);
+        console.log('[MiniPlayer] Offline sync queue flushed to Supabase');
+      } else {
+        console.error('[MiniPlayer] Error syncing offline queue:', error.message);
+      }
+    }
+  } catch (e) { console.error('[MiniPlayer] Failed to flush offline sync', e); }
 }
 
 const styles = StyleSheet.create({

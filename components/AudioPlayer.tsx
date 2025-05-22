@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, AppState } from 'react-native';
 import { Episode } from '../types/episode';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { audioManager } from '../utils/OptimizedAudioService';
+import { useAudio } from './AudioContext';
 import { formatTime } from '../utils/commons/timeUtils';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { throttle } from 'lodash';
@@ -19,6 +19,8 @@ interface AudioPlayerProps {
 }
 
 export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, onRetry, onPositionUpdate }: AudioPlayerProps) {
+  const audioManager = useAudio();
+
   const initialDurationSeconds = episode.duration ? episode.duration : 0;
   const [isPlaying, setIsPlaying] = useState(false);
   const [position, setPosition] = useState(0); // Will be in seconds
@@ -215,40 +217,40 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
 
   // --- Action Handlers (Wrapped in useCallback) ---
   const handlePlayPause = useCallback(async () => {
-    console.log(`[AudioPlayer] handlePlayPause. Current state: isPlaying=${isPlaying}`);
     try {
-      if (isPlaying) {
-        await audioManager.pause();
-      } else {
-        // Attempt to play even if duration is initially 0.
-        // TrackPlayer might still be able to play or determine duration later.
-        // (Legacy comment: TrackPlayer is no longer used. All playback is handled by expo-av.)
-        // We can also try fetching the status again to get a potentially updated duration.
-        let currentDuration = duration;
-        if (currentDuration <= 0) {
+      let status = await audioManager.getStatusAsync();
+      // If another episode is loaded, stop all sounds before loading new one
+      if (status.isLoaded && status.currentEpisodeId && status.currentEpisodeId !== episode.id) {
+        await audioManager.stopAllSounds();
+        await audioManager.loadSound(episode, 0);
+        status = await audioManager.getStatusAsync();
+      }
+      // On ne tente play que si le player est bien sur le bon épisode
+      if (status.isLoaded && status.currentEpisodeId === episode.id) {
+        if (isPlaying) {
+          await audioManager.pause();
+        } else {
+          let currentDuration = duration;
+          if (currentDuration <= 0) {
             console.warn("[AudioPlayer] Duration is 0, fetching status before play.");
             try {
-                // Use getStatusAsync which now includes currentEpisodeId
-                const status = await audioManager.getStatusAsync(); // status returns currentTime and duration in seconds
-                // Check if the status is for the correct episode and has a valid duration
-                if (status.isLoaded && status.currentEpisodeId === episode.id && status.duration > 0) {
-                    console.log(`[AudioPlayer] Got duration from status: ${status.duration}s`);
-                    currentDuration = status.duration;
-                    // Update state if it changed and component is still mounted
-                    if (duration !== currentDuration) {
-                        setDuration(currentDuration);
-                    }
-                } else {
-                    console.warn(`[AudioPlayer] Status fetch did not provide valid duration (Loaded: ${status.isLoaded}, EpisodeMatch: ${status.currentEpisodeId === episode.id}, Duration: ${status.duration})`);
+              const s = await audioManager.getStatusAsync();
+              if (s.isLoaded && s.currentEpisodeId === episode.id && s.duration > 0) {
+                currentDuration = s.duration;
+                if (duration !== currentDuration) {
+                  setDuration(currentDuration);
                 }
+              }
             } catch (statusError) {
-                console.error("[AudioPlayer] Error fetching status before play:", statusError);
+              console.error("[AudioPlayer] Error fetching status before play:", statusError);
             }
+          }
+          await audioManager.play();
         }
-        // Now, attempt to play. If duration is still 0, playback might still work.
-        console.log(`[AudioPlayer] Attempting to play (duration known: ${currentDuration > 0})`);
+      } else if (!status.isLoaded) {
+        // Si rien n'est chargé, on charge et on joue
+        await audioManager.loadSound(episode, 0);
         await audioManager.play();
-        // --- MODIFICATION END ---
       }
     } catch (err) {
       console.error("[AudioPlayer] Error playing/pausing:", err);

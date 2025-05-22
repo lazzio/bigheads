@@ -1,6 +1,9 @@
 import { AudioPlayer, setAudioModeAsync, createAudioPlayer, InterruptionMode, InterruptionModeAndroid } from 'expo-audio';
 import { Episode } from '../types/episode';
 import { normalizeAudioUrl } from './commons/timeUtils';
+import { savePositionLocally } from './cache/LocalStorageService';
+import NetInfo from '@react-native-community/netinfo';
+import { supabase } from '../lib/supabase';
 
 // Interface pour le statut retourné par getStatusAsync
 export interface AudioStatus {
@@ -137,8 +140,37 @@ class AudioManager {
     }
   }
 
+  private async syncPositionToSupabase(episodeId: string, positionMillis: number) {
+    try {
+      const net = await NetInfo.fetch();
+      if (!net.isConnected || !net.isInternetReachable) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const positionSeconds = Math.floor(positionMillis / 1000);
+      await supabase.from('watched_episodes').upsert({
+        user_id: user.id,
+        episode_id: episodeId,
+        playback_position: positionSeconds,
+        watched_at: new Date().toISOString(),
+      }, { onConflict: 'user_id, episode_id' });
+    } catch (e) {
+      // Silent fail
+    }
+  }
+
   public async loadSound(episode: Episode, initialPositionMillis: number = 0): Promise<void> {
     await this.setupAudio();
+    // Sauvegarde la position de l'ancien épisode avant de le décharger
+    if (this.player && this.currentEpisode) {
+      try {
+        const status = await this.getStatusAsync();
+        const lastPosition = status.currentTime ?? 0;
+        await savePositionLocally(this.currentEpisode.id, lastPosition * 1000);
+        await this.syncPositionToSupabase(this.currentEpisode.id, lastPosition * 1000);
+      } catch (e) {
+        console.warn('[AudioManager] Erreur lors de la sauvegarde de la position précédente', e);
+      }
+    }
     if (this.player) {
       this.player.removeListener('playbackStatusUpdate', this.onPlaybackStatusUpdate);
       this.player.remove();
@@ -364,6 +396,38 @@ public async cleanup(): Promise<void> {
   this.listeners.clear();
   this.isPlayerReady = false;
   // No interval to clear
+  }
+
+  /**
+   * Stops and unloads any currently playing audio, clears listeners, and resets state.
+   * Use this before starting new playback to prevent superposition.
+   */
+  public async stopAllSounds(): Promise<void> {
+    // Pause if playing
+    if (this.player && this.player.isLoaded && this.player.playing) {
+      try {
+        this.player.pause();
+      } catch (e) {
+        // Ignore
+      }
+    }
+    // Remove playback listener
+    if (this.player) {
+      this.player.removeListener('playbackStatusUpdate', this.onPlaybackStatusUpdate);
+      this.player.remove();
+      this.player = null;
+    }
+    // Reset all state
+    this.currentEpisode = null;
+    this.position = 0;
+    this.duration = 0;
+    this.isPlaying = false;
+    this.isBuffering = false;
+    this.isLoadingNewSound = false;
+    this.initialSeekPositionMillis = null;
+    // Notify listeners
+    this.notifyListeners({ type: 'unloaded', episodeId: null });
+    this.notifyListeners({ type: 'status', position: 0, duration: 0, isPlaying: false, isBuffering: false, isLoaded: false, episodeId: null });
   }
 }
 // --- FIN DE LA CLASSE ---
