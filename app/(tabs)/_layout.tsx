@@ -123,6 +123,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
+          headerShown: false,
           title: 'Accueil',
           tabBarIcon: ({ size, color }) => (
             <MaterialIcons name="home" size={size} color={color} />
@@ -132,6 +133,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="episodes"
         options={{
+          headerShown: false,
           title: 'Episodes',
           tabBarIcon: ({ size, color }) => (
             <MaterialIcons name="library-music" size={size} color={color} />
@@ -141,6 +143,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="downloads"
         options={{
+          headerShown: false,
           title: 'Téléchargements',
           tabBarIcon: ({ size, color }) => (
             <MaterialIcons name="download-for-offline" size={size} color={color} />
@@ -150,6 +153,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
+          headerShown: false,
           title: 'Profil',
           tabBarIcon: ({ size, color }) => (
             <MaterialIcons name="person" size={size} color={color} />
@@ -165,13 +169,13 @@ const styles = StyleSheet.create({
   tabContainer: {
     // Conteneur global pour le TabBar + MiniPlayer
     width: '100%',
-    backgroundColor: theme.colors.primaryBackground,
+    backgroundColor: theme.colors.darkBackground,
     position: 'relative',
   },
   tabBar: {
     // Style spécifique pour le TabBar
     flexDirection: 'row',
-    height: 60,
+    height: 70,
     borderTopWidth: 0,
     position: 'relative',
     zIndex: 1,
