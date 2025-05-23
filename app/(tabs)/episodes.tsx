@@ -25,9 +25,6 @@ import { normalizeEpisodes } from '../../utils/commons/episodeUtils';
 import { audioManager } from '../../utils/OptimizedAudioService';
 import { useAudio } from '../../components/AudioContext';
 
-type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
-type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row'];
-
 // Define Prop Types for EpisodeListItem
 type EpisodeListItemProps = {
   item: Episode;
