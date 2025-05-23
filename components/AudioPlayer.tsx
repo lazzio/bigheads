@@ -8,6 +8,7 @@ import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { throttle } from 'lodash';
 import { theme } from '../styles/global';
 import { LoadingIndicator, EmptyState, RetryButton } from './SharedUI';
+import Slider from '@react-native-community/slider';
 
 interface AudioPlayerProps {
   episode: Episode;
@@ -31,9 +32,8 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
   const [sleepTimerActive, setSleepTimerActive] = useState(false);
   const sleepTimerId = useRef<NodeJS.Timeout | null>(null);
 
-  const progressBarRef = useRef<View>(null);
-  const progressWidth = useRef(0);
-  const progressPosition = useRef(0);
+  const [isSeeking, setIsSeeking] = useState(false);
+  const [seekValue, setSeekValue] = useState<number | null>(null); // Value while dragging
 
   // --- Listener Setup Effect ---
   useEffect(() => {
@@ -171,50 +171,6 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
     };
   }, [episode.id, onPositionUpdate]); // Add onPositionUpdate to dependencies
 
-  useEffect(() => {
-    // Re-measure when component mounts or duration changes
-    if (progressBarRef.current) {
-      progressBarRef.current.measure((fx, fy, width, height, px, py) => {
-        console.log(`[AudioPlayer] Measured progress bar - Width: ${width}, X: ${px}`);
-        progressWidth.current = width;
-        progressPosition.current = px;
-      });
-    }
-  }, [episode.id, duration]); // Add duration as dependency to remeasure when it changes
-
-  const handleProgressBarTouch = useCallback((event: any) => {
-    const touchX = event.nativeEvent.locationX;
-    const barWidth = progressWidth.current;
-    
-    if (barWidth <= 0) {
-      console.warn('[AudioPlayer] Cannot seek: progress bar width is zero');
-      return;
-    }
-    
-    // Calculate percentage of bar width
-    const percentage = Math.max(0, Math.min(touchX / barWidth, 1));
-    
-    // Calculate position in seconds
-    const seekPositionSeconds = percentage * duration; // duration is in seconds
-    
-    console.log(`[AudioPlayer] Touch position: ${touchX}px / ${barWidth}px = ${percentage.toFixed(2)} -> ${seekPositionSeconds.toFixed(0)}s`);
-    
-    // Update UI immediately (seconds)
-    setPosition(seekPositionSeconds);
-    
-    // Perform the actual seek (audioManager.seekTo expects milliseconds)
-    try {
-      audioManager.seekTo(seekPositionSeconds * 1000);
-      // Immediately report position after seek (seconds)
-      if (onPositionUpdate) {
-        onPositionUpdate(seekPositionSeconds);
-      }
-    } catch (err) {
-      console.error('[AudioPlayer] Error seeking:', err);
-      setError('Erreur pendant la recherche de position');
-    }
-  }, [duration, onPositionUpdate]); // Add onPositionUpdate dependency
-
   // --- Action Handlers (Wrapped in useCallback) ---
   const handlePlayPause = useCallback(async () => {
     try {
@@ -317,17 +273,6 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
       if (nextAppState === 'active') {
         console.log('[AudioPlayer] App returned to foreground, refreshing player state');
         
-        // Force measurement update for progress bar
-        setTimeout(() => {
-          if (progressBarRef.current) {
-            progressBarRef.current.measure((fx, fy, width, height, px, py) => {
-              progressWidth.current = width;
-              progressPosition.current = px;
-              console.log(`[AudioPlayer] Progress bar measured: width=${width}, x=${px}`);
-            });
-          }
-        }, 200);
-        
         // Re-sync with audioManager state (expo-audio)
         audioManager.getStatusAsync().then(status => { // status returns currentTime and duration in seconds
           if (status.isLoaded && status.currentEpisodeId === episode.id) {
@@ -345,9 +290,30 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
     };
   }, [episode.id]);
 
+  // --- Slider Handlers ---
+  const handleSlidingStart = useCallback(() => {
+    setIsSeeking(true);
+    setSeekValue(position); // Start from current position
+  }, [position]);
+
+  const handleValueChange = useCallback((value: number) => {
+    setSeekValue(value);
+  }, []);
+
+  const handleSlidingComplete = useCallback((value: number) => {
+    setIsSeeking(false);
+    setSeekValue(null);
+    setPosition(value); // Update UI immediately
+    audioManager.seekTo(value * 1000); // Seek in ms
+    if (onPositionUpdate) {
+      onPositionUpdate(value);
+    }
+  }, [audioManager, onPositionUpdate]);
+
   // --- Rendering ---
-  const progress = duration > 0 ? Math.min(100, Math.max(0, (position / duration) * 100)) : 0; // position and duration are in seconds
-  const remainingTime = duration > 0 && position >= 0 ? Math.max(0, duration - position) : 0; // position and duration are in seconds
+  const progress = duration > 0 ? Math.min(100, Math.max(0, (position / duration) * 100)) : 0;
+  const remainingTime = duration > 0 && position >= 0 ? Math.max(0, duration - position) : 0;
+  const sliderValue = isSeeking && seekValue !== null ? seekValue : position;
 
   // Loading State UI
   if (isLoading) {
@@ -370,36 +336,26 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
       <Text style={styles.description} numberOfLines={2} ellipsizeMode="tail">
         {episode.description}
       </Text>
-
-      {/* Progress Bar and Time - Simplified touchable version */}
+      {/* Progress Slider and Time */}
       <View style={styles.progressContainer}>
-        <TouchableOpacity 
-          activeOpacity={0.8}
-          ref={progressBarRef}
-          style={styles.progressContainer}
-          onLayout={() => {
-            // Measure on layout
-            if (progressBarRef.current) {
-              progressBarRef.current.measure((fx, fy, width, height, px, py) => {
-                progressWidth.current = width;
-                progressPosition.current = px;
-                console.log(`[AudioPlayer] Progress bar measured: width=${width}, x=${px}`);
-              });
-            }
-          }}
-          onPress={handleProgressBarTouch}
-        >
-          <View style={styles.progressBackground} />
-          <View style={[styles.progressBar, { width: `${progress}%` }]} />
-          {/* Move the knob to the end of the progress bar */}
-          <View style={[styles.progressKnob, { left: `${progress}%` }]} />
-        </TouchableOpacity>
+        <Slider
+          value={sliderValue}
+          minimumValue={0}
+          maximumValue={duration}
+          step={1}
+          minimumTrackTintColor={theme.colors.primary}
+          maximumTrackTintColor={theme.colors.borderColor}
+          thumbTintColor={isSeeking ? theme.colors.text : theme.colors.primary}
+          onSlidingStart={handleSlidingStart}
+          onValueChange={handleValueChange}
+          onSlidingComplete={handleSlidingComplete}
+          style={{ width: '100%', height: 40 }}
+        />
         <View style={styles.timeContainer}>
-          <Text style={styles.timeText}>{formatTime(Math.floor(position))}</Text>
-          <Text style={styles.timeText}>-{formatTime(Math.floor(remainingTime))}</Text>
+          <Text style={styles.timeText}>{formatTime(sliderValue)}</Text>
+          <Text style={styles.timeText}>-{formatTime(remainingTime)}</Text>
         </View>
       </View>
-
       {/* Playback Controls */}
       <View style={styles.controls}>
          <TouchableOpacity onPress={onPrevious} style={styles.button} disabled={!onPrevious}>
@@ -490,50 +446,6 @@ const styles = StyleSheet.create({
   progressContainer: {
     width: '100%',
     marginBottom: 20,
-  },
-  progressBarTouchable: {
-    width: '100%',
-    height: 24,
-    justifyContent: 'center',
-  },
-  progressBackground: {
-    position: 'absolute',
-    width: '100%',
-    height: 6,
-    backgroundColor: theme.colors.borderColor,
-    borderRadius: 3,
-    top: '50%',
-    marginTop: -3,
-  },
-  progressBar: {
-    position: 'absolute',
-    height: 6,
-    backgroundColor: theme.colors.primary,
-    borderRadius: 3,
-    top: '50%',
-    marginTop: -3,
-  },
-  progressKnob: {
-    position: 'absolute',
-    width: 14,
-    height: 14,
-    backgroundColor: theme.colors.primary,
-    borderRadius: 7,
-    borderWidth: 2,
-    borderColor: theme.colors.text,
-    top: '50%',
-    marginLeft: -7,
-    marginTop: -7,
-    elevation: 3,
-    shadowColor: theme.colors.shadowColor,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.3,
-    shadowRadius: 2,
-  },
-  progressKnobActive: {
-    transform: [{ scale: 1.3 }],
-    backgroundColor: theme.colors.text,
-    borderColor: theme.colors.primary,
   },
   timeContainer: {
     flexDirection: 'row',
