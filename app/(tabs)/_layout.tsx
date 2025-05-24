@@ -14,26 +14,27 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
   const pathname = usePathname();
   const [showMiniPlayer, setShowMiniPlayer] = useState(false);
 
-  // Déterminer sur quels écrans afficher le mini-player
-  const pathAlloawedToShowMiniPlayer = pathname?.includes('/episodes') || pathname?.includes('/downloads');
+  // Le mini-player devrait s'afficher sur tous les écrans tabs quand il y a un épisode en cours
+  const pathAlloawedToShowMiniPlayer = true; // Afficher sur tous les onglets
 
   // Effet pour vérifier s'il y a un épisode en cours de lecture
   useEffect(() => {
     const checkCurrentEpisode = async () => {
       try {
-        // Vérifier si un ID d'épisode est stocké
-        const episodeId = await getCurrentEpisodeId();
-        
         // Vérifier l'état de lecture actuel via audioManager
         const status = await audioManager.getStatusAsync();
         
         // Afficher le mini-player si un épisode est chargé
-        setShowMiniPlayer(
-          (status.isLoaded && status.currentEpisodeId !== null) || 
-          (episodeId !== null)
-        );
+        setShowMiniPlayer(status.isLoaded && status.currentEpisodeId !== null);
+        
+        console.log('[TabLayout] Current audio status:', {
+          isLoaded: status.isLoaded,
+          currentEpisodeId: status.currentEpisodeId,
+          showMiniPlayer: status.isLoaded && status.currentEpisodeId !== null
+        });
       } catch (error) {
         console.error('[TabLayout] Error checking current episode:', error);
+        setShowMiniPlayer(false);
       }
     };
 
@@ -41,19 +42,24 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
     
     // Écouter les événements de l'audioManager pour mettre à jour l'affichage du mini-player
     const unsubscribe = audioManager.addListener((data) => {
+      
       if (data.type === 'loaded' && data.episode) {
         console.log('[TabLayout] Episode loaded, showing mini player');
         setShowMiniPlayer(true);
       } else if (data.type === 'unloaded') {
         console.log('[TabLayout] Episode unloaded, hiding mini player');
         setShowMiniPlayer(false);
+      } else if (data.type === 'status') {
+        // Mettre à jour la visibilité basée sur le statut
+        const shouldShow = data.isLoaded && data.episodeId !== null;
+        setShowMiniPlayer(shouldShow);
       }
     });
 
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [pathname]); // Ajouter pathname comme dépendance pour re-check sur changement d'écran
 
   return (
     <View style={styles.tabContainer}>

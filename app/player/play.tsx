@@ -149,11 +149,12 @@ export default function PlayerScreen() {
          return;
       }
 
-      console.log(`[PlayerScreen] Saving complete playback state for ${episodeIdToSave} at position ${status.currentTime}ms, playing=${status.isPlaying}`);
+      const currentTimeMillis = status.currentTime * 1000; // Convert seconds to milliseconds
+      console.log(`[PlayerScreen] Saving complete playback state for ${episodeIdToSave} at position ${currentTimeMillis}ms, playing=${status.isPlaying}`);
 
-      await savePositionLocally(episodeIdToSave, status.currentTime);
+      await savePositionLocally(episodeIdToSave, currentTimeMillis);
       await setLastPlayedEpisodeId(episodeIdToSave);
-      await setLastPlayedPosition(String(status.currentTime));
+      await setLastPlayedPosition(String(currentTimeMillis));
       await setWasPlaying(status.isPlaying);
 
       syncAllLocalPositionsToSupabase().catch(err =>
@@ -176,6 +177,8 @@ export default function PlayerScreen() {
 
   // Geste de swipe vers le bas avec Reanimated
   const panGesture = Gesture.Pan()
+    .activeOffsetY(10) // Require 10px vertical movement to activate
+    .failOffsetX([-20, 20]) // Fail if horizontal movement exceeds 20px
     .onUpdate((event) => {
       // Limiter le mouvement vers le bas uniquement
       if (event.translationY > 0) {
@@ -193,15 +196,16 @@ export default function PlayerScreen() {
       const shouldClose = event.translationY > 120 && event.velocityY > 500;
       
       if (shouldClose) {
-        // Animation de fermeture
+        // Animation de fermeture avec callback
         translateY.value = withSpring(SCREEN_HEIGHT, {
           damping: 20,
           stiffness: 90,
+        }, (finished) => {
+          if (finished) {
+            runOnJS(closePlayer)();
+          }
         });
         opacity.value = withSpring(0);
-        
-        // Fermer après l'animation
-        runOnJS(closePlayer)();
       } else {
         // Revenir à la position initiale
         translateY.value = withSpring(0, {
@@ -297,9 +301,10 @@ export default function PlayerScreen() {
 
   const loadEpisodeAndPosition = useCallback(async (index: number | null) => {
     if (isLoadingEpisodeRef.current) {
-        console.log("[PlayerScreen] Already loading an episode, skipping request.");
-        return;
+      console.log("[PlayerScreen] Already loading an episode, skipping request.");
+      return;
     }
+    
     if (index === null || episodes.length <= index) {
       console.log("[PlayerScreen] Invalid index or episodes not loaded, unloading.");
       await audioManager.unloadSound();
@@ -316,13 +321,15 @@ export default function PlayerScreen() {
       setError(null);
       currentEpisodeIdRef.current = currentEp.id;
       await setCurrentEpisodeId(currentEp.id);
+      setLoading(false);
       return;
     }
 
     if (currentStatus.isLoaded && currentStatus.currentEpisodeId && currentStatus.currentEpisodeId !== currentEp.id) {
-        console.log(`[PlayerScreen] Saving position for previous episode ${currentStatus.currentEpisodeId} before loading ${currentEp.id}`);
-        await savePositionLocally(currentStatus.currentEpisodeId, currentStatus.currentTime);
-        await audioManager.unloadSound();
+      console.log(`[PlayerScreen] Saving position for previous episode ${currentStatus.currentEpisodeId} before loading ${currentEp.id}`);
+      const currentTimeMillis = currentStatus.currentTime * 1000;
+      await savePositionLocally(currentStatus.currentEpisodeId, currentTimeMillis);
+      await audioManager.unloadSound();
     }
 
     currentEpisodeIdRef.current = currentEp.id;
@@ -370,15 +377,37 @@ export default function PlayerScreen() {
       await audioManager.loadSound(episodeToLoad, initialPosition);
       console.log(`[PlayerScreen] Successfully loaded episode: ${currentEp.title}`);
 
+      // ✅ CORRECTION : Attendre que l'événement loaded soit émis avant d'auto-resume
       const wasPlaying = await getWasPlaying();
       const lastPlayedId = await getLastPlayedEpisodeId();
+      
       if (wasPlaying && lastPlayedId === currentEp.id) {
-        console.log('[PlayerScreen] Auto-resuming playback as episode was playing before');
-        await setWasPlaying(false);
-        await audioManager.play().catch(err =>
-          console.error('[PlayerScreen] Error auto-resuming playback:', err)
-        );
+        console.log('[PlayerScreen] Auto-resuming playback - waiting for loaded event...');
+        
+        // ✅ Attendre que le player soit vraiment chargé
+        let attempts = 0;
+        const maxAttempts = 20; // 2 secondes max
+        
+        while (attempts < maxAttempts) {
+          const status = await audioManager.getStatusAsync();
+          if (status.isLoaded && status.currentEpisodeId === currentEp.id) {
+            console.log('[PlayerScreen] Player is loaded, starting auto-resume');
+            await setWasPlaying(false);
+            await audioManager.play();
+            break;
+          }
+          
+          console.log(`[PlayerScreen] Waiting for player to load... attempt ${attempts + 1}`);
+          await new Promise(resolve => setTimeout(resolve, 100));
+          attempts++;
+        }
+        
+        if (attempts >= maxAttempts) {
+          console.warn('[PlayerScreen] Auto-resume timeout - player not loaded in time');
+          await setWasPlaying(false);
+        }
       }
+      
     } catch (loadError: any) {
       console.error("[PlayerScreen] Error loading episode:", loadError);
       setError(`Error loading: ${loadError.message || 'Unknown'}`);
@@ -386,7 +415,7 @@ export default function PlayerScreen() {
       currentEpisodeIdRef.current = null;
       await setCurrentEpisodeId(null);
     } finally {
-        isLoadingEpisodeRef.current = false;
+      isLoadingEpisodeRef.current = false;
     }
   }, [episodes, savePositionLocally, source]);
 
@@ -585,8 +614,9 @@ export default function PlayerScreen() {
   const handleNext = useCallback(async () => {
     const status = await audioManager.getStatusAsync();
     if (status?.isLoaded && currentEpisodeIdRef.current) {
-      console.log(`[PlayerScreen] Saving position ${status.currentTime}ms for ${currentEpisodeIdRef.current} before going Next`);
-      await savePositionLocally(currentEpisodeIdRef.current, status.currentTime);
+      const currentTimeMillis = status.currentTime * 1000; // Convert seconds to milliseconds
+      console.log(`[PlayerScreen] Saving position ${currentTimeMillis}ms for ${currentEpisodeIdRef.current} before going Next`);
+      await savePositionLocally(currentEpisodeIdRef.current, currentTimeMillis);
     }
     if (currentIndex !== null && currentIndex < episodes.length - 1) {
       console.log("[PlayerScreen] Navigating to Next episode");
@@ -597,8 +627,9 @@ export default function PlayerScreen() {
   const handlePrevious = useCallback(async () => {
     const status = await audioManager.getStatusAsync();
     if (status?.isLoaded && currentEpisodeIdRef.current) {
-      console.log(`[PlayerScreen] Saving position ${status.currentTime}ms for ${currentEpisodeIdRef.current} before going Previous`);
-      await savePositionLocally(currentEpisodeIdRef.current, status.currentTime);
+      const currentTimeMillis = status.currentTime * 1000; // Convert seconds to milliseconds
+      console.log(`[PlayerScreen] Saving position ${currentTimeMillis}ms for ${currentEpisodeIdRef.current} before going Previous`);
+      await savePositionLocally(currentEpisodeIdRef.current, currentTimeMillis);
     }
     if (currentIndex !== null && currentIndex > 0) {
       console.log("[PlayerScreen] Navigating to Previous episode");
@@ -664,7 +695,7 @@ export default function PlayerScreen() {
 
   // Loading State
   if (loading) {
-    return <LoadingIndicator message="Loading..." style={styles.centerContent} />;
+    return <LoadingIndicator message="" style={styles.centerContent} />;
   }
 
   // Main Player View avec Reanimated Gesture

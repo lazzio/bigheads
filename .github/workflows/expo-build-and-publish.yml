@@ -65,9 +65,14 @@ jobs:
       - name: Check for EXPO_TOKEN
         run: |
           if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
-            echo "You must provide an EXPO_TOKEN secret linked to this project's Expo account in this repo's secrets. Learn more: https://docs.expo.dev/eas-update/github-actions"
+            echo "❌ EXPO_TOKEN secret is missing"
             exit 1
           fi
+          if [ -z "${{ secrets.ANDROID_PLAY_STORE_SERVICE_ACCOUNT_JSON }}" ]; then
+            echo "❌ ANDROID_PLAY_STORE_SERVICE_ACCOUNT_JSON secret is missing"
+            exit 1
+          fi
+          echo "✅ All required secrets are present"
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -98,16 +103,29 @@ jobs:
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Get Service Account JSON
+      - name: Create credentials directory
+        run: mkdir -p ./credentials
+
+      - name: Setup Service Account JSON
         run: |
-          if [ -z "${{ secrets.ANDROID_PLAY_STORE_SERVICE_ACCOUNT_JSON }}" ]; then
-            echo "You must provide a GOOGLE_PLAY_SERVICE_ACCOUNT_JSON secret linked to this project's Google Play account in this repo's secrets. Learn more: https://docs.expo.dev/eas-update/github-actions"
+          echo '${{ secrets.ANDROID_PLAY_STORE_SERVICE_ACCOUNT_JSON }}' > ./credentials/google-play-service-account.json
+          echo "✅ Service account JSON file created"
+          
+      - name: Verify Service Account JSON
+        run: |
+          if [ ! -f "./credentials/google-play-service-account.json" ]; then
+            echo "❌ Service account JSON file not found"
             exit 1
           fi
-          echo "${{ secrets.ANDROID_PLAY_STORE_SERVICE_ACCOUNT_JSON }}" > ./credentials/google-play-service-account.json
-          echo "Service account JSON file created."
+          # Vérifier que le JSON est valide
+          if ! jq empty ./credentials/google-play-service-account.json; then
+            echo "❌ Invalid JSON in service account file"
+            exit 1
+          fi
+          echo "✅ Service account JSON is valid"
 
       - name: Publish to Play Store
         run: |
-          echo "Submitting build ID: ${{ needs.expo-build.outputs.android_build_id }}";
+          echo "📱 Submitting build ID: ${{ needs.expo-build.outputs.android_build_id }} to Play Store...";
           eas submit --id ${{ needs.expo-build.outputs.android_build_id }} --platform android --profile internal --non-interactive --verbose 
+          echo "✅ Successfully submitted to Play Store"

@@ -11,7 +11,7 @@ export default function PlayerLayout() {
         },
       }}>
       <Stack.Screen
-        name="player"
+        name="play"
         options={{
           gestureEnabled: true,
           headerShown: false,

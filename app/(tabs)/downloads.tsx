@@ -666,7 +666,7 @@ export default function DownloadsScreen() {
 
   // Display during loading
   if (isLoading) {
-    return <LoadingIndicator message="Loading..." style={componentStyle.loadingContainer} />;
+    return <LoadingIndicator message="" style={componentStyle.loadingContainer} />;
   }
 
   // Main display

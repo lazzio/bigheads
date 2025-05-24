@@ -96,7 +96,6 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
           setIsBuffering(data.isBuffering || (data.isPlaying && nearEnd));
 
           if (isLoading && data.isLoaded && (data.duration > 0 || episode.duration)) {
-            console.log(`[AudioPlayer] 'status' event processed while loading, setting isLoading=false`);
             setIsLoading(false);
           }
           
@@ -104,15 +103,12 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
           break;
         case 'error':
           console.error(`[AudioPlayer] Received 'error': ${data.error}`);
-          // Ensure data.error is a string if setError expects a string
-          //setError(typeof data.error === 'string' ? data.error : 'An unknown audio error occurred');
           setIsLoading(false);
           setIsPlaying(false);
           setIsBuffering(false);
           break;
         case 'finished':
           if (data.episodeId === episode.id) {
-            console.log('[AudioPlayer] Received finished, calling onComplete');
             const finalPositionSeconds = duration > 0 ? duration : 0;
             setPosition(finalPositionSeconds);
 
@@ -124,8 +120,6 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
 
             setIsPlaying(false);
             onComplete?.();
-          } else {
-            console.log(`[AudioPlayer] Received 'finished' for a different episode: ${data.episodeId}. Current: ${episode.id}`);
           }
           break;
         case 'unloaded':
