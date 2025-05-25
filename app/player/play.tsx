@@ -614,26 +614,33 @@ export default function PlayerScreen() {
   const handleNext = useCallback(async () => {
     const status = await audioManager.getStatusAsync();
     if (status?.isLoaded && currentEpisodeIdRef.current) {
-      const currentTimeMillis = status.currentTime * 1000; // Convert seconds to milliseconds
+      const currentTimeMillis = status.currentTime * 1000;
       console.log(`[PlayerScreen] Saving position ${currentTimeMillis}ms for ${currentEpisodeIdRef.current} before going Next`);
       await savePositionLocally(currentEpisodeIdRef.current, currentTimeMillis);
+      // --- STOP/UNLOAD audio before next
+      await audioManager.unloadSound();
+      audioManager.stopAllSounds();
     }
     if (currentIndex !== null && currentIndex < episodes.length - 1) {
       console.log("[PlayerScreen] Navigating to Next episode");
-      setCurrentIndex(currentIndex + 1);
+      setCurrentIndex(currentIndex - 1);
     } else { console.log("Already at the last episode"); }
   }, [currentIndex, episodes.length, savePositionLocally]);
 
   const handlePrevious = useCallback(async () => {
     const status = await audioManager.getStatusAsync();
     if (status?.isLoaded && currentEpisodeIdRef.current) {
-      const currentTimeMillis = status.currentTime * 1000; // Convert seconds to milliseconds
+      const currentTimeMillis = status.currentTime * 1000;
       console.log(`[PlayerScreen] Saving position ${currentTimeMillis}ms for ${currentEpisodeIdRef.current} before going Previous`);
       await savePositionLocally(currentEpisodeIdRef.current, currentTimeMillis);
+      // --- STOP/UNLOAD audio before previous
+      await audioManager.unloadSound();
+      audioManager.stopAllSounds();
     }
     if (currentIndex !== null && currentIndex > 0) {
       console.log("[PlayerScreen] Navigating to Previous episode");
-      setCurrentIndex(currentIndex - 1);
+      setCurrentIndex(currentIndex + 1);
+      audioManager.stopAllSounds();
     } else { console.log("Already at the first episode"); }
   }, [currentIndex, savePositionLocally]);
 

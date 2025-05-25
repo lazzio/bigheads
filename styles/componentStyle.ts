@@ -19,9 +19,9 @@ export const componentStyle = StyleSheet.create({
     paddingLeft: 20,
     paddingRight: 20,
     paddingTop: 20,
-    paddingBottom: 20,
+    paddingBottom: 10,
     marginTop: 25,
-    marginBottom: 10,
+    marginBottom: 0,
     backgroundColor: theme.colors.darkBackground,
   },
   headerTitle: {

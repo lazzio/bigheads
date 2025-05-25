@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback, useMemo } from 'react'; // Added useM
 import { Image } from 'expo-image';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler'; // Added
 import { supabase } from '../../lib/supabase';
-import { Database } from '../../types/supabase';
 import { Episode } from '../../types/episode';
 import { formatTime } from '../../utils/commons/timeUtils';
 import NetInfo from '@react-native-community/netinfo';
@@ -25,6 +24,9 @@ import { normalizeEpisodes } from '../../utils/commons/episodeUtils';
 import { audioManager } from '../../utils/OptimizedAudioService';
 import { useAudio } from '../../components/AudioContext';
 
+// Percentage to consider an episode finished
+const consideredFinsishedPercentage: number = 0.98;
+
 // Define Prop Types for EpisodeListItem
 type EpisodeListItemProps = {
   item: Episode;
@@ -37,6 +39,11 @@ type EpisodeListItemProps = {
   formatTime: (seconds: number) => string;
   MaterialIcons: any; // Or a more specific type if available
 };
+
+const isConsideredFinishedPercentage = (currentPositionSeconds: number, totalDurationSeconds: number): boolean => {
+  if (totalDurationSeconds <= 0) return false; // Avoid division by zero
+  return currentPositionSeconds >= totalDurationSeconds * consideredFinsishedPercentage;
+}
 
 const EpisodeListItem = ({
   item,
@@ -110,7 +117,7 @@ const EpisodeListItem = ({
                   try {
                     const { data: { user } } = await supabase.auth.getUser();
                     if (user) {
-                      const is_finished = status.duration > 0 && status.currentTime >= status.duration * 0.98;
+                      const is_finished = status.duration > 0 && isConsideredFinishedPercentage(status.currentTime, status.duration);
                       await supabase.from('watched_episodes').upsert({
                         user_id: user.id,
                         episode_id: currentEpisodeId,
@@ -385,7 +392,7 @@ export default function EpisodesScreen() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          const is_finished = durationSeconds > 0 && positionMillis / 1000 >= durationSeconds * 0.98;
+          const is_finished = durationSeconds > 0 && isConsideredFinishedPercentage(positionMillis / 1000, durationSeconds);
           await supabase.from('watched_episodes').upsert({
             user_id: user.id,
             episode_id: episodeId,
@@ -423,7 +430,7 @@ export default function EpisodesScreen() {
   if (loading) {
     return (
       <View style={componentStyle.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <ActivityIndicator size="small" color={theme.colors.primary} />
       </View>
     );
   }

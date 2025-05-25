@@ -53,7 +53,7 @@ export default function NotFoundScreen() {
 
   return (
     <View style={styles.container}>
-      <ActivityIndicator size="large" color={theme.colors.primary} />
+      <ActivityIndicator size="small" color={theme.colors.primary} />
     </View>
   );
 }

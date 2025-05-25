@@ -338,7 +338,7 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
           maximumValue={duration}
           step={1}
           minimumTrackTintColor={theme.colors.primary}
-          maximumTrackTintColor={theme.colors.borderColor}
+          maximumTrackTintColor={theme.colors.description}
           thumbTintColor={isSeeking ? theme.colors.text : theme.colors.primary}
           onSlidingStart={handleSlidingStart}
           onValueChange={handleValueChange}
@@ -353,11 +353,11 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
       {/* Playback Controls */}
       <View style={styles.controls}>
          <TouchableOpacity onPress={onPrevious} style={styles.button} disabled={!onPrevious}>
-          <MaterialIcons name="skip-previous" size={32} color={theme.colors.text} />
+          <MaterialIcons name="skip-previous" size={42} color={theme.colors.text} />
          </TouchableOpacity>
 
          <TouchableOpacity onPress={() => handleSeek(-30)} style={styles.button}>
-          <MaterialIcons name="replay-30" size={32} color={theme.colors.text} />
+          <MaterialIcons name="replay-30" size={42} color={theme.colors.text} />
          </TouchableOpacity>
 
          <TouchableOpacity onPress={handlePlayPause} style={[styles.button, styles.playButton]}>
@@ -369,11 +369,11 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
          </TouchableOpacity>
 
          <TouchableOpacity onPress={() => handleSeek(30)} style={styles.button}>
-          <MaterialIcons name="forward-30" size={32} color={theme.colors.text} />
+          <MaterialIcons name="forward-30" size={42} color={theme.colors.text} />
          </TouchableOpacity>
 
          <TouchableOpacity onPress={onNext} style={styles.button} disabled={!onNext}>
-          <MaterialIcons name="skip-next" size={32} color={theme.colors.text} />
+          <MaterialIcons name="skip-next" size={42} color={theme.colors.text} />
          </TouchableOpacity>
        </View>
 
