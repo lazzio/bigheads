@@ -1,3 +1,27 @@
+## [3.6.0](https://github.com/lazzio/bigheads/-/compare/v3.5.1...v3.6.0) (2025-05-25)
+
+### Features
+
+* restore last played from index ([be2ada1](https://github.com/lazzio/bigheads/-/commit/be2ada164551367479738c2f00a0afa561dadc94))
+* upgrade to expo 53 ([df8098f](https://github.com/lazzio/bigheads/-/commit/df8098f9d509970c11dbba327a5afde3c073d306))
+* upgrade to expo 53 ([20b65aa](https://github.com/lazzio/bigheads/-/commit/20b65aadbee05c6c71131e0924888ff411899f02))
+* use expo-av instead of react-native-track-player ([1b419cc](https://github.com/lazzio/bigheads/-/commit/1b419cc2207c8ab962d318999692c40a977bea90))
+* use local image as background on index ([3bc546d](https://github.com/lazzio/bigheads/-/commit/3bc546de45f377e3b2d03388a1cb41b19cca104a))
+* use react-native slider as progress bar ([3d5824f](https://github.com/lazzio/bigheads/-/commit/3d5824f3058df86dfb990a6edc0646518e810940))
+
+### Bug Fixes
+
+* background and headershown disabled ([b98cc2d](https://github.com/lazzio/bigheads/-/commit/b98cc2d2863fbe1ad76a09b8146c266aca2409be))
+* dont superpose ([15f7a9d](https://github.com/lazzio/bigheads/-/commit/15f7a9db50d442f3556016335f65b8d46e84468e))
+* next or previous, slider background, miniplayer size ([eecde3f](https://github.com/lazzio/bigheads/-/commit/eecde3f1e9051adf2d36dc1562d4fc6d26bc3c7c))
+* notification ([ca4b69d](https://github.com/lazzio/bigheads/-/commit/ca4b69dbfc61fd0ddd6a08d161c7ffd6cc68d4d9))
+* push notifications ([d60344b](https://github.com/lazzio/bigheads/-/commit/d60344b1083688d67d9172d7d1526692a96586c1))
+* some improvements ([1718443](https://github.com/lazzio/bigheads/-/commit/17184433798a8c3565775c9c5db88a2e66e3786f))
+
+### Refactor
+
+* player, cache and add animated equalizer ([#55](https://github.com/lazzio/bigheads/-/issues/55)) ([9676658](https://github.com/lazzio/bigheads/-/commit/967665897ade1e54ebf9100753c8c787a337ab9f))
+
 ## [3.5.1](https://github.com/lazzio/bigheads/-/compare/v3.5.0...v3.5.1) (2025-05-14)
 
 ### Refactor
