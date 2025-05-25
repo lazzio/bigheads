@@ -4,25 +4,28 @@ import { useEffect, useState, useCallback, useMemo } from 'react'; // Added useM
 import { Image } from 'expo-image';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler'; // Added
 import { supabase } from '../../lib/supabase';
-import { Database } from '../../types/supabase';
 import { Episode } from '../../types/episode';
 import { formatTime } from '../../utils/commons/timeUtils';
-import { parseDuration } from '../../utils/commons/timeUtils';
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { theme } from '../../styles/global';
 import { componentStyle } from '../../styles/componentStyle';
+import MusicEqualizer from '../../components/Equalizer';
 import { 
   EPISODES_CACHE_KEY,
   loadCachedEpisodes,
   getPositionLocally,
-  getCurrentEpisodeId
+  getCurrentEpisodeId,
+  savePositionLocally
 } from '../../utils/cache/LocalStorageService';
 import { getImageUrlFromDescription } from '../../components/GTPersons';
+import { normalizeEpisodes } from '../../utils/commons/episodeUtils';
+import { audioManager } from '../../utils/OptimizedAudioService';
+import { useAudio } from '../../components/AudioContext';
 
-type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
-type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row'];
+// Percentage to consider an episode finished
+const consideredFinsishedPercentage: number = 0.98;
 
 // Define Prop Types for EpisodeListItem
 type EpisodeListItemProps = {
@@ -37,6 +40,11 @@ type EpisodeListItemProps = {
   MaterialIcons: any; // Or a more specific type if available
 };
 
+const isConsideredFinishedPercentage = (currentPositionSeconds: number, totalDurationSeconds: number): boolean => {
+  if (totalDurationSeconds <= 0) return false; // Avoid division by zero
+  return currentPositionSeconds >= totalDurationSeconds * consideredFinsishedPercentage;
+}
+
 const EpisodeListItem = ({
   item,
   episodeProgress,
@@ -48,6 +56,7 @@ const EpisodeListItem = ({
   formatTime,
   MaterialIcons,
 }: EpisodeListItemProps) => {
+  const audioManager = useAudio();
   const [progressBarWidth, setProgressBarWidth] = useState(0);
   const [isPanning, setIsPanning] = useState(false);
   const [panProgress, setPanProgress] = useState(0); // Progress from 0 to 1, derived from pan
@@ -63,6 +72,18 @@ const EpisodeListItem = ({
     return 0;
   }, [totalDurationSeconds, currentPositionMillis]);
 
+  const handleEpisodePress = async () => {
+    if (currentEpisodeId && currentEpisodeId !== item.id) {
+      // Stop all sounds before navigating
+      await audioManager.stopAllSounds();
+    }
+    // Navigue vers le player
+    router.push({
+      pathname: '/player/play',
+      params: { episodeId: item.id },
+    });
+  };
+
   const panGesture = Gesture.Pan()
     .onBegin(() => {
       if (totalDurationSeconds && totalDurationSeconds > 0) {
@@ -76,25 +97,48 @@ const EpisodeListItem = ({
         setPanProgress(progress);
       }
     })
-    .onEnd((event) => {
+    .onEnd(async (event) => {
       if (progressBarWidth > 0 && totalDurationSeconds && totalDurationSeconds > 0) {
         const x = event.x;
         const progress = Math.min(1, Math.max(0, x / progressBarWidth));
-        
         const totalDurationMillis = totalDurationSeconds * 1000;
         const seekToMillis = Math.round(progress * totalDurationMillis);
-        // Ensure seekToMillis is within bounds [0, totalDurationMillis]
         const finalSeekMillis = Math.min(totalDurationMillis, Math.max(0, seekToMillis));
-
-        // Navigate to player with startPositionMillis
-        // The player screen will need to handle this parameter
+        // Si on seek vers un autre épisode, on applique la même logique
+        if (currentEpisodeId && currentEpisodeId !== item.id) {
+          try {
+            const status = await audioManager.getStatusAsync();
+            if (status.isLoaded && status.currentEpisodeId === currentEpisodeId) {
+              const positionMillis = (status.currentTime ?? 0) * 1000;
+              await savePositionLocally(currentEpisodeId, positionMillis);
+              if (status.duration > 0) {
+                const net = await NetInfo.fetch();
+                if (net.isConnected && net.isInternetReachable) {
+                  try {
+                    const { data: { user } } = await supabase.auth.getUser();
+                    if (user) {
+                      const is_finished = status.duration > 0 && isConsideredFinishedPercentage(status.currentTime, status.duration);
+                      await supabase.from('watched_episodes').upsert({
+                        user_id: user.id,
+                        episode_id: currentEpisodeId,
+                        playback_position: status.currentTime,
+                        watched_at: new Date().toISOString(),
+                        is_finished,
+                      }, { onConflict: 'user_id, episode_id' });
+                    }
+                  } catch (e) { /* ignore */ }
+                }
+              }
+              await audioManager.unloadSound();
+            }
+          } catch (e) { /* ignore */ }
+        }
         router.push({
-          pathname: '/player/player',
+          pathname: '/player/play',
           params: { episodeId: item.id, startPositionMillis: String(finalSeekMillis) },
         });
       }
       setIsPanning(false);
-      // panProgress will be ignored once isPanning is false, no need to reset explicitly
     })
     .shouldCancelWhenOutside(true); // Cancels the gesture if the finger moves outside the component
 
@@ -104,13 +148,7 @@ const EpisodeListItem = ({
   return (
     <TouchableOpacity
       style={styles.episodeItem}
-      onPress={() => {
-        // Default navigation if the item itself (not progress bar) is pressed
-        router.push({
-          pathname: '/player/player',
-          params: { episodeId: item.id }, 
-        });
-      }}
+      onPress={handleEpisodePress}
     >
       <Image
         source={item.artwork} // Ensure item.artwork is a valid ImageSourcePropType
@@ -150,15 +188,23 @@ const EpisodeListItem = ({
       </View>
       {/* Icons indicating playback state or watched status */}
       {currentEpisodeId === item.id ? (
-        <MaterialIcons name="equalizer" size={36} color={theme.colors.primary} />
+        <MusicEqualizer />
       ) : watchedEpisodes.has(item.id) ? (
-        <MaterialIcons name="check-circle" size={36} color={theme.colors.primary} />
+        <MaterialIcons name="check-circle" size={30} color={theme.colors.primary} />
       ) : (
-        <MaterialIcons name="play-circle-outline" size={30} color={theme.colors.text} />
+        <MaterialIcons name="play-circle" size={30} color={theme.colors.text} />
       )}
     </TouchableOpacity>
   );
 };
+
+/**
+ * Écran Episodes : utilise les utilitaires factorisés pour la gestion du cache, la normalisation des épisodes,
+ * et le formatage du temps. Toute logique de transformation d'épisode ou de gestion du temps doit passer par ces utilitaires.
+ * - Utilise loadCachedEpisodes, getPositionLocally, getCurrentEpisodeId (LocalStorageService)
+ * - Utilise formatTime (timeUtils)
+ * - Utilise normalizeEpisodes (episodeUtils)
+ */
 
 export default function EpisodesScreen() {
   const router = useRouter();
@@ -268,11 +314,6 @@ export default function EpisodesScreen() {
               console.error('Error re-saving augmented episodes to cache:', cacheError);
             }
           }
-          // Uncomment to clear cache for testing
-          // await AsyncStorage.removeItem(EPISODES_CACHE_KEY);
-          // await AsyncStorage.clear();
-          // console.log('Cache cleared');
-          // console.log(JSON.stringify(episodesToSet, null, 2));
           setError(null);
         } else {
           // Fetch from Supabase if cache is empty
@@ -283,22 +324,9 @@ export default function EpisodesScreen() {
 
           if (supabaseError) throw supabaseError;
 
-          // Corrected mapping from SupabaseEpisode to Episode type
-          // Assumes Supabase client returns camelCase properties matching SupabaseEpisode type
-          // and Episode type defines properties as needed (e.g., offline_path as snake_case)
-          const formattedEpisodes: Episode[] = (data as any[]).map(ep => ({
-            id: ep.id,
-            title: ep.title,
-            description: ep.description,
-            originalMp3Link: ep.original_mp3_link,
-            mp3Link: ep.offline_path || ep.mp3_link,
-            duration: parseDuration(ep.duration),
-            publicationDate: ep.publication_date,
-            offline_path: ep.offline_path,
-            artwork: ep.artwork || getImageUrlFromDescription(ep.description) || undefined,
-          }));
+          // Utilise la fonction utilitaire factorisée pour normaliser les épisodes
+          const formattedEpisodes: Episode[] = normalizeEpisodes(data as any[]);
           episodesToSet = formattedEpisodes;
-          
           try {
             await AsyncStorage.setItem(EPISODES_CACHE_KEY, JSON.stringify(formattedEpisodes));
           } catch (cacheError) {
@@ -321,9 +349,6 @@ export default function EpisodesScreen() {
 
   async function fetchWatchedEpisodes() {
     try {
-      // const userResponse = await supabase.auth.getUser(); // Old method
-      // const userId = userResponse.data.user?.id; // Old method
-
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
 
       if (sessionError) {
@@ -357,10 +382,55 @@ export default function EpisodesScreen() {
     }
   }
 
+  // --- Nouvelle fonction utilitaire pour enregistrer la progression localement puis en base ---
+  async function saveProgressAndSync(episodeId: string, positionMillis: number, durationSeconds: number) {
+    // 1. Sauvegarde locale
+    await savePositionLocally(episodeId, positionMillis);
+    // 2. Si connecté, sync en base
+    const net = await NetInfo.fetch();
+    if (net.isConnected && net.isInternetReachable) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const is_finished = durationSeconds > 0 && isConsideredFinishedPercentage(positionMillis / 1000, durationSeconds);
+          await supabase.from('watched_episodes').upsert({
+            user_id: user.id,
+            episode_id: episodeId,
+            playback_position: positionMillis / 1000,
+            watched_at: new Date().toISOString(),
+            is_finished,
+          }, { onConflict: 'user_id, episode_id' });
+        }
+      } catch (e) { /* ignore */ }
+    }
+  }
+
+  // Ajoute un effet pour écouter la progression de l'audio en temps réel
+  useEffect(() => {
+    let isMounted = true;
+    const unsubscribe = audioManager.addListener((data: any) => {
+      if (!isMounted) return;
+      if (data.type === 'status' && data.episodeId) {
+        setEpisodeProgress(prev => {
+          // Met à jour la progression de l'épisode en cours uniquement
+          if (prev[data.episodeId] !== data.position * 1000) {
+            return { ...prev, [data.episodeId]: data.position * 1000 };
+          }
+          return prev;
+        });
+        // Enregistre la progression localement puis en base
+        if (data.duration > 0 && data.position >= 0) {
+          saveProgressAndSync(data.episodeId, data.position * 1000, data.duration);
+        }
+      }
+    });
+    return () => { isMounted = false; unsubscribe(); };
+  }, []);
+
   if (loading) {
     return (
       <View style={componentStyle.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <ActivityIndicator size="small" color={theme.colors.primary} />
       </View>
     );
   }

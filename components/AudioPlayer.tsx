@@ -2,10 +2,13 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, AppState } from 'react-native';
 import { Episode } from '../types/episode';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { audioManager, formatTime, AudioStatus } from '../utils/OptimizedAudioService';
+import { useAudio } from './AudioContext';
+import { formatTime } from '../utils/commons/timeUtils';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { throttle } from 'lodash';
 import { theme } from '../styles/global';
+import { LoadingIndicator, EmptyState, RetryButton } from './SharedUI';
+import Slider from '@react-native-community/slider';
 
 interface AudioPlayerProps {
   episode: Episode;
@@ -13,24 +16,24 @@ interface AudioPlayerProps {
   onPrevious?: () => void;
   onComplete?: () => void;
   onRetry?: () => void;
-  onPositionUpdate?: (positionMillis: number) => void;
+  onPositionUpdate?: (positionSeconds: number) => void; // Changed to seconds
 }
 
 export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, onRetry, onPositionUpdate }: AudioPlayerProps) {
-  const initialDurationMs = episode.duration ? episode.duration * 1000 : 0;
+  const audioManager = useAudio();
 
+  const initialDurationSeconds = episode.duration ? episode.duration : 0;
   const [isPlaying, setIsPlaying] = useState(false);
-  const [position, setPosition] = useState(0);
-  const [duration, setDuration] = useState(initialDurationMs);
+  const [position, setPosition] = useState(0); // Will be in seconds
+  const [duration, setDuration] = useState(initialDurationSeconds); // Will be in seconds
   const [isLoading, setIsLoading] = useState(true);
   const [isBuffering, setIsBuffering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sleepTimerActive, setSleepTimerActive] = useState(false);
   const sleepTimerId = useRef<NodeJS.Timeout | null>(null);
 
-  const progressBarRef = useRef<View>(null);
-  const progressWidth = useRef(0);
-  const progressPosition = useRef(0);
+  const [isSeeking, setIsSeeking] = useState(false);
+  const [seekValue, setSeekValue] = useState<number | null>(null); // Value while dragging
 
   // --- Listener Setup Effect ---
   useEffect(() => {
@@ -38,8 +41,8 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
     // Reset state when episode changes
     setIsLoading(true);
     setError(null);
-    setPosition(0);
-    setDuration(episode.duration ? episode.duration * 1000 : 0);
+    setPosition(0); // seconds
+    setDuration(episode.duration ? episode.duration : 0); // seconds
     setIsPlaying(false);
     setIsBuffering(false);
 
@@ -48,9 +51,9 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
     // Create a throttled function that will call onPositionUpdate
     // We set leading and trailing to true so that the first and last updates are always sent
     const throttledUpdate = onPositionUpdate 
-      ? throttle((pos: number) => {
-          console.log(`[AudioPlayer] Throttled position update: ${(pos/1000).toFixed(2)}s`);
-          onPositionUpdate(pos);
+      ? throttle((posSeconds: number) => { // Expecting seconds
+          console.log(`[AudioPlayer] Throttled position update: ${posSeconds.toFixed(2)}s`);
+          onPositionUpdate(posSeconds);
         }, 5000, { leading: true, trailing: true })
       : null;
 
@@ -60,10 +63,9 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
 
       switch (data.type) {
         case 'loaded':
-          console.log(`[AudioPlayer] Received 'loaded' for ${data.episode?.id}. Current episode: ${episode.id}`);
-          // Ensure this 'loaded' event corresponds to the current episode
-          if (data.episode?.id === episode.id) {
-            if (data.duration > 0) {
+          console.log(`[AudioPlayer] Received 'loaded' for ${data.episodeId}. Current episode: ${episode.id}`);
+          if (data.episodeId === episode.id) {
+            if (data.duration > 0) { // duration is in seconds from AudioManager
               setDuration(data.duration);
             }
             setError(null);
@@ -72,62 +74,67 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
           }
           break;
         case 'status':
-          // Only process status if it's for the currently loaded episode
-          // Check against the episode ID potentially included in the status data
-          // Note: This assumes 'data.episode.id' is provided by audioManager in the 'status' event.
-          // If not, this check might need adjustment or removal depending on audioManager's behavior.
-          if (data.episode?.id && data.episode.id !== episode.id) {
-              console.log(`[AudioPlayer] Ignoring status for different episode: ${data.episode.id}`);
+          if (data.episodeId && data.episodeId !== episode.id) {
+              console.log(`[AudioPlayer] Ignoring status for different episode: ${data.episodeId}`);
               break;
           }
 
-          // Update position in UI
           setPosition(data.position);
           
-          // Call the throttled position update
           if (throttledUpdate && data.isLoaded && data.position > 0) {
             throttledUpdate(data.position);
           }
 
-          // Update other state
           if (data.duration > 0 && data.duration !== duration) {
             setDuration(data.duration);
           }
           setIsPlaying(data.isPlaying);
-          setIsBuffering(data.isBuffering || (data.isPlaying && data.duration > 0 && data.position >= data.duration - 500));
+          
+          // Corrected buffering logic: data.position and data.duration are in seconds.
+          // Consider buffering if near the end (e.g., last 0.5 seconds)
+          const nearEnd = data.duration > 0 && data.position >= data.duration - 0.5;
+          setIsBuffering(data.isBuffering || (data.isPlaying && nearEnd));
 
-          // If still loading but we have data, stop loading
           if (isLoading && data.isLoaded && (data.duration > 0 || episode.duration)) {
-            console.log(`[AudioPlayer] 'status' event processed while loading, setting isLoading=false`);
             setIsLoading(false);
           }
           
-          // Clear error on valid status
           if (error) setError(null);
           break;
         case 'error':
           console.error(`[AudioPlayer] Received 'error': ${data.error}`);
-          setError(data.error);
-          setIsLoading(false); // Stop loading on error
+          setIsLoading(false);
           setIsPlaying(false);
           setIsBuffering(false);
           break;
         case 'finished':
-          console.log('[AudioPlayer] Received finished, calling onComplete');
-          // Set position to the end, ensure isPlaying is false
-          const finalPosition = duration > 0 ? duration : 0;
-          setPosition(finalPosition);
-          // Ensure final position is reported before completion
-          if (throttledUpdate) {
-              throttledUpdate(finalPosition);
-              // Cancel any pending throttled calls before finishing
-              throttledUpdate.cancel();
-          }
+          if (data.episodeId === episode.id) {
+            const finalPositionSeconds = duration > 0 ? duration : 0;
+            setPosition(finalPositionSeconds);
 
-          setIsPlaying(false);
-          setIsBuffering(false);
-          if (onComplete) onComplete();
-          if (sleepTimerActive) handleSleepTimerEnd();
+            if (throttledUpdate) {
+              throttledUpdate.cancel(); // Cancel any pending throttled updates
+            }
+            // Send final position immediately
+            onPositionUpdate?.(finalPositionSeconds);
+
+            setIsPlaying(false);
+            onComplete?.();
+          }
+          break;
+        case 'unloaded':
+          console.log(`[AudioPlayer] Received 'unloaded' for episode ${data.episodeId}`);
+          if (data.episodeId === episode.id) {
+            setIsLoading(true);
+            setIsPlaying(false);
+            setPosition(0);
+            // Optionally reset duration or set to initial, or show a specific message
+            // setDuration(initialDurationSeconds); 
+            if (throttledUpdate) {
+              throttledUpdate.cancel();
+            }
+            console.log(`[AudioPlayer] State reset due to 'unloaded' event for current episode.`);
+          }
           break;
         // Remote events don't change internal state directly, they trigger actions
         case 'remote-next':
@@ -158,86 +165,42 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
     };
   }, [episode.id, onPositionUpdate]); // Add onPositionUpdate to dependencies
 
-  useEffect(() => {
-    // Re-measure when component mounts or duration changes
-    if (progressBarRef.current) {
-      progressBarRef.current.measure((fx, fy, width, height, px, py) => {
-        console.log(`[AudioPlayer] Measured progress bar - Width: ${width}, X: ${px}`);
-        progressWidth.current = width;
-        progressPosition.current = px;
-      });
-    }
-  }, [episode.id, duration]); // Add duration as dependency to remeasure when it changes
-
-  const handleProgressBarTouch = useCallback((event: any) => {
-    const touchX = event.nativeEvent.locationX;
-    const barWidth = progressWidth.current;
-    
-    if (barWidth <= 0) {
-      console.warn('[AudioPlayer] Cannot seek: progress bar width is zero');
-      return;
-    }
-    
-    // Calculate percentage of bar width
-    const percentage = Math.max(0, Math.min(touchX / barWidth, 1));
-    
-    // Calculate position in milliseconds
-    const seekPositionMs = percentage * duration;
-    
-    console.log(`[AudioPlayer] Touch position: ${touchX}px / ${barWidth}px = ${percentage.toFixed(2)} -> ${seekPositionMs.toFixed(0)}ms`);
-    
-    // Update UI immediately
-    setPosition(seekPositionMs);
-    
-    // Perform the actual seek
-    try {
-      audioManager.seekTo(seekPositionMs);
-      // Immediately report position after seek
-      if (onPositionUpdate) {
-        onPositionUpdate(seekPositionMs);
-      }
-    } catch (err) {
-      console.error('[AudioPlayer] Error seeking:', err);
-      setError('Erreur pendant la recherche de position');
-    }
-  }, [duration, onPositionUpdate]); // Add onPositionUpdate dependency
-
   // --- Action Handlers (Wrapped in useCallback) ---
   const handlePlayPause = useCallback(async () => {
-    console.log(`[AudioPlayer] handlePlayPause. Current state: isPlaying=${isPlaying}`);
     try {
-      if (isPlaying) {
-        await audioManager.pause();
-      } else {
-        // Attempt to play even if duration is initially 0.
-        // TrackPlayer might still be able to play or determine duration later.
-        // We can also try fetching the status again to get a potentially updated duration.
-        let currentDuration = duration;
-        if (currentDuration <= 0) {
+      let status = await audioManager.getStatusAsync();
+      // If another episode is loaded, stop all sounds before loading new one
+      if (status.isLoaded && status.currentEpisodeId && status.currentEpisodeId !== episode.id) {
+        await audioManager.stopAllSounds();
+        await audioManager.loadSound(episode, 0);
+        status = await audioManager.getStatusAsync();
+      }
+      // On ne tente play que si le player est bien sur le bon épisode
+      if (status.isLoaded && status.currentEpisodeId === episode.id) {
+        if (isPlaying) {
+          await audioManager.pause();
+        } else {
+          let currentDuration = duration;
+          if (currentDuration <= 0) {
             console.warn("[AudioPlayer] Duration is 0, fetching status before play.");
             try {
-                // Use getStatusAsync which now includes currentEpisodeId
-                const status = await audioManager.getStatusAsync();
-                // Check if the status is for the correct episode and has a valid duration
-                if (status.isLoaded && status.currentEpisodeId === episode.id && status.durationMillis > 0) {
-                    console.log(`[AudioPlayer] Got duration from status: ${status.durationMillis}ms`);
-                    currentDuration = status.durationMillis;
-                    // Update state if it changed and component is still mounted
-                    if (duration !== currentDuration) {
-                        setDuration(currentDuration);
-                    }
-                } else {
-                    console.warn(`[AudioPlayer] Status fetch did not provide valid duration (Loaded: ${status.isLoaded}, EpisodeMatch: ${status.currentEpisodeId === episode.id}, Duration: ${status.durationMillis})`);
+              const s = await audioManager.getStatusAsync();
+              if (s.isLoaded && s.currentEpisodeId === episode.id && s.duration > 0) {
+                currentDuration = s.duration;
+                if (duration !== currentDuration) {
+                  setDuration(currentDuration);
                 }
+              }
             } catch (statusError) {
-                console.error("[AudioPlayer] Error fetching status before play:", statusError);
+              console.error("[AudioPlayer] Error fetching status before play:", statusError);
             }
+          }
+          await audioManager.play();
         }
-
-        // Now, attempt to play. If duration is still 0, TrackPlayer might handle it.
-        console.log(`[AudioPlayer] Attempting to play (duration known: ${currentDuration > 0})`);
+      } else if (!status.isLoaded) {
+        // Si rien n'est chargé, on charge et on joue
+        await audioManager.loadSound(episode, 0);
         await audioManager.play();
-        // --- MODIFICATION END ---
       }
     } catch (err) {
       console.error("[AudioPlayer] Error playing/pausing:", err);
@@ -247,21 +210,25 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
 
   const handleSeek = useCallback(async (offsetSeconds: number) => {
     console.log(`[AudioPlayer] handleSeek: ${offsetSeconds}s`);
-    const newPosition = await audioManager.seekRelative(offsetSeconds);
+    const newPositionSeconds = await audioManager.seekRelative(offsetSeconds); // Returns seconds or undefined
     // Immediately update local state and save locally after seek
-    if (typeof newPosition === 'number' && onPositionUpdate) {
-        setPosition(newPosition);
-        onPositionUpdate(newPosition); 
+    if (typeof newPositionSeconds === 'number') {
+        setPosition(newPositionSeconds);
+        if (onPositionUpdate) {
+          onPositionUpdate(newPositionSeconds); 
+        }
     }
   }, [onPositionUpdate]);
 
   const handleSkipAuditors = useCallback(async () => {
     console.log('[AudioPlayer] handleSkipAuditors');
-    const newPosition = await audioManager.seekRelative(480);
+    const newPositionSeconds = await audioManager.seekRelative(480); // Returns seconds or undefined
     // Immediately update local state and save locally after skip
-    if (typeof newPosition === 'number' && onPositionUpdate) {
-        setPosition(newPosition);
-        onPositionUpdate(newPosition);
+    if (typeof newPositionSeconds === 'number') {
+        setPosition(newPositionSeconds);
+        if (onPositionUpdate) {
+          onPositionUpdate(newPositionSeconds);
+        }
     }
   }, [onPositionUpdate]);
 
@@ -300,22 +267,11 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
       if (nextAppState === 'active') {
         console.log('[AudioPlayer] App returned to foreground, refreshing player state');
         
-        // Force measurement update for progress bar
-        setTimeout(() => {
-          if (progressBarRef.current) {
-            progressBarRef.current.measure((fx, fy, width, height, px, py) => {
-              progressWidth.current = width;
-              progressPosition.current = px;
-              console.log(`[AudioPlayer] Progress bar measured: width=${width}, x=${px}`);
-            });
-          }
-        }, 200);
-        
-        // Re-sync with TrackPlayer state
-        audioManager.getStatusAsync().then(status => {
+        // Re-sync with audioManager state (expo-audio)
+        audioManager.getStatusAsync().then(status => { // status returns currentTime and duration in seconds
           if (status.isLoaded && status.currentEpisodeId === episode.id) {
             console.log('[AudioPlayer] Updating UI with current playback state');
-            setPosition(status.positionMillis);
+            setPosition(status.currentTime); // currentTime is in seconds
             setIsPlaying(status.isPlaying);
             setIsBuffering(status.isBuffering);
           }
@@ -328,30 +284,42 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
     };
   }, [episode.id]);
 
+  // --- Slider Handlers ---
+  const handleSlidingStart = useCallback(() => {
+    setIsSeeking(true);
+    setSeekValue(position); // Start from current position
+  }, [position]);
+
+  const handleValueChange = useCallback((value: number) => {
+    setSeekValue(value);
+  }, []);
+
+  const handleSlidingComplete = useCallback((value: number) => {
+    setIsSeeking(false);
+    setSeekValue(null);
+    setPosition(value); // Update UI immediately
+    audioManager.seekTo(value * 1000); // Seek in ms
+    if (onPositionUpdate) {
+      onPositionUpdate(value);
+    }
+  }, [audioManager, onPositionUpdate]);
+
   // --- Rendering ---
-  const progress = duration > 0 ? Math.min(100, Math.max(0, (position / duration) * 100)) : 0; // Ensure progress is between 0 and 100
+  const progress = duration > 0 ? Math.min(100, Math.max(0, (position / duration) * 100)) : 0;
   const remainingTime = duration > 0 && position >= 0 ? Math.max(0, duration - position) : 0;
+  const sliderValue = isSeeking && seekValue !== null ? seekValue : position;
 
   // Loading State UI
   if (isLoading) {
-    console.log('[AudioPlayer] Rendering Loading State');
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color={theme.colors.primary}/>
-      </View>
-    );
+    return <LoadingIndicator message="Chargement..." style={styles.container} />;
   }
 
   // Error State UI
   if (error) {
     return (
-      <View style={styles.container}>
-        <MaterialIcons name="error-outline" size={48} color={theme.colors.error} />
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={onRetry}>
-          <Text style={styles.retryText}>Réessayer</Text>
-        </TouchableOpacity>
-      </View>
+      <EmptyState message={error}>
+        {onRetry && <RetryButton onPress={onRetry} text="Réessayer" style={styles.retryButton} />}
+      </EmptyState>
     );
   }
 
@@ -362,50 +330,34 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
       <Text style={styles.description} numberOfLines={2} ellipsizeMode="tail">
         {episode.description}
       </Text>
-
-      {/* Progress Bar and Time - Simplified touchable version */}
+      {/* Progress Slider and Time */}
       <View style={styles.progressContainer}>
-        <TouchableOpacity 
-          activeOpacity={0.8}
-          ref={progressBarRef}
-          style={styles.progressContainer}
-          onLayout={() => {
-            // Measure on layout
-            if (progressBarRef.current) {
-              progressBarRef.current.measure((fx, fy, width, height, px, py) => {
-                progressWidth.current = width;
-                progressPosition.current = px;
-                console.log(`[AudioPlayer] Progress bar measured: width=${width}, x=${px}`);
-              });
-            }
-          }}
-          onPress={handleProgressBarTouch}
-        >
-          <View style={styles.progressBackground} />
-          <View style={[styles.progressBar, { width: `${progress}%` }]} />
-          <View
-            style={[
-              styles.progressKnob,
-              { left: `${progress}%` },
-              { transform: [{ translateX: -8 }] }
-            ]}
-          />
-        </TouchableOpacity>
-
+        <Slider
+          value={sliderValue}
+          minimumValue={0}
+          maximumValue={duration}
+          step={1}
+          minimumTrackTintColor={theme.colors.primary}
+          maximumTrackTintColor={theme.colors.description}
+          thumbTintColor={isSeeking ? theme.colors.text : theme.colors.primary}
+          onSlidingStart={handleSlidingStart}
+          onValueChange={handleValueChange}
+          onSlidingComplete={handleSlidingComplete}
+          style={{ width: '100%', height: 40 }}
+        />
         <View style={styles.timeContainer}>
-          <Text style={styles.timeText}>{formatTime(position)}</Text>
+          <Text style={styles.timeText}>{formatTime(sliderValue)}</Text>
           <Text style={styles.timeText}>-{formatTime(remainingTime)}</Text>
         </View>
       </View>
-
       {/* Playback Controls */}
       <View style={styles.controls}>
          <TouchableOpacity onPress={onPrevious} style={styles.button} disabled={!onPrevious}>
-          <MaterialIcons name="skip-previous" size={32} color={theme.colors.text} />
+          <MaterialIcons name="skip-previous" size={42} color={theme.colors.text} />
          </TouchableOpacity>
 
          <TouchableOpacity onPress={() => handleSeek(-30)} style={styles.button}>
-          <MaterialIcons name="replay-30" size={32} color={theme.colors.text} />
+          <MaterialIcons name="replay-30" size={42} color={theme.colors.text} />
          </TouchableOpacity>
 
          <TouchableOpacity onPress={handlePlayPause} style={[styles.button, styles.playButton]}>
@@ -417,11 +369,11 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
          </TouchableOpacity>
 
          <TouchableOpacity onPress={() => handleSeek(30)} style={styles.button}>
-          <MaterialIcons name="forward-30" size={32} color={theme.colors.text} />
+          <MaterialIcons name="forward-30" size={42} color={theme.colors.text} />
          </TouchableOpacity>
 
          <TouchableOpacity onPress={onNext} style={styles.button} disabled={!onNext}>
-          <MaterialIcons name="skip-next" size={32} color={theme.colors.text} />
+          <MaterialIcons name="skip-next" size={42} color={theme.colors.text} />
          </TouchableOpacity>
        </View>
 
@@ -459,8 +411,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingBottom: 20, // Add padding at the bottom
-    justifyContent: 'flex-end', // Align content towards the bottom
+    paddingBottom: 20,
+    justifyContent: 'flex-end',
     alignItems: 'center',
     width: '100%',
   },
@@ -469,7 +421,7 @@ const styles = StyleSheet.create({
       height: 250,
       borderRadius: 12,
       marginBottom: 30,
-      backgroundColor: theme.colors.borderColor, // Placeholder background
+      backgroundColor: theme.colors.borderColor,
   },
   title: {
     fontSize: 20,
@@ -479,66 +431,21 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   description: {
-    fontSize: 14, // Slightly smaller description
+    fontSize: 14,
     color: theme.colors.description,
     marginBottom: 25,
     textAlign: 'center',
-    paddingHorizontal: 10, // Add horizontal padding
+    paddingHorizontal: 10,
   },
   progressContainer: {
     width: '100%',
     marginBottom: 20,
   },
-  progressBarTouchable: { // Renamed for clarity
-    width: '100%',
-    height: 24, // Increased touch area height
-    justifyContent: 'center',
-    // backgroundColor: 'rgba(255,0,0,0.1)', // Optional: Visualize touch area
-  },
-  progressBackground: {
-    position: 'absolute',
-    width: '100%',
-    height: 6, // Slightly thinner bar
-    backgroundColor: theme.colors.borderColor,
-    borderRadius: 3,
-    top: '50%',
-    marginTop: -3, // Adjust vertical centering
-  },
-  progressBar: {
-    position: 'absolute',
-    height: 6,
-    backgroundColor: theme.colors.primary,
-    borderRadius: 3,
-    top: '50%',
-    marginTop: -3,
-  },
-  progressKnob: {
-    position: 'absolute',
-    width: 14, // Slightly smaller knob
-    height: 14,
-    backgroundColor: theme.colors.primary,
-    borderRadius: 7,
-    borderWidth: 2, // Thinner border
-    borderColor: theme.colors.text,
-    top: '50%',
-    marginLeft: -7, // Adjust for knob size
-    marginTop: -7, // Adjust for knob size
-    elevation: 3,
-    shadowColor: theme.colors.shadowColor,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.3,
-    shadowRadius: 2,
-  },
-  progressKnobActive: {
-    transform: [{ scale: 1.3 }], // Slightly larger when active
-    backgroundColor: theme.colors.text, // Change color when active
-    borderColor: theme.colors.primary,
-  },
   timeContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
-    marginTop: 8, // Add margin top
+    marginTop: 8,
   },
   timeText: {
     color: theme.colors.description,
@@ -549,16 +456,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     alignItems: 'center',
     width: '100%',
-    marginBottom: 20, // Add margin below main controls
+    marginBottom: 20,
   },
   button: {
-    padding: 10, // Add padding for easier touch
+    padding: 10,
   },
   playButton: {
     backgroundColor: theme.colors.buttonBackground,
     width: 76,
     height: 76,
-    borderRadius: 38, // Half of width/height for perfect circle
+    borderRadius: 38,
     marginHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
@@ -613,36 +520,14 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 16,
     position: 'absolute',
-    bottom: 10, // Position near bottom
+    bottom: 10,
     alignSelf: 'center',
     zIndex: 10,
-  },
-  bufferingText: {
-    color: theme.colors.text,
-    fontSize: 12,
-    marginLeft: 6,
-  },
-  statusText: {
-      color: theme.colors.description,
-      marginTop: 15,
-      fontSize: 16,
-  },
-  errorText: {
-    color: theme.colors.error,
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 16,
-    paddingHorizontal: 20,
   },
   retryButton: {
     backgroundColor: theme.colors.borderColor,
     paddingVertical: 10,
     paddingHorizontal: 25,
     borderRadius: 8,
-  },
-  retryText: {
-    color: theme.colors.text,
-    fontSize: 16,
-    fontWeight: '500',
   },
 });

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Alert } from 'react-native';
+import { syncPushTokenAfterLogin } from '../../utils/notifications/EpisodeNotificationService';
 import { Link, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import * as WebBrowser from 'expo-web-browser';
@@ -87,6 +88,8 @@ export default function LoginScreen() {
       });
 
       if (error) throw error;
+      console.log('Login successful, checking session');
+      await syncPushTokenAfterLogin();
       console.log('Login successful, redirecting');
       router.replace('/(tabs)');
     } catch (err) {
@@ -202,12 +205,14 @@ export default function LoginScreen() {
                   });
 
                   if (sessionError) throw sessionError;
+                  await syncPushTokenAfterLogin();
                   router.replace('/(tabs)');
                 } else if (code) {
                   console.log('Auth code found, exchanging for session');
                   const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
                   
                   if (exchangeError) throw exchangeError;
+                  await syncPushTokenAfterLogin();
                   router.replace('/(tabs)');
                 } else {
                   console.log('No tokens in URL, checking session');
@@ -224,6 +229,7 @@ export default function LoginScreen() {
                 // Vérifier directement si une session existe
                 const { data: { session } } = await supabase.auth.getSession();
                 if (session) {
+                  await syncPushTokenAfterLogin();
                   console.log('Session exists, redirecting');
                   router.replace('/(tabs)');
                 } else {
@@ -235,6 +241,7 @@ export default function LoginScreen() {
               // Essayer une approche différente - obtenir la session actuelle
               const { data: { session } } = await supabase.auth.getSession();
               if (session) {
+                await syncPushTokenAfterLogin();
                 console.log('Session exists despite parse error, redirecting');
                 router.replace('/(tabs)');
               } else {

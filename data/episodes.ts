@@ -1,6 +1,11 @@
 import { Episode } from '../types/episode';
+import { normalizeEpisodes } from '../utils/commons/episodeUtils';
 
-export const episodes: Episode[] = [
+/**
+ * Liste d'épisodes factices pour le développement, normalisée pour garantir la cohérence des champs.
+ * Utilise la fonction utilitaire partagée normalizeEpisodes.
+ */
+export const episodes: Episode[] = normalizeEpisodes([
   {
     id: 'fake-1',
     title: 'Fake Episode 1',
@@ -46,4 +51,4 @@ export const episodes: Episode[] = [
     publicationDate: '2023-03-01',
     artwork: undefined,
   },
-];
+]);
