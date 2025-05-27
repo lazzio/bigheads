@@ -1,3 +1,16 @@
+## [4.0.0](https://github.com/lazzio/bigheads/-/compare/v3.5.1...v4.0.0) (2025-05-27)
+
+### ⚠ BREAKING CHANGES
+
+* downgrade expo version to 52 (#57)
+
+### Features
+
+* downgrade expo to version 52 ([d196f5c](https://github.com/lazzio/bigheads/-/commit/d196f5cb320b0603f2721e6a85c4379aa822b9c1))
+* downgrade expo version to 52 ([81ebf30](https://github.com/lazzio/bigheads/-/commit/81ebf3026da34877f08fcc4035e998b9165db700))
+* downgrade expo version to 52 ([#57](https://github.com/lazzio/bigheads/-/issues/57)) ([702431f](https://github.com/lazzio/bigheads/-/commit/702431f5f92dcf404e3ccfe8ca61c8089696759a))
+* downgrade to expo52 with react-native-track-player ([65d084e](https://github.com/lazzio/bigheads/-/commit/65d084ea211f3425ff9cf06472df13bc27607790))
+
 ## [3.6.0](https://github.com/lazzio/bigheads/-/compare/v3.5.1...v3.6.0) (2025-05-27)
 
 ### Features
