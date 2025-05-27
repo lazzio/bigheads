@@ -7,24 +7,32 @@ import {
   Platform,
   FlatList,
   Alert,
-  ActivityIndicator,
   RefreshControl
 } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { supabase } from '../../lib/supabase';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
 import * as FileSystem from 'expo-file-system';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { Episode } from '../../types/episode';
 import Svg, { Circle } from 'react-native-svg';
 import { loadCachedEpisodes, saveEpisodesToCache, EPISODES_CACHE_KEY } from '../../utils/cache/LocalStorageService';
 import { theme } from '../../styles/global';
 import { componentStyle, episodeStyle } from '../../styles/componentStyle';
-import { parseDuration } from '../../utils/commons/timeUtils';
-import { getGoogleUserInfo } from '@/lib/user';
+import { getUserAvatarUrl } from '../../lib/user';
 import { Image } from 'expo-image';
-import { getImageUrlFromDescription } from '../../components/GTPersons';
+import { normalizeEpisodes } from '../../utils/commons/episodeUtils';
+import { getFilename, ensureDownloadsDirectory } from '../../utils/commons/fileUtils';
+import { ErrorBanner, LoadingIndicator, EmptyState, OfflineIndicator, RetryButton } from '../../components/SharedUI';
+
+/**
+ * Écran Downloads : utilise les utilitaires factorisés pour la gestion du cache, la normalisation des épisodes,
+ * la gestion des fichiers téléchargés, et l'accès à l'avatar utilisateur.
+ * - Utilise loadCachedEpisodes, saveEpisodesToCache (LocalStorageService)
+ * - Utilise normalizeEpisodes (episodeUtils)
+ * - Utilise getFilename, ensureDownloadsDirectory (fileUtils)
+ * - Utilise getUserAvatarUrl (user)
+ */
 
 // Types
 interface DownloadStatus {
@@ -49,6 +57,7 @@ export default function DownloadsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isOffline, setIsOffline] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState('');
   
   // References for optimization
   const isMounted = useRef(true);
@@ -66,6 +75,9 @@ export default function DownloadsScreen() {
 
     // Initialize downloads
     setupDownloads();
+
+    // Load user avatar
+    getUserAvatarUrl().then(setAvatarUrl);
 
     // Cleanup function for component unmount
     return () => {
@@ -85,21 +97,11 @@ export default function DownloadsScreen() {
     }
   };
 
-  const getAvatar = async () => {
-    try {
-      const userInfo = await getGoogleUserInfo();
-      return userInfo?.avatarUrl || '';
-    } catch (error) {
-      console.error('Error fetching user avatar:', error);
-      return '';
-    }
-  }
-
   // Initialize downloads
   const setupDownloads = async () => {
     try {
       // Ensure download directory exists
-      await ensureDownloadsDirectory().catch(() => {});
+      await ensureDownloadsDirectory(DOWNLOADS_DIR, FileSystem).catch(() => {});
       
       // Load episodes (first from cache, then from API if online)
       await loadEpisodesWithCache();
@@ -147,40 +149,12 @@ export default function DownloadsScreen() {
     }
   };
 
-  // Save episodes to cache for offline use
-  const saveEpisodesToCache = async (episodes: Episode[]) => {
-    try {
-      await AsyncStorage.setItem(EPISODES_CACHE_KEY, JSON.stringify(episodes));
-      console.log(`Saved ${episodes.length} episodes to cache`);
-    } catch (error) {
-      console.error('Error saving episodes to cache:', error);
-    }
-  };
-
   // Check downloads when episodes change
   useEffect(() => {
     if (episodes.length > 0 && Platform.OS !== 'web') {
       checkDownloadedEpisodes();
     }
   }, [episodes]);
-
-  // File system helpers
-  const ensureDownloadsDirectory = async () => {
-    if (Platform.OS === 'web') return false;
-    
-    try {
-      const dirInfo = await FileSystem.getInfoAsync(DOWNLOADS_DIR);
-      
-      if (!dirInfo.exists) {
-        await FileSystem.makeDirectoryAsync(DOWNLOADS_DIR, { intermediates: true });
-      }
-      
-      return true;
-    } catch (error) {
-      console.error('Error creating downloads directory:', error);
-      return false;
-    }
-  };
 
   // Read metadata for downloaded episodes
   const loadDownloadedEpisodesMetadata = async () => {
@@ -242,23 +216,8 @@ export default function DownloadsScreen() {
       });
     } else {
       // Create minimal Episode objects from metadata
-      return metadata.map(meta => ({
-        id: meta.id,
-        title: meta.title || 'Downloaded Episode',
-        description: meta.description || '',
-        mp3Link: meta.filePath || meta.mp3Link || meta.mp3_link || '',
-        duration: parseDuration(meta.duration),
-        publicationDate: meta.downloadDate || new Date().toISOString(),
-        offline_path: meta.filePath,
-        artwork: meta.artwork || undefined
-      }));
+      return normalizeEpisodes(metadata);
     }
-  };
-
-  // Generate filename from URL
-  const getFilename = (url: string | undefined): string => {
-    if (!url) return `episode-${Date.now()}.mp3`;
-    return url.split('/').pop() || `episode-${Date.now()}.mp3`;
   };
 
   // Load episodes from API
@@ -288,17 +247,7 @@ export default function DownloadsScreen() {
 
       const episodesData = data as any[];
       // Normalize the data to match our Episode interface
-      const normalizedEpisodes: Episode[] = episodesData.map(ep => ({
-        id: ep.id,
-        title: ep.title,
-        description: ep.description,
-        originalMp3Link: ep.original_mp3_link,
-        mp3Link: ep.offline_path || ep.mp3_link,
-        duration: parseDuration(ep.duration),
-        publicationDate: ep.publication_date,
-        offline_path: ep.offline_path,
-        artwork: ep.artwork || getImageUrlFromDescription(ep.description) || undefined,
-      }));
+      const normalizedEpisodes: Episode[] = normalizeEpisodes(episodesData);
       setEpisodes(normalizedEpisodes);
       
       // Save episodes to cache for offline use
@@ -333,7 +282,7 @@ export default function DownloadsScreen() {
 
     try {
       // Ensure directory exists
-      await ensureDownloadsDirectory();
+      await ensureDownloadsDirectory(DOWNLOADS_DIR, FileSystem);
       
       // Read files in directory
       const files = await FileSystem.readDirectoryAsync(DOWNLOADS_DIR)
@@ -392,7 +341,7 @@ export default function DownloadsScreen() {
 
     try {
       setError(null);
-      await ensureDownloadsDirectory();
+      await ensureDownloadsDirectory(DOWNLOADS_DIR, FileSystem);
       
       const filename = getFilename(episode.mp3Link);
       const fileUri = DOWNLOADS_DIR + filename;
@@ -540,7 +489,7 @@ export default function DownloadsScreen() {
     try {
       // Delete and recreate the directory
       await FileSystem.deleteAsync(DOWNLOADS_DIR, { idempotent: true });
-      await ensureDownloadsDirectory();
+      await ensureDownloadsDirectory(DOWNLOADS_DIR, FileSystem);
 
       // Reset all statuses
       if (isMounted.current) {
@@ -632,7 +581,7 @@ export default function DownloadsScreen() {
       
       // For a downloaded episode, pass the local path
       router.push({
-        pathname: '/player/player',
+        pathname: '/player/play',
         params: { 
           episodeId: episode.id,
           offlinePath: filePath
@@ -641,7 +590,7 @@ export default function DownloadsScreen() {
     } else {
       // For an online episode, use the index
       router.push({
-        pathname: '/player/player',
+        pathname: '/player/play',
         params: { episodeId: episode.id }
       });
     }
@@ -707,40 +656,17 @@ export default function DownloadsScreen() {
 
   // Message if no episodes are available
   const NoEpisodesMessage = () => (
-    <View style={styles.emptyContainer}>
-      <Text style={styles.emptyText}>No episodes available</Text>
+    <EmptyState message="No episodes available">
       {isOffline && (
-        <View style={styles.offlineMessageContainer}>
-          <MaterialIcons name="wifi-off" size={20} color={theme.colors.description} />
-          <Text style={styles.offlineText}>
-            Mode hors-ligne
-          </Text>
-        </View>
+        <OfflineIndicator text="Mode hors-ligne" style={styles.offlineMessageContainer} />
       )}
-      <TouchableOpacity 
-        style={styles.refreshButton}
-        onPress={refreshData}
-      >
-        <Text style={styles.refreshButtonText}>Refresh</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  // Offline mode indicator
-  const OfflineIndicator = () => (
-    <View style={styles.offlineIndicator}>
-      <MaterialIcons name="wifi-off" size={16} color={theme.colors.text} />
-      <Text style={styles.offlineIndicatorText}>Mode hors-ligne</Text>
-    </View>
+      <RetryButton onPress={refreshData} text="Refresh" style={styles.refreshButton} />
+    </EmptyState>
   );
 
   // Display during loading
   if (isLoading) {
-    return (
-      <View style={componentStyle.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
-      </View>
-    );
+    return <LoadingIndicator message="" style={componentStyle.loadingContainer} />;
   }
 
   // Main display
@@ -761,20 +687,15 @@ export default function DownloadsScreen() {
           )}
         </View>
         {!isOffline && <View>
-          <Image source={{ uri: getAvatar }} 
-            style={{ width: 40, height: 40, borderRadius: 20 }} 
+          <Image source={{ uri: avatarUrl }}
+            style={{ width: 40, height: 40, borderRadius: 20 }}
             alt="User Avatar"
           />
         </View>}
       </View>
       
       {error && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity onPress={() => setError(null)} style={styles.dismissButton}>
-            <Text style={styles.dismissButtonText}>×</Text>
-          </TouchableOpacity>
-        </View>
+        <ErrorBanner message={error} onDismiss={() => setError(null)} />
       )}
 
       <FlatList

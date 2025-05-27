@@ -19,9 +19,9 @@ export const componentStyle = StyleSheet.create({
     paddingLeft: 20,
     paddingRight: 20,
     paddingTop: 20,
-    paddingBottom: 20,
+    paddingBottom: 10,
     marginTop: 25,
-    marginBottom: 10,
+    marginBottom: 0,
     backgroundColor: theme.colors.darkBackground,
   },
   headerTitle: {
@@ -36,8 +36,8 @@ export const tabBarStyle = StyleSheet.create(
     tabBar: {
       height: 70,
       paddingBottom: 10,
-      backgroundColor: theme.colors.darkBackground,
-      borderTopWidth: 0,
+      backgroundColor: theme.colors.darkerBackground,
+      borderRadius: 10,
     },
     tabBarIcon: {
       paddingBottom: 10,

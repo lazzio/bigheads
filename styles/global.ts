@@ -6,6 +6,7 @@ export const theme = {
         secondaryBackground: '#000000',
         inputBackground: '#1a1a1a',
         darkBackground: '#000000',
+        darkerBackground: '#1c1c1c',
         text: '#ffffff',
         description: '#888888',
         secondaryDescription: '#666666',

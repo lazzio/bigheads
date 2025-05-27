@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Episode } from '../../types/episode';
-import { parseDuration } from '../commons/timeUtils';
+import { normalizeEpisodes } from '../commons/episodeUtils';
 
 // --- Constants ---
 export const EPISODES_CACHE_KEY = 'cached_episodes';
@@ -65,13 +65,7 @@ export const loadCachedEpisodes = async (): Promise<Episode[]> => {
     const cachedData = await AsyncStorage.getItem(EPISODES_CACHE_KEY);
     if (cachedData) {
       const episodes: any[] = JSON.parse(cachedData);
-      // Normaliser la durée et garantir mp3Link
-      const normalizedEpisodes = episodes.map(ep => ({
-        ...ep,
-        duration: parseDuration(ep.duration),
-        mp3Link: ep.offline_path || ep.mp3Link || '',
-      }));
-      return normalizedEpisodes;
+      return normalizeEpisodes(episodes);
     }
   } catch (error) {}
   return [];

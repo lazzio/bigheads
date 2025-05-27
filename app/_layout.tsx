@@ -1,14 +1,17 @@
+import 'react-native-reanimated';
 import { useEffect, useRef, useState } from 'react';
 import { SplashScreen, useRouter, Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { supabase } from '../lib/supabase';
 import { initEpisodeNotificationService, setupNotificationListener, syncPushTokenAfterLogin } from '../utils/notifications/EpisodeNotificationService';
 import NetInfo from '@react-native-community/netinfo';
 import * as Sentry from '@sentry/react-native';
-import { StatusBar } from 'expo-status-bar';
 import { cleanupStaleLocalPositions } from '../utils/cache/LocalPositionCleanupService';
-import { getCurrentlyPlayingEpisodeId, setCurrentEpisodeId, getStringItem, removeStringItem } from '../utils/cache/LocalStorageService';
+import { getStringItem, removeStringItem } from '../utils/cache/LocalStorageService';
+import { AudioProvider } from '../components/AudioContext';
+import { theme } from '@/styles/global';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -77,7 +80,7 @@ export default function RootLayout() {
                 }
                 console.log('[NotificationHandler] Navigating to player tab');
                 router.navigate({
-                  pathname: '/player/player',
+                  pathname: '/player/play',
                   params: { episodeId: episodeId, source: 'notification', timestamp: Date.now() }
                 });
               };
@@ -111,7 +114,7 @@ export default function RootLayout() {
                   console.log(`[Layout] Found last requested episode ${lastEpisodeId}, clearing and navigating`);
                   await removeStringItem('lastRequestedEpisodeId');
                   router.navigate({
-                    pathname: '/player/player',
+                    pathname: '/player/play',
                     params: { episodeId: lastEpisodeId, source: 'notification', timestamp: Date.now() }
                   });
                 }
@@ -204,26 +207,34 @@ export default function RootLayout() {
 
   console.log('[RootLayout] App is ready, rendering main navigator.');
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'black' }}>
-      <SafeAreaProvider>
-        <StatusBar style="light" backgroundColor="#000000" />
-        <Stack screenOptions={{ headerShown: false }}>
-          {/* <Slot /> removed as Stack navigator handles screen rendering */}
-          <Stack.Screen
-            name="(tabs)"
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="player"
-            options={{
-              animation: 'slide_from_bottom',
-              presentation: 'modal',
-              gestureEnabled: true,
+    <AudioProvider>
+      <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'black' }}>
+        <SafeAreaProvider>
+          <StatusBar style="auto" />
+          <Stack
+            screenOptions={{
               headerShown: false,
-            }}
-          />
-        </Stack>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+              contentStyle: {
+                backgroundColor: theme.colors.darkBackground
+              },
+            }}>
+            {/* <Slot /> removed as Stack navigator handles screen rendering */}
+            <Stack.Screen
+              name="(tabs)"
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="player"
+              options={{
+                animation: 'slide_from_bottom',
+                presentation: 'modal',
+                gestureEnabled: true,
+                headerShown: false,
+              }}
+            />
+          </Stack>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </AudioProvider>
   );
 }

@@ -1,3 +1,4 @@
+import 'react-native-reanimated';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl, ActivityIndicator } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useEffect, useState, useCallback, useMemo } from 'react'; // Added useMemo
@@ -13,6 +14,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { theme } from '../../styles/global';
 import { componentStyle } from '../../styles/componentStyle';
+import MusicEqualizer from '../../components/Equalizer';
 import { 
   EPISODES_CACHE_KEY,
   loadCachedEpisodes,
@@ -20,9 +22,6 @@ import {
   getCurrentEpisodeId
 } from '../../utils/cache/LocalStorageService';
 import { getImageUrlFromDescription } from '../../components/GTPersons';
-
-type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
-type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row'];
 
 // Define Prop Types for EpisodeListItem
 type EpisodeListItemProps = {
@@ -89,7 +88,7 @@ const EpisodeListItem = ({
         // Navigate to player with startPositionMillis
         // The player screen will need to handle this parameter
         router.push({
-          pathname: '/player/player',
+          pathname: '/player/play',
           params: { episodeId: item.id, startPositionMillis: String(finalSeekMillis) },
         });
       }
@@ -107,7 +106,7 @@ const EpisodeListItem = ({
       onPress={() => {
         // Default navigation if the item itself (not progress bar) is pressed
         router.push({
-          pathname: '/player/player',
+          pathname: '/player/play',
           params: { episodeId: item.id }, 
         });
       }}
@@ -150,11 +149,11 @@ const EpisodeListItem = ({
       </View>
       {/* Icons indicating playback state or watched status */}
       {currentEpisodeId === item.id ? (
-        <MaterialIcons name="equalizer" size={36} color={theme.colors.primary} />
+        <MusicEqualizer />
       ) : watchedEpisodes.has(item.id) ? (
-        <MaterialIcons name="check-circle" size={36} color={theme.colors.primary} />
+        <MaterialIcons name="check-circle" size={30} color={theme.colors.primary} />
       ) : (
-        <MaterialIcons name="play-circle-outline" size={30} color={theme.colors.text} />
+        <MaterialIcons name="play-circle" size={30} color={theme.colors.text} />
       )}
     </TouchableOpacity>
   );
@@ -411,7 +410,7 @@ export default function EpisodesScreen() {
               currentEpisodeId={currentEpisodeId}
               watchedEpisodes={watchedEpisodes}
               theme={theme}
-              styles={styles} // Pass the styles object
+              styles={styles}
               router={router}
               formatTime={formatTime}
               MaterialIcons={MaterialIcons}
@@ -420,9 +419,9 @@ export default function EpisodesScreen() {
 
           refreshControl={
             <RefreshControl
-              refreshing={refreshing} // <-- Utilise refreshing ici
+              refreshing={refreshing}
               onRefresh={() => {
-                fetchEpisodes(true); // <-- Passe true pour indiquer un refresh
+                fetchEpisodes(true);
                 fetchWatchedEpisodes();
               }}
               tintColor={theme.colors.primary}

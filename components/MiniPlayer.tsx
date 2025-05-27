@@ -1,3 +1,4 @@
+import 'react-native-reanimated';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   View, 
@@ -183,7 +184,7 @@ export default function MiniPlayer() {
       savePositionLocally(currentEpisode.id, position);
       console.log(`[MiniPlayer] Navigating to player for episode ${currentEpisode.id}`);
       router.push({
-        pathname: '/player/player',
+        pathname: '/player/play',
         params: { episodeId: currentEpisode.id }
       });
     }

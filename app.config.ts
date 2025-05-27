@@ -23,6 +23,7 @@ const config: ExpoConfig = {
   },
   
   android: {
+    edgeToEdgeEnabled: true,
     adaptiveIcon: {
       foregroundImage: "./assets/images/bh_opti.png",
       backgroundColor: "#b48d7b"
