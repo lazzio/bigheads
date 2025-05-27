@@ -1,4 +1,3 @@
-import 'react-native-reanimated';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, AppState } from 'react-native';
 import { Episode } from '../types/episode';
@@ -165,6 +164,31 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
       }
     };
   }, [episode.id, onPositionUpdate]); // Add onPositionUpdate to dependencies
+
+  // --- Timer pour mise à jour temps réel ---
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+
+    if (isPlaying) {
+      interval = setInterval(async () => {
+        try {
+          const status = await audioManager.getStatusAsync();
+          if (status.isLoaded && status.currentEpisodeId === episode.id) {
+            setPosition(status.currentTime);
+            setDuration(status.duration);
+          }
+        } catch (e) {
+          // Silent fail
+        }
+      }, 500);
+    } else if (interval) {
+      clearInterval(interval);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isPlaying, episode.id, audioManager]);
 
   // --- Action Handlers (Wrapped in useCallback) ---
   const handlePlayPause = useCallback(async () => {

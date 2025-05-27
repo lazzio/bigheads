@@ -1,4 +1,3 @@
-import 'react-native-reanimated';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, AppState, AppStateStatus, BackHandler, Platform, Dimensions } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -18,7 +17,6 @@ import Animated, {
 import { getImageUrlFromDescription } from '../../components/GTPersons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
-import { Database } from '../../types/supabase';
 import { Episode } from '../../types/episode';
 import { useAudio } from '../../components/AudioContext';
 import { ErrorBanner, EmptyState, LoadingIndicator, RetryButton } from '../../components/SharedUI';
@@ -43,10 +41,6 @@ import AudioPlayer from '../../components/AudioPlayer';
 
 // --- Constants ---
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-// --- Types ---
-type SupabaseEpisode = Database['public']['Tables']['episodes']['Row'];
-type WatchedEpisodeRow = Database['public']['Tables']['watched_episodes']['Row'];
 
 export default function PlayerScreen() {
   const { episodeId, offlinePath, source, _retry, startPositionMillis: startPositionMillisParam } = useLocalSearchParams<{ episodeId?: string; offlinePath?: string; source?: string; _retry?: string, startPositionMillis?: string }>();
@@ -195,20 +189,16 @@ export default function PlayerScreen() {
     })
     .onEnd((event) => {
       const shouldClose = event.translationY > 120 && event.velocityY > 500;
-      
       if (shouldClose) {
-        // Animation de fermeture avec callback
         translateY.value = withSpring(SCREEN_HEIGHT, {
           damping: 20,
           stiffness: 90,
-        }, (finished) => {
-          if (finished) {
-            runOnJS(closePlayer)();
-          }
         });
         opacity.value = withSpring(0);
+
+        // Correction : navigation immédiate, sans setTimeout
+        runOnJS(closePlayer)();
       } else {
-        // Revenir à la position initiale
         translateY.value = withSpring(0, {
           damping: 20,
           stiffness: 120,

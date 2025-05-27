@@ -34,7 +34,7 @@ class AudioManager {
   private currentEpisodeIndex: number = -1;
   private initialSeekPositionMillis: number | null = null;
   private isPlayerReady = false;
-  private isLoadingNewSound: boolean = false;
+  private isLoadingNewSound = false;
 
   private constructor() {}
 
@@ -57,11 +57,32 @@ class AudioManager {
         Capability.SeekTo,
         Capability.Stop,
       ],
-      compactCapabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext, Capability.SkipToPrevious],
+      compactCapabilities: [
+        // Capability.Play,
+        // Capability.Pause,
+        // Capability.SkipToNext,
+        // Capability.SkipToPrevious,
+        Capability.Stop,
+      ],
     });
     TrackPlayer.addEventListener(TrackPlayerEvent.PlaybackState, this.onPlaybackStatusUpdate);
-    TrackPlayer.addEventListener(TrackPlayerEvent.PlaybackTrackChanged, this.onTrackChanged);
+    TrackPlayer.addEventListener(TrackPlayerEvent.PlaybackActiveTrackChanged, this.onTrackChanged);
     TrackPlayer.addEventListener(TrackPlayerEvent.PlaybackQueueEnded, this.onQueueEnded);
+    TrackPlayer.addEventListener(TrackPlayerEvent.PlaybackError, this.onPlaybackStatusUpdate);
+    TrackPlayer.addEventListener(TrackPlayerEvent.PlaybackProgressUpdated, this.onPlaybackStatusUpdate);
+    TrackPlayer.addEventListener(TrackPlayerEvent.RemotePlay, this.onPlaybackStatusUpdate);
+    TrackPlayer.addEventListener(TrackPlayerEvent.RemotePause, this.onPlaybackStatusUpdate);
+    TrackPlayer.addEventListener(TrackPlayerEvent.RemoteNext, this.skipToNext.bind(this));
+    TrackPlayer.addEventListener(TrackPlayerEvent.RemotePrevious, this.skipToPrevious.bind(this));
+    TrackPlayer.addEventListener(TrackPlayerEvent.RemoteSeek, async (data) => {
+      const positionMillis = data.position;
+      if (typeof positionMillis === 'number') {
+        await this.seekTo(positionMillis);
+      } else {
+        console.warn('[AudioManager] RemoteSeek event received with invalid position:', data);
+      }
+    });
+    TrackPlayer.addEventListener(TrackPlayerEvent.RemoteStop, this.unloadSound.bind(this));
     this.isPlayerReady = true;
   }
 

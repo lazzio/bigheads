@@ -1,11 +1,10 @@
-import 'react-native-reanimated';
+import React from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl, ActivityIndicator } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useEffect, useState, useCallback, useMemo } from 'react'; // Added useMemo
 import { Image } from 'expo-image';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler'; // Added
 import { supabase } from '../../lib/supabase';
-import { Database } from '../../types/supabase';
 import { Episode } from '../../types/episode';
 import { formatTime } from '../../utils/commons/timeUtils';
 import { parseDuration } from '../../utils/commons/timeUtils';
@@ -36,7 +35,7 @@ type EpisodeListItemProps = {
   MaterialIcons: any; // Or a more specific type if available
 };
 
-const EpisodeListItem = ({
+const EpisodeListItem = React.memo(({
   item,
   episodeProgress,
   currentEpisodeId,
@@ -62,7 +61,7 @@ const EpisodeListItem = ({
     return 0;
   }, [totalDurationSeconds, currentPositionMillis]);
 
-  const panGesture = Gesture.Pan()
+  const panGesture = useMemo(() => Gesture.Pan()
     .onBegin(() => {
       if (totalDurationSeconds && totalDurationSeconds > 0) {
         setIsPanning(true);
@@ -70,7 +69,7 @@ const EpisodeListItem = ({
     })
     .onUpdate((event) => {
       if (progressBarWidth > 0 && totalDurationSeconds && totalDurationSeconds > 0) {
-        const x = event.x; // x position relative to the gesture detector (progress bar)
+        const x = event.x;
         const progress = Math.min(1, Math.max(0, x / progressBarWidth));
         setPanProgress(progress);
       }
@@ -95,7 +94,9 @@ const EpisodeListItem = ({
       setIsPanning(false);
       // panProgress will be ignored once isPanning is false, no need to reset explicitly
     })
-    .shouldCancelWhenOutside(true); // Cancels the gesture if the finger moves outside the component
+    .shouldCancelWhenOutside(true), 
+    [progressBarWidth, totalDurationSeconds, router, item.id]
+  );
 
   // Display pan progress if panning, otherwise actual playback progress
   const displayProgressPercentage = isPanning ? panProgress * 100 : actualProgressPercentage;
@@ -157,7 +158,19 @@ const EpisodeListItem = ({
       )}
     </TouchableOpacity>
   );
-};
+}, (prevProps, nextProps) => {
+  // Custom comparison pour éviter les re-renders inutiles
+  return (
+    prevProps.item.id === nextProps.item.id &&
+    prevProps.episodeProgress[prevProps.item.id] === nextProps.episodeProgress[nextProps.item.id] &&
+    prevProps.currentEpisodeId === nextProps.currentEpisodeId &&
+    prevProps.watchedEpisodes === nextProps.watchedEpisodes &&
+    prevProps.item.title === nextProps.item.title &&
+    prevProps.item.duration === nextProps.item.duration
+  );
+});
+
+const ITEM_HEIGHT = 80; // Ajuste selon la hauteur réelle de tes items
 
 export default function EpisodesScreen() {
   const router = useRouter();
@@ -356,6 +369,37 @@ export default function EpisodesScreen() {
     }
   }
 
+  // Mémorise les props statiques
+  const staticProps = useMemo(() => ({
+    theme,
+    styles,
+    formatTime,
+    MaterialIcons,
+  }), []);
+
+  const renderItem = useCallback(
+    ({ item }: { item: Episode }) => (
+      <EpisodeListItem
+        item={item}
+        episodeProgress={episodeProgress}
+        currentEpisodeId={currentEpisodeId}
+        watchedEpisodes={watchedEpisodes}
+        router={router}
+        {...staticProps}
+      />
+    ),
+    [episodeProgress, currentEpisodeId, watchedEpisodes, router, staticProps]
+  );
+
+  const getItemLayout = useCallback(
+    (data: any, index: number) => ({
+      length: ITEM_HEIGHT,
+      offset: ITEM_HEIGHT * index,
+      index,
+    }),
+    []
+  );
+
   if (loading) {
     return (
       <View style={componentStyle.loadingContainer}>
@@ -402,21 +446,8 @@ export default function EpisodesScreen() {
         <FlatList
           data={episodes}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            // Use the new EpisodeListItem component
-            <EpisodeListItem
-              item={item}
-              episodeProgress={episodeProgress}
-              currentEpisodeId={currentEpisodeId}
-              watchedEpisodes={watchedEpisodes}
-              theme={theme}
-              styles={styles}
-              router={router}
-              formatTime={formatTime}
-              MaterialIcons={MaterialIcons}
-            />
-          )}
-
+          renderItem={renderItem}
+          getItemLayout={getItemLayout}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -429,6 +460,12 @@ export default function EpisodesScreen() {
               progressBackgroundColor={theme.colors.secondaryBackground}
             />
           }
+          // Optimisations supplémentaires
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={10}
+          updateCellsBatchingPeriod={50}
+          initialNumToRender={10}
+          windowSize={10}
         />
       )}
     </View>

@@ -73,7 +73,7 @@ const config: ExpoConfig = {
       {
         "organization": "myops",
         "project": "bigheads-app",
-        "url": "https://sentry.io/"
+        "url": "https://sentry.io/",
       }
     ],
     [

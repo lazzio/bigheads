@@ -1,4 +1,3 @@
-import 'react-native-reanimated';
 import { useEffect, useRef, useState } from 'react';
 import { SplashScreen, useRouter, Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -12,6 +11,24 @@ import { cleanupStaleLocalPositions } from '../utils/cache/LocalPositionCleanupS
 import { getStringItem, removeStringItem } from '../utils/cache/LocalStorageService';
 import { AudioProvider } from '../components/AudioContext';
 import { theme } from '@/styles/global';
+import TrackPlayer from 'react-native-track-player';
+import { PlaybackService } from '../utils/PlaybackService';
+
+// Declare global type for TrackPlayer service registration
+declare global {
+  var __trackPlayerServiceRegistered: boolean | undefined;
+}
+
+Sentry.init({
+  debug: false,
+  tracesSampleRate: 1.0,
+});
+
+// Enregistre le PlaybackService une seule fois au démarrage
+if (!global.__trackPlayerServiceRegistered) {
+  TrackPlayer.registerPlaybackService(() => PlaybackService);
+  global.__trackPlayerServiceRegistered = true;
+}
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
