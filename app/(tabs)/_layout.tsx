@@ -279,7 +279,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   tabBarLabel: {
-    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
     marginTop: 2,
   },
 });

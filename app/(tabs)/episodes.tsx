@@ -21,6 +21,7 @@ import {
   getCurrentEpisodeId
 } from '../../utils/cache/LocalStorageService';
 import { getImageUrlFromDescription } from '../../components/GTPersons';
+import Animated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-native-reanimated';
 
 // Define Prop Types for EpisodeListItem
 type EpisodeListItemProps = {
@@ -47,8 +48,8 @@ const EpisodeListItem = React.memo(({
   MaterialIcons,
 }: EpisodeListItemProps) => {
   const [progressBarWidth, setProgressBarWidth] = useState(0);
-  const [isPanning, setIsPanning] = useState(false);
-  const [panProgress, setPanProgress] = useState(0); // Progress from 0 to 1, derived from pan
+  const panProgress = useSharedValue(0);
+  const isPanning = useSharedValue(false);
 
   const totalDurationSeconds = item.duration;
   const currentPositionMillis = episodeProgress[item.id] || 0;
@@ -64,42 +65,41 @@ const EpisodeListItem = React.memo(({
   const panGesture = useMemo(() => Gesture.Pan()
     .onBegin(() => {
       if (totalDurationSeconds && totalDurationSeconds > 0) {
-        setIsPanning(true);
+        isPanning.value = true;
       }
     })
     .onUpdate((event) => {
       if (progressBarWidth > 0 && totalDurationSeconds && totalDurationSeconds > 0) {
         const x = event.x;
         const progress = Math.min(1, Math.max(0, x / progressBarWidth));
-        setPanProgress(progress);
+        panProgress.value = progress;
       }
     })
     .onEnd((event) => {
       if (progressBarWidth > 0 && totalDurationSeconds && totalDurationSeconds > 0) {
         const x = event.x;
         const progress = Math.min(1, Math.max(0, x / progressBarWidth));
-        
         const totalDurationMillis = totalDurationSeconds * 1000;
         const seekToMillis = Math.round(progress * totalDurationMillis);
-        // Ensure seekToMillis is within bounds [0, totalDurationMillis]
         const finalSeekMillis = Math.min(totalDurationMillis, Math.max(0, seekToMillis));
-
-        // Navigate to player with startPositionMillis
-        // The player screen will need to handle this parameter
-        router.push({
+        // Utilise runOnJS pour naviguer côté JS
+        runOnJS(router.push)({
           pathname: '/player/play',
           params: { episodeId: item.id, startPositionMillis: String(finalSeekMillis) },
         });
       }
-      setIsPanning(false);
-      // panProgress will be ignored once isPanning is false, no need to reset explicitly
+      isPanning.value = false;
     })
-    .shouldCancelWhenOutside(true), 
+    .shouldCancelWhenOutside(true),
     [progressBarWidth, totalDurationSeconds, router, item.id]
   );
 
-  // Display pan progress if panning, otherwise actual playback progress
-  const displayProgressPercentage = isPanning ? panProgress * 100 : actualProgressPercentage;
+  const animatedProgressStyle = useAnimatedStyle(() => {
+    const progress = isPanning.value
+      ? panProgress.value * 100
+      : actualProgressPercentage;
+    return { width: `${progress}%` };
+  });
 
   return (
     <TouchableOpacity
@@ -132,18 +132,12 @@ const EpisodeListItem = React.memo(({
             <View
               style={styles.progressBarContainer}
               onLayout={(e) => {
-                // Set width only once or if it changes significantly to avoid re-renders
                 if (progressBarWidth === 0 && e.nativeEvent.layout.width > 0) {
-                   setProgressBarWidth(e.nativeEvent.layout.width);
+                  setProgressBarWidth(e.nativeEvent.layout.width);
                 }
               }}
             >
-              {/* Display progress: uses panProgress during gesture, otherwise actual progress */}
-              {(totalDurationSeconds && totalDurationSeconds > 0 && (currentPositionMillis >= 0 || isPanning)) ? (
-                <View style={[styles.progressBarFilled, { width: `${displayProgressPercentage}%` }]} />
-              ) : (
-                <View style={[styles.progressBarFilled, { width: `0%` }]} />
-              )}
+              <Animated.View style={[styles.progressBarFilled, animatedProgressStyle]} />
             </View>
           </GestureDetector>
         </View>
@@ -331,22 +325,31 @@ export default function EpisodesScreen() {
     }
   }
 
+  function setWatchedEpisodesIfChanged(newSet: Set<string>) {
+    setWatchedEpisodes(prev => {
+      if (
+        prev.size === newSet.size &&
+        [...prev].every(id => newSet.has(id))
+      ) {
+        return prev; // Pas de changement, on garde l'ancien Set
+      }
+      return newSet; // Changement détecté, on met à jour
+    });
+  }
+
   async function fetchWatchedEpisodes() {
     try {
-      // const userResponse = await supabase.auth.getUser(); // Old method
-      // const userId = userResponse.data.user?.id; // Old method
-
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
 
       if (sessionError) {
         console.error('Error fetching session for watched episodes:', sessionError.message);
-        setWatchedEpisodes(new Set());
+        setWatchedEpisodesIfChanged(new Set());
         return;
       }
 
       if (!sessionData.session || !sessionData.session.user) {
         console.log('Utilisateur non connecté (pas de session active ou utilisateur manquant dans la session), saut récupération épisodes vus');
-        setWatchedEpisodes(new Set()); // S\'assurer que c\'est vide si non connecté
+        setWatchedEpisodesIfChanged(new Set());
         return;
       }
       const userId = sessionData.session.user.id;
@@ -359,13 +362,12 @@ export default function EpisodesScreen() {
 
       if (error) throw error;
 
-      // Utiliser WatchedEpisodeRow si on sélectionne plus, sinon juste { episode_id: string }
       const watchedIds = new Set((data as { episode_id: string }[]).map(we => we.episode_id));
       console.log(`Récupéré ${watchedIds.size} épisodes terminés`);
-      setWatchedEpisodes(watchedIds);
+      setWatchedEpisodesIfChanged(watchedIds);
     } catch (err) {
       console.error('Erreur récupération épisodes vus:', err);
-      setWatchedEpisodes(new Set()); // Réinitialiser en cas d'erreur
+      setWatchedEpisodesIfChanged(new Set());
     }
   }
 
@@ -484,7 +486,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontFamily: 'Inter_700Bold',
     color: theme.colors.text,
   },
   offlineContainer: {
@@ -497,6 +499,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   offlineText: {
+    fontFamily: 'Inter_400Regular',
     color: theme.colors.text,
     fontSize: 12,
     marginLeft: 4,
@@ -510,6 +513,7 @@ const styles = StyleSheet.create({
     borderLeftColor: theme.colors.error,
   },
   errorText: {
+    fontFamily: 'Inter_400Regular',
     color: theme.colors.error,
     fontSize: 16,
   },
@@ -519,12 +523,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyText: {
+    fontFamily: 'Inter_400Regular',
     color: theme.colors.description,
     fontSize: 16,
     textAlign: 'center',
     marginBottom: 8,
   },
   hintText: {
+    fontFamily: 'Inter_400Regular',
     color: theme.colors.secondaryDescription,
     fontSize: 14,
     textAlign: 'center',
@@ -545,11 +551,12 @@ const styles = StyleSheet.create({
   },
   episodeTitle: {
     fontSize: 15,
-    fontWeight: 'bold',
+    fontFamily: 'Inter_700Bold',
     color: theme.colors.text,
     marginBottom: 3,
   },
   episodeDescription: {
+    fontFamily: 'Inter_400Regular',
     fontSize: 12,
     color: theme.colors.description,
     marginBottom: 5,
@@ -561,6 +568,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   episodeDuration: {
+    fontFamily: 'Inter_400Regular',
     fontSize: 12,
     color: theme.colors.description,
     marginRight: 8,
@@ -577,10 +585,5 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: theme.colors.primary,
     borderRadius: 5,
-  },
-  loadingText: {
-    color: '#fff',
-    fontSize: 16,
-    textAlign: 'center',
   },
 });

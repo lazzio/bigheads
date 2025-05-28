@@ -286,8 +286,8 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   miniTitle: {
-    fontSize: 15,
-    fontWeight: '500',
+    fontFamily: 'Inter_500Medium',
+    fontSize: 14,
     color: theme.colors.text,
   },
   miniControls: {

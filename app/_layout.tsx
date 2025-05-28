@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useFonts, Inter_400Regular, Inter_500Medium, Inter_700Bold } from '@expo-google-fonts/inter';
 import { SplashScreen, useRouter, Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -35,6 +36,12 @@ SplashScreen.preventAutoHideAsync();
 
 // Main layout component
 export default function RootLayout() {
+  let [fontsLoaded] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_700Bold,
+  });
+
   const router = useRouter();
   const [isAppReady, setIsAppReady] = useState(false);
   const [authCheckCompleted, setAuthCheckCompleted] = useState(false);

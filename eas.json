@@ -38,8 +38,16 @@
     }
   },
   "submit": {
+    "internal-draft": {
+      "android": {
+        "releaseStatus": "draft",
+        "track": "internal",
+        "serviceAccountKeyPath": "./credentials/google-play-service-account.json"
+      }
+    },
     "internal": {
       "android": {
+        "releaseStatus": "completed",
         "track": "internal",
         "serviceAccountKeyPath": "./credentials/google-play-service-account.json"
       }

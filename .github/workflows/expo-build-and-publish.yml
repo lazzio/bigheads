@@ -124,8 +124,21 @@ jobs:
           fi
           echo "✅ Service account JSON is valid"
 
-      - name: Publish to Play Store
+      - name: Submit as draft
         run: |
-          echo "📱 Submitting build ID: ${{ needs.expo-build.outputs.android_build_id }} to Play Store...";
-          eas submit --id ${{ needs.expo-build.outputs.android_build_id }} --platform android --profile internal --non-interactive --verbose 
-          echo "✅ Successfully submitted to Play Store"
+          eas submit --id ${{ needs.expo-build.outputs.android_build_id }} \
+            --platform android \
+            --profile internal-draft \
+            --non-interactive \
+            --verbose
+
+      - name: Promote to completed
+        run: |
+          # Attendre quelques minutes pour que le draft soit traité
+          sleep 120
+          
+          eas submit --id ${{ needs.expo-build.outputs.android_build_id }} \
+            --platform android \
+            --profile internal \
+            --non-interactive \
+            --verbose

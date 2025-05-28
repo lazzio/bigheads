@@ -780,10 +780,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.primaryBackground,
   },
-  loadingText: {
-    color: theme.colors.text,
-    marginTop: 16,
-  },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -806,6 +802,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   errorText: {
+    fontFamily: 'Inter_400Regular',
     color: theme.colors.error,
     fontSize: 14,
     flex: 1,
@@ -820,9 +817,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dismissButtonText: {
+    fontFamily: 'Inter_700Bold',
     color: theme.colors.text,
     fontSize: 14,
-    fontWeight: 'bold',
   },
   emptyContainer: {
     alignItems: 'center',
@@ -830,6 +827,7 @@ const styles = StyleSheet.create({
     padding: 40,
   },
   emptyText: {
+    fontFamily: 'Inter_400Regular',
     color: theme.colors.description,
     fontSize: 16,
     textAlign: 'center',
@@ -845,6 +843,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   offlineText: {
+    fontFamily: 'Inter_400Regular',
     color: theme.colors.description,
     fontSize: 14,
     marginLeft: 8,
@@ -857,9 +856,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   refreshButtonText: {
+    fontFamily: 'Inter_700Bold',
     color: theme.colors.text,
     fontSize: 14,
-    fontWeight: 'bold',
   },
   offlineIndicator: {
     flexDirection: 'row',
@@ -871,6 +870,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   offlineIndicatorText: {
+    fontFamily: 'Inter_400Regular',
     color: theme.colors.text,
     fontSize: 12,
     marginLeft: 4,
@@ -889,15 +889,18 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   episodeTitle: {
-    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 6,
     color: theme.colors.text,
     marginBottom: 4,
   },
   episodeDate: {
+    fontFamily: 'Inter_400Regular',
     fontSize: 11,
     color: theme.colors.description,
   },
   downloadedIndicator: {
+    fontFamily: 'Inter_400Regular',
     fontSize: 10,
     color: theme.colors.primary,
     marginTop: 4,
@@ -934,6 +937,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     color: theme.colors.text,
     fontSize: 8,
-    fontWeight: 'bold',
+    fontFamily: 'Inter_700Bold',
   }
 });
