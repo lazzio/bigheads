@@ -759,6 +759,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   statusText: {
+    fontFamily: 'Inter_400Regular',
     color: theme.colors.description,
     marginTop: 15,
     fontSize: 16,

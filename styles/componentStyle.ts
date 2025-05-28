@@ -25,8 +25,8 @@ export const componentStyle = StyleSheet.create({
     backgroundColor: theme.colors.darkBackground,
   },
   headerTitle: {
+    fontFamily: 'Inter_700Bold',
     fontSize: 24,
-    fontWeight: 'bold',
     color: theme.colors.text,
   },
 });
@@ -56,12 +56,13 @@ export const episodeStyle = StyleSheet.create({
     alignItems: 'center',
   },
   episodeTitle: {
-    fontSize: 15,
-    fontWeight: 'bold',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 14,
     color: theme.colors.text,
     marginBottom: 3,
   },
   episodeDescription: {
+    fontFamily: 'Inter_400Regular',
     fontSize: 12,
     color: theme.colors.description,
     marginBottom: 5,

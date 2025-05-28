@@ -87,6 +87,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   errorText: {
+    fontFamily: 'Inter_400Regular',
     color: theme.colors.error,
     fontSize: 14,
     flex: 1,
@@ -103,7 +104,7 @@ const styles = StyleSheet.create({
   dismissButtonText: {
     color: theme.colors.text,
     fontSize: 14,
-    fontWeight: 'bold',
+    fontFamily: 'Inter_700Bold',
   },
   loadingContainer: {
     flex: 1,
@@ -112,6 +113,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   loadingText: {
+    fontFamily: 'Inter_400Regular',
     color: theme.colors.text,
     marginTop: 16,
   },
@@ -121,6 +123,7 @@ const styles = StyleSheet.create({
     padding: 40,
   },
   emptyText: {
+    fontFamily: 'Inter_400Regular',
     color: theme.colors.description,
     fontSize: 16,
     textAlign: 'center',
@@ -135,6 +138,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   offlineIndicatorText: {
+    fontFamily: 'Inter_400Regular',
     color: theme.colors.text,
     fontSize: 12,
     marginLeft: 4,
@@ -147,8 +151,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   retryButtonText: {
+    fontFamily: 'Inter_500Medium',
     color: theme.colors.text,
     fontSize: 16,
-    fontWeight: '500',
   },
 });

@@ -334,7 +334,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontFamily: 'Inter_700Bold',
     color: '#fff',
     marginBottom: 20,
     textAlign: 'center',
@@ -357,6 +357,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   buttonText: {
+    fontFamily: 'Inter_400Regular',
     color: '#fff',
     fontWeight: '600',
     fontSize: 16,
@@ -366,6 +367,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   linkText: {
+    fontFamily: 'Inter_400Regular',
     color: '#0ea5e9',
     fontSize: 16,
   },
@@ -385,6 +387,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#333',
   },
   dividerText: {
+    fontFamily: 'Inter_400Regular',
     color: '#666',
     paddingHorizontal: 10,
   },
@@ -404,6 +407,6 @@ const styles = StyleSheet.create({
   googleButtonText: {
     color: '#757575',
     fontSize: 15,
-    fontWeight: '500',
+    fontFamily: 'Inter_400Regular',
   },
 });

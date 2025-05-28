@@ -20,10 +20,6 @@ export const theme = {
         gradientEnd: '#000000',
         downloadProgress: '#0e9afa',
     },
-    fonts: {
-        main: 'Arial, sans-serif',
-        heading: 'Georgia, serif',
-    },
 };
 
 export const gradientColors = [

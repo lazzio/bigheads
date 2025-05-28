@@ -67,6 +67,7 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   text: {
+    fontFamily: 'Inter_400Regular',
     color: theme.colors.text,
     fontSize: 16,
     marginTop: 16,
