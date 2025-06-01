@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
     height: 70,
     borderTopWidth: 0,
     position: 'relative',
-    marginBottom: 15,
+    marginBottom: 0,
     zIndex: 1,
   },
   tabButton: {
