@@ -12,6 +12,7 @@ import {
 import NetInfo from '@react-native-community/netinfo';
 import { supabase } from '../../lib/supabase';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as FileSystem from 'expo-file-system';
 import { useRouter } from 'expo-router';
 import { Episode } from '../../types/episode';
@@ -20,19 +21,10 @@ import { loadCachedEpisodes, saveEpisodesToCache, EPISODES_CACHE_KEY } from '../
 import { theme } from '../../styles/global';
 import { componentStyle, episodeStyle } from '../../styles/componentStyle';
 import { getUserAvatarUrl } from '../../lib/user';
-import { Image } from 'expo-image';
 import { normalizeEpisodes } from '../../utils/commons/episodeUtils';
 import { getFilename, ensureDownloadsDirectory } from '../../utils/commons/fileUtils';
 import { ErrorBanner, LoadingIndicator, EmptyState, OfflineIndicator, RetryButton } from '../../components/SharedUI';
-
-/**
- * Écran Downloads : utilise les utilitaires factorisés pour la gestion du cache, la normalisation des épisodes,
- * la gestion des fichiers téléchargés, et l'accès à l'avatar utilisateur.
- * - Utilise loadCachedEpisodes, saveEpisodesToCache (LocalStorageService)
- * - Utilise normalizeEpisodes (episodeUtils)
- * - Utilise getFilename, ensureDownloadsDirectory (fileUtils)
- * - Utilise getUserAvatarUrl (user)
- */
+import MiniPlayerSpacer from '../../components/MiniPlayerSpacer';
 
 // Types
 interface DownloadStatus {
@@ -57,7 +49,6 @@ export default function DownloadsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isOffline, setIsOffline] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState('');
   
   // References for optimization
   const isMounted = useRef(true);
@@ -75,9 +66,6 @@ export default function DownloadsScreen() {
 
     // Initialize downloads
     setupDownloads();
-
-    // Load user avatar
-    getUserAvatarUrl().then(setAvatarUrl);
 
     // Cleanup function for component unmount
     return () => {
@@ -672,9 +660,13 @@ export default function DownloadsScreen() {
   // Main display
   return (
     <View style={componentStyle.container}>
+              <LinearGradient
+                colors={[theme.colors.backgroundFirst, theme.colors.backgroundLast]}
+                style={componentStyle.container}
+              >
       <View style={componentStyle.header}>
-        <MaterialIcons name="download-for-offline" size={24} color={theme.colors.text} style={{marginRight: 8}} />
-        <Text style={componentStyle.headerTitle}>Downloads</Text>
+        {/* <MaterialIcons name="download-for-offline" size={24} color={theme.colors.text} style={{marginRight: 8}} />
+        <Text style={componentStyle.headerTitle}>Downloads</Text> */}
         <View style={styles.headerActions}>
           {isOffline && <OfflineIndicator />}
           {Platform.OS !== 'web' && Object.values(downloadStatus).some(status => status.downloaded) && (
@@ -686,12 +678,6 @@ export default function DownloadsScreen() {
             </TouchableOpacity>
           )}
         </View>
-        {!isOffline && <View>
-          <Image source={{ uri: avatarUrl }}
-            style={{ width: 40, height: 40, borderRadius: 20 }}
-            alt="User Avatar"
-          />
-        </View>}
       </View>
       
       {error && (
@@ -703,15 +689,15 @@ export default function DownloadsScreen() {
         keyExtractor={item => item.id}
         contentContainerStyle={episodes.length === 0 ? { flex: 1 } : undefined}
         renderItem={({ item: episode, index }) => (
-          <View key={episode.id} style={styles.episodeCard}>
+          <View key={episode.id} style={episodeStyle.episodeItem}>
             <TouchableOpacity 
-              style={styles.episodeInfo}
+              style={episodeStyle.episodeInfo}
               onPress={() => playEpisode(episode, index)}
               activeOpacity={0.7}
             >
               <Text style={episodeStyle.episodeTitle}>{episode.title}</Text>
               {episode.publicationDate && (
-                <Text style={styles.episodeDate}>
+                <Text style={episodeStyle.episodeDate}>
                   {new Date(episode.publicationDate).toLocaleDateString()}
                 </Text>
               )}
@@ -770,16 +756,14 @@ export default function DownloadsScreen() {
           />
         }
       />
+      <MiniPlayerSpacer />
+      </LinearGradient>
     </View>
   );
 }
 
 // Styles
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.primaryBackground,
-  },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -875,30 +859,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginLeft: 4,
   },
-  episodeCard: {
-    flexDirection: 'row',
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    backgroundColor: theme.colors.secondaryBackground,
-    borderRadius: 10,
-    marginBottom: 10,
-    alignItems: 'center',
-  },
-  episodeInfo: {
-    flex: 1,
-    marginRight: 10,
-  },
-  episodeTitle: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 6,
-    color: theme.colors.text,
-    marginBottom: 4,
-  },
-  episodeDate: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-    color: theme.colors.description,
-  },
   downloadedIndicator: {
     fontFamily: 'Inter_400Regular',
     fontSize: 10,
@@ -910,15 +870,15 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   actionButton: {
-    width: 36,
-    height: 36,
+    width: 48,
+    height: 48,
     borderRadius: 20,
     backgroundColor: theme.colors.borderColor,
     justifyContent: 'center',
     alignItems: 'center',
   },
   downloadButton: {
-    backgroundColor: theme.colors.buttonBackground,
+    backgroundColor: theme.colors.playPauseButtonBackground,
   },
   downloadingButton: {
     backgroundColor: theme.colors.downloadProgress,

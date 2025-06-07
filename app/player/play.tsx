@@ -701,8 +701,9 @@ export default function PlayerScreen() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <GestureDetector gesture={panGesture}>
         <Animated.View style={[{ flex: 1 }, animatedStyle]}>
+          {/* <View style={ styles.container }> */}
           <LinearGradient
-            colors={[currentGradientStart, theme.colors.gradientEnd]}
+            colors={[theme.colors.backgroundFirst, theme.colors.backgroundLast]}
             style={styles.container}
           >
             {error && currentEpisode && (
@@ -737,6 +738,7 @@ export default function PlayerScreen() {
             >
               <MaterialIcons name="expand-more" size={36} color="white" />
             </TouchableOpacity>
+            {/* </View> */}
           </LinearGradient>
         </Animated.View>
       </GestureDetector>
@@ -748,6 +750,7 @@ export default function PlayerScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: theme.colors.primaryBackground,
   },
   playerContainer: {
     flex: 1,

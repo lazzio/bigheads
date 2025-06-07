@@ -15,7 +15,7 @@ import { supabase } from '../lib/supabase';
 
 // --- Constants ---
 const { height } = Dimensions.get('window');
-const MINI_PLAYER_HEIGHT = 60;
+export const MINI_PLAYER_HEIGHT = 60;
 const TAB_BAR_HEIGHT = 65;
 const OFFLINE_SYNC_QUEUE_KEY = 'offline_sync_queue';
 
@@ -262,9 +262,9 @@ const styles = StyleSheet.create({
     width: '100%',
     left: 0,
     right: 0,
-    backgroundColor: theme.colors.darkerBackground,
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8,
+    backgroundColor: theme.colors.primaryBackground,
+    // borderTopLeftRadius: 8,
+    // borderTopRightRadius: 8,
     elevation: 10,
     overflow: 'hidden',
     zIndex: 1000,
@@ -274,6 +274,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
+    paddingBottom: 15,
   },
   miniAlbumArt: {
     width: 35,
