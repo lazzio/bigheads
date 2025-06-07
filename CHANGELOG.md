@@ -1,3 +1,21 @@
+## [5.0.0](https://github.com/lazzio/bigheads/-/compare/v4.0.0...v5.0.0) (2025-06-07)
+
+### ⚠ BREAKING CHANGES
+
+* change font and design v3 (#59)
+
+### Features
+
+* change font and design v3 ([#59](https://github.com/lazzio/bigheads/-/issues/59)) ([325fd96](https://github.com/lazzio/bigheads/-/commit/325fd96050545738aaa8ebf7efbda45bf12eae41))
+* change font and optimize flatlist ([30af7f1](https://github.com/lazzio/bigheads/-/commit/30af7f16d42ebb317dcca5db90d93a4ed8f7c51c))
+* new background with gradient ([9065b28](https://github.com/lazzio/bigheads/-/commit/9065b284c351e1653cfc039227945c2d3dcdda5a))
+
+### Bug Fixes
+
+* episodes page equilizer margin ([652b3d9](https://github.com/lazzio/bigheads/-/commit/652b3d990718f9486211e819a89c86ae300dcedc))
+* move down tabs ([b3f6c71](https://github.com/lazzio/bigheads/-/commit/b3f6c71e72d854eff672c94ff8d2b2f63e965a66))
+* publish app in ternal tests ([06c30f7](https://github.com/lazzio/bigheads/-/commit/06c30f717ae7a40f423053d0a213b9d993062c09))
+
 ## [4.0.0](https://github.com/lazzio/bigheads/-/compare/v3.5.1...v4.0.0) (2025-05-27)
 
 ### ⚠ BREAKING CHANGES
