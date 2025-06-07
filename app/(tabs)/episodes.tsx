@@ -407,7 +407,7 @@ export default function EpisodesScreen() {
   if (loading) {
     return (
       <View style={componentStyle.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <ActivityIndicator size="small" color={theme.colors.primary} />
       </View>
     );
   }
@@ -549,12 +549,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 4,
+    marginRight: 10,
   },
   episodeDuration: {
     fontFamily: 'Inter_400Regular',
     fontSize: 12,
     color: theme.colors.description,
-    marginRight: 8,
+    marginRight: 5,
   },
   progressBarContainer: {
     flex: 1,

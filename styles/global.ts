@@ -1,3 +1,5 @@
+import { load } from "react-native-track-player/lib/src/trackPlayer";
+
 export const theme = {
     colors: {
         primary: '#0ea5e9',
@@ -20,7 +22,7 @@ export const theme = {
         shadowColor: '#000000',
         gradientStart: '#0b133b',
         gradientEnd: '#000000',
-        downloadProgress: '#0e9afa',
+        downloadProgress: '#ffffff',
         playPauseButtonBackground: '#A55EEF',
         playPauseButtonColor: '#000000',
         primaryButtonBackground: '#ffffff',
@@ -28,6 +30,7 @@ export const theme = {
         inactiveProgressBar: '#48474E',
         backgroundFirst: '#0F2E38',
         backgroundLast: '#000000',
+        loadingSpinner: '#A55EEF',
     },
 };
 

@@ -29,7 +29,7 @@ export const ErrorBanner = ({ message, onDismiss }: { message: string, onDismiss
  */
 export const LoadingIndicator = ({ message, style }: { message?: string, style?: ViewStyle }) => (
   <View style={[styles.loadingContainer, style]}>
-    <ActivityIndicator size="small" color={theme.colors.primary} />
+    <ActivityIndicator size="small" color={theme.colors.loadingSpinner} />
     {message && <Text style={styles.loadingText}>{message}</Text>}
   </View>
 );

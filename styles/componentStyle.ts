@@ -70,12 +70,14 @@ export const episodeStyle = StyleSheet.create({
     fontSize: 14,
     color: theme.colors.text,
     marginBottom: 3,
+    paddingRight: 5,
   },
   episodeDescription: {
     fontFamily: 'Inter_400Regular',
     fontSize: 12,
     color: theme.colors.description,
     marginBottom: 5,
+    marginRight: 5,
     lineHeight: 16,
   },
   episodeImage: {
