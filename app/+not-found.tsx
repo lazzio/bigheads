@@ -53,7 +53,7 @@ export default function NotFoundScreen() {
 
   return (
     <View style={styles.container}>
-      <ActivityIndicator size="large" color={theme.colors.primary} />
+      <ActivityIndicator size="small" color={theme.colors.primary} />
     </View>
   );
 }
@@ -67,6 +67,7 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   text: {
+    fontFamily: 'Inter_400Regular',
     color: theme.colors.text,
     fontSize: 16,
     marginTop: 16,

@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontFamily: 'Inter_700Bold',
     color: '#fff',
     marginBottom: 20,
     textAlign: 'center',
@@ -152,8 +152,8 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   buttonText: {
+    fontFamily: 'Inter_700Bold',
     color: '#fff',
-    fontWeight: '600',
     fontSize: 16,
   },
   link: {
@@ -161,10 +161,12 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   linkText: {
+    fontFamily: 'Inter_400Regular',
     color: '#0ea5e9',
     fontSize: 16,
   },
   error: {
+    fontFamily: 'Inter_400Regular',
     color: '#ef4444',
     marginBottom: 10,
     textAlign: 'center',

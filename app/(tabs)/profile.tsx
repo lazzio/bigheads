@@ -1,6 +1,8 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Modal, SafeAreaView, Platform, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../../lib/supabase';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { storage } from '../../lib/storage';
@@ -13,14 +15,15 @@ export default function ProfileScreen() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [userInfo, setUserInfo] = useState<GoogleUserInfo | null>(null);
-  
+  const avatarUrl = userInfo?.avatarUrl || 'https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y';
+
   // Hook for navigation
   const router = useRouter();
 
   // Manage logout with memoization to avoid unnecessary re-creations
   const handleLogout = useCallback(async () => {
     if (isLoggingOut) return; // Éviter les déconnexions multiples
-    
+
     setShowLogoutModal(true);
   }, [isLoggingOut]);
 
@@ -28,20 +31,20 @@ export default function ProfileScreen() {
     try {
       setIsLoggingOut(true);
       setShowLogoutModal(false);
-      
+
       // Unconnecting the user
       const { data } = await supabase.auth.getSession();
-      
+
       if (data.session) {
         // Use signOut method which already handles token cleanup
         await supabase.auth.signOut();
-        
+
         // Additional cleanup in case signOut doesn't clear local storage
-        storage.removeItem('supabase.auth.token').catch(() => {});
-        storage.removeItem('supabase.auth.refreshToken').catch(() => {});
-        storage.removeItem('supabase.auth.user').catch(() => {});
+        storage.removeItem('supabase.auth.token').catch(() => { });
+        storage.removeItem('supabase.auth.refreshToken').catch(() => { });
+        storage.removeItem('supabase.auth.user').catch(() => { });
       }
-      
+
       // Redirection
       router.replace('/auth/login');
     } catch (error) {
@@ -67,41 +70,52 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={componentStyle.container}>
-        {/* En-tête */}
-        <View style={componentStyle.header}>
-          <MaterialIcons name="account-circle" size={32} color={theme.colors.primary} style={{marginRight: 8}} />
-          <Text style={componentStyle.headerTitle}>
-            Paramètres du compte
-          </Text>
-        </View>
-        
-        {/* Contenu principal */}
-        <View style={styles.content}>
-          {userInfo && userInfo.email && (
-            <View style={styles.profileCard}>
-              <MaterialIcons name="email" size={24} color={theme.colors.text} />
-              <Text style={styles.profileText}>{userInfo.email}</Text>
-            </View>
-          )}
-        </View>
-        
-        <View style={styles.stickyBottom}>
-          {/* Bouton de déconnexion */}
-          <TouchableOpacity 
-            style={styles.logoutButton} 
-            onPress={handleLogout}
-            disabled={isLoggingOut}
-          >
-            {isLoggingOut ? (
-              <ActivityIndicator size="small" color={theme.colors.text} style={styles.logoutIcon} />
-            ) : (
-              <MaterialIcons name="logout" size={24} color={theme.colors.text} style={styles.logoutIcon} />
-            )}
-            <Text style={styles.logoutText}>
-              {isLoggingOut ? 'Déconnexion...' : 'Se déconnecter'}
+        <LinearGradient
+          colors={[theme.colors.backgroundFirst, theme.colors.backgroundLast]}
+          style={componentStyle.container}
+        >
+          {/* En-tête */}
+          <View style={componentStyle.header}>
+            {/* <MaterialIcons name="account-circle" size={32} color={theme.colors.primary} style={{marginRight: 8}} /> */}
+            <Image source={{ uri: avatarUrl }}
+              style={{ width: 40, height: 40, borderRadius: 20, marginRight: 8 }}
+              contentFit="cover"
+              transition={1000}
+              alt="User Avatar"
+            />
+            <Text style={componentStyle.headerTitle}>
+              Paramètres du compte
             </Text>
-          </TouchableOpacity>
-        </View>
+          </View>
+
+          {/* Contenu principal */}
+          <View style={styles.content}>
+            {userInfo && userInfo.email && (
+              <View style={styles.profileCard}>
+                <MaterialIcons name="email" size={24} color={theme.colors.text} />
+                <Text style={styles.profileText}>{userInfo.email}</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.stickyBottom}>
+            {/* Bouton de déconnexion */}
+            <TouchableOpacity
+              style={styles.logoutButton}
+              onPress={handleLogout}
+              disabled={isLoggingOut}
+            >
+              {isLoggingOut ? (
+                <ActivityIndicator size="small" color={theme.colors.text} style={styles.logoutIcon} />
+              ) : (
+                <MaterialIcons name="logout" size={24} color={theme.colors.text} style={styles.logoutIcon} />
+              )}
+              <Text style={styles.logoutText}>
+                {isLoggingOut ? 'Déconnexion...' : 'Se déconnecter'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </LinearGradient>
       </View>
 
       {/* Modal de confirmation de déconnexion */}
@@ -120,21 +134,21 @@ export default function ProfileScreen() {
                   <MaterialIcons name="close" size={24} color={theme.colors.description} />
                 </TouchableOpacity>
               </View>
-              
+
               <Text style={styles.modalText}>
                 Êtes-vous sûr de vouloir vous déconnecter ?
               </Text>
-              
+
               <View style={styles.modalButtons}>
-                <TouchableOpacity 
-                  style={styles.cancelButton} 
+                <TouchableOpacity
+                  style={styles.cancelButton}
                   onPress={cancelLogout}
                 >
                   <Text style={styles.cancelButtonText}>Annuler</Text>
                 </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={styles.confirmButton} 
+
+                <TouchableOpacity
+                  style={styles.confirmButton}
                   onPress={confirmLogout}
                 >
                   <MaterialIcons name="logout" size={16} color={theme.colors.text} style={{ marginRight: 6 }} />
@@ -154,17 +168,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.primaryBackground,
   },
-  container: {
-    flex: 1,
-    padding: 20,
-    backgroundColor: theme.colors.primaryBackground,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginBottom: 20,
-  },
   content: {
     flex: 1,
     padding: 10,
@@ -172,7 +175,8 @@ const styles = StyleSheet.create({
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.secondaryBackground,
+    // backgroundColor: theme.colors.secondaryBackground,
+    backgroundColor: 'transparent',
     padding: 15,
     borderRadius: 8,
     marginBottom: 20,
@@ -202,7 +206,8 @@ const styles = StyleSheet.create({
   },
   stickyBottom: {
     paddingBottom: 10,
-    backgroundColor: theme.colors.secondaryBackground,
+    // backgroundColor: theme.colors.secondaryBackground,
+    backgroundColor: 'transparent',
     borderRadius: 8,
     marginTop: 'auto',
     marginBottom: Platform.OS === 'ios' ? 0 : 16,
@@ -261,7 +266,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontFamily: 'Inter_700Bold',
     color: theme.colors.text,
   },
   closeButton: {

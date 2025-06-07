@@ -4,7 +4,9 @@ import { theme } from './global';
 export const componentStyle = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.primaryBackground,
+    // backgroundColor: theme.colors.primaryBackground,
+    backgroundColor: 'transparent',
+
   },
   loadingContainer: {
     flex: 1,
@@ -22,11 +24,12 @@ export const componentStyle = StyleSheet.create({
     paddingBottom: 10,
     marginTop: 25,
     marginBottom: 0,
-    backgroundColor: theme.colors.darkBackground,
+    // backgroundColor: theme.colors.primaryBackground,
+    backgroundColor: 'transparent',
   },
   headerTitle: {
+    fontFamily: 'Inter_700Bold',
     fontSize: 24,
-    fontWeight: 'bold',
     color: theme.colors.text,
   },
 });
@@ -50,21 +53,31 @@ export const episodeStyle = StyleSheet.create({
     flexDirection: 'row',
     paddingVertical: 10,
     paddingHorizontal: 10,
-    backgroundColor: theme.colors.secondaryBackground,
-    borderRadius: 10,
-    marginBottom: 10,
+    // backgroundColor: theme.colors.secondaryBackground,
+    backgroundColor: 'transparent',
+    borderRadius: 5,
+    marginVertical: 2,
+    marginHorizontal: 5,
     alignItems: 'center',
   },
+  episodeInfo: {
+    flex: 1,
+    marginLeft: 10,
+    justifyContent: 'space-between',
+  },
   episodeTitle: {
-    fontSize: 15,
-    fontWeight: 'bold',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 14,
     color: theme.colors.text,
     marginBottom: 3,
+    paddingRight: 5,
   },
   episodeDescription: {
+    fontFamily: 'Inter_400Regular',
     fontSize: 12,
     color: theme.colors.description,
     marginBottom: 5,
+    marginRight: 5,
     lineHeight: 16,
   },
   episodeImage: {
@@ -72,6 +85,11 @@ export const episodeStyle = StyleSheet.create({
     height: 200,
     borderRadius: 10,
     marginBottom: 20,
+  },
+  episodeDate: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+    color: theme.colors.description,
   },
   episodeActions: {
     flexDirection: 'row',

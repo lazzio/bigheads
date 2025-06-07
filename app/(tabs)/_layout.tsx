@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
     height: 70,
     borderTopWidth: 0,
     position: 'relative',
-    marginBottom: 15,
+    marginBottom: 0,
     zIndex: 1,
   },
   tabButton: {
@@ -279,7 +279,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   tabBarLabel: {
-    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
     marginTop: 2,
   },
 });

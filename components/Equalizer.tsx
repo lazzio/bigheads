@@ -76,6 +76,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     height: 30,
     gap: 2,
+    marginRight: 15,
   },
   bar: {
     backgroundColor: theme.colors.primary,

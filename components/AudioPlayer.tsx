@@ -9,6 +9,7 @@ import { throttle } from 'lodash';
 import { theme } from '../styles/global';
 import { LoadingIndicator, EmptyState, RetryButton } from './SharedUI';
 import Slider from '@react-native-community/slider';
+import { Image } from 'expo-image';
 
 interface AudioPlayerProps {
   episode: Episode;
@@ -336,7 +337,7 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
 
   // Loading State UI
   if (isLoading) {
-    return <LoadingIndicator message="Chargement..." style={styles.container} />;
+    return <LoadingIndicator message="" style={styles.container} />;
   }
 
   // Error State UI
@@ -351,6 +352,16 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
   // Main Player UI
   return (
     <GestureHandlerRootView style={styles.container}>
+      {/* Episode Artwork */}
+      {episode.artwork && (
+        <Image
+          source={episode.artwork}
+          style={styles.artwork}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+        />
+      )}
+      
       <Text style={styles.title}>{episode.title}</Text>
       <Text style={styles.description} numberOfLines={2} ellipsizeMode="tail">
         {episode.description}
@@ -362,8 +373,8 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
           minimumValue={0}
           maximumValue={duration}
           step={1}
-          minimumTrackTintColor={theme.colors.primary}
-          maximumTrackTintColor={theme.colors.description}
+          minimumTrackTintColor={theme.colors.playPauseButtonBackground}
+          maximumTrackTintColor={theme.colors.inactiveProgressBar}
           thumbTintColor={isSeeking ? theme.colors.text : theme.colors.primary}
           onSlidingStart={handleSlidingStart}
           onValueChange={handleValueChange}
@@ -387,9 +398,9 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
 
          <TouchableOpacity onPress={handlePlayPause} style={[styles.button, styles.playButton]}>
           {isPlaying ? (
-            <MaterialIcons name="pause" size={52} color={theme.colors.text} />
+            <MaterialIcons name="pause" size={52} color={theme.colors.playPauseButtonColor} />
           ) : (
-            <MaterialIcons name="play-arrow" size={52} color={theme.colors.text} />
+            <MaterialIcons name="play-arrow" size={52} color={theme.colors.playPauseButtonColor} />
           )}
          </TouchableOpacity>
 
@@ -406,7 +417,7 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
       <View style={styles.additionalControls}>
         <TouchableOpacity onPress={handleSkipAuditors} style={styles.skipButton}>
           <MaterialIcons name="fast-forward" size={20} color={theme.colors.text} />
-          <Text style={styles.skipText}>Skip auditeurs</Text>
+          <Text style={styles.skipText}>Skip</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -416,7 +427,7 @@ export default function AudioPlayer({ episode, onPrevious, onNext, onComplete, o
         >
           <MaterialIcons name="timer" size={20} color={sleepTimerActive ? theme.colors.text : theme.colors.description} />
           <Text style={[styles.sleepText, sleepTimerActive && styles.sleepTextActive]}>
-            {sleepTimerActive ? 'Sleep actif' : 'Sleep timer'}
+            {sleepTimerActive ? 'Sleep' : 'Sleep'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -450,13 +461,14 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontFamily: 'Inter_700Bold',
     color: theme.colors.text,
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   description: {
-    fontSize: 14,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
     color: theme.colors.description,
     marginBottom: 25,
     textAlign: 'center',
@@ -464,17 +476,17 @@ const styles = StyleSheet.create({
   },
   progressContainer: {
     width: '100%',
-    marginBottom: 20,
+    marginBottom: 10,
   },
   timeContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
-    marginTop: 8,
   },
   timeText: {
+    fontFamily: 'Inter_400Regular',
     color: theme.colors.description,
-    fontSize: 12,
+    fontSize: 10,
   },
   controls: {
     flexDirection: 'row',
@@ -487,7 +499,7 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   playButton: {
-    backgroundColor: theme.colors.buttonBackground,
+    backgroundColor: theme.colors.playPauseButtonBackground,
     width: 76,
     height: 76,
     borderRadius: 38,
@@ -506,30 +518,34 @@ const styles = StyleSheet.create({
   skipButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.borderColor,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    gap: 6,
+    gap: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   skipText: {
+    fontFamily: 'Inter_700Bold',
     color: theme.colors.text,
     fontSize: 13,
   },
   sleepButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderColor: theme.colors.borderColor,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 16,
     borderWidth: 1,
-    gap: 6,
+    gap: 3,
   },
   sleepButtonActive: {
     backgroundColor: theme.colors.borderColor,
   },
   sleepText: {
+    fontFamily: 'Inter_700Bold',
     color: theme.colors.description,
     fontSize: 13,
   },

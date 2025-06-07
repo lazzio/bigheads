@@ -1,14 +1,18 @@
+import { load } from "react-native-track-player/lib/src/trackPlayer";
+
 export const theme = {
     colors: {
         primary: '#0ea5e9',
         secondary: '#6c757d',
-        primaryBackground: '#000000', // '#121212',
-        secondaryBackground: '#000000',
+        primaryBackground: '#0a0a0a',
+        secondaryBackground: '#1e1e1e',
+        // primaryBackground: '#2A2839',
+        // secondaryBackground: '#2A222F',
         inputBackground: '#1a1a1a',
         darkBackground: '#000000',
         darkerBackground: '#1c1c1c',
         text: '#ffffff',
-        description: '#888888',
+        description: '#99909B',
         secondaryDescription: '#666666',
         buttonBackground: '#0ea5e9',
         borderColor: '#333333',
@@ -18,11 +22,15 @@ export const theme = {
         shadowColor: '#000000',
         gradientStart: '#0b133b',
         gradientEnd: '#000000',
-        downloadProgress: '#0e9afa',
-    },
-    fonts: {
-        main: 'Arial, sans-serif',
-        heading: 'Georgia, serif',
+        downloadProgress: '#ffffff',
+        playPauseButtonBackground: '#A55EEF',
+        playPauseButtonColor: '#000000',
+        primaryButtonBackground: '#ffffff',
+        secondaryButtonBackground: '#515057',
+        inactiveProgressBar: '#48474E',
+        backgroundFirst: '#0F2E38',
+        backgroundLast: '#000000',
+        loadingSpinner: '#A55EEF',
     },
 };
 
