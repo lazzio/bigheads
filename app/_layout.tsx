@@ -234,7 +234,7 @@ export default function RootLayout() {
     <AudioProvider>
       <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'black' }}>
         <SafeAreaProvider>
-          <StatusBar style="auto" />
+          <StatusBar style="light" />
           <Stack
             screenOptions={{
               headerShown: false,
