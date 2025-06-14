@@ -1,3 +1,10 @@
+## [5.0.1](https://github.com/lazzio/bigheads/-/compare/v5.0.0...v5.0.1) (2025-06-14)
+
+### Bug Fixes
+
+* force display statusbar with hour in light mode ([b523983](https://github.com/lazzio/bigheads/-/commit/b523983e2a26be5a0b77d7f52f1e7fb9ccab3ebd))
+* force display statusbar with hour in light mode ([#60](https://github.com/lazzio/bigheads/-/issues/60)) ([6731d31](https://github.com/lazzio/bigheads/-/commit/6731d31d38720c13dafa83370578284a57275ab4))
+
 ## [5.0.0](https://github.com/lazzio/bigheads/-/compare/v4.0.0...v5.0.0) (2025-06-07)
 
 ### ⚠ BREAKING CHANGES
