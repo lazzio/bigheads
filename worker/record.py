@@ -399,17 +399,22 @@ def process_episodes(feed_data: Dict, max_episodes: int, db_manager: DatabaseMan
         count = 0
         
         for item in items:
-            if not item["title"].startswith("L'INTÉGRALE"):
+            if not validate_duration_format(item["itunes:duration"]):
                 continue
             
             if count >= max_episodes:
                 break
+            
+            if "<p>" in item["description"]:
+                description = item["description"].split("<p>", 1)[0]
+            else:
+                description = item["description"].split('\n', 1)[0] if '\n' in item["description"] else item["description"]
                 
             # Extract basic episode data
             episode = {
                 "title": item["title"],
                 "publication_date": convert_pubdate_format(item["pubDate"]),
-                "description": item["description"].split('\n', 1)[0]
+                "description": description,
             }
             
             # Get original MP3 URL
