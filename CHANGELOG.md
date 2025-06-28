@@ -1,3 +1,10 @@
+## [5.1.0](https://github.com/lazzio/bigheads/-/compare/v5.0.1...v5.1.0) (2025-06-28)
+
+### Features
+
+* autoplay on next or previous ([#62](https://github.com/lazzio/bigheads/-/issues/62)) ([0082f34](https://github.com/lazzio/bigheads/-/commit/0082f34f03adf77a8cc975c88dea1ad050c0fcb3))
+* download long episodes ([#61](https://github.com/lazzio/bigheads/-/issues/61)) ([b365a06](https://github.com/lazzio/bigheads/-/commit/b365a06daee79754bebcf503e3eab5b75454e6e9))
+
 ## [5.0.1](https://github.com/lazzio/bigheads/-/compare/v5.0.0...v5.0.1) (2025-06-14)
 
 ### Bug Fixes
