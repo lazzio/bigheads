@@ -464,6 +464,9 @@ export default function PlayerScreen() {
         if (!isMounted) return;
 
         setEpisodes(fetchedEpisodes);
+        
+        // Configurer la liste des épisodes dans l'AudioManager pour la navigation
+        audioManager.setEpisodesList(fetchedEpisodes, 0);
 
         let initialIndex: number | null = null;
         if (fetchedEpisodes.length > 0) {
@@ -505,6 +508,8 @@ export default function PlayerScreen() {
                 const cached = await loadCachedEpisodes();
                 if (cached.length > 0) {
                     setEpisodes(cached);
+                    // Configurer la liste des épisodes dans l'AudioManager pour la navigation
+                    audioManager.setEpisodesList(cached, 0);
                     const index = episodeId ? cached.findIndex(ep => ep.id === episodeId) : 0;
                     setCurrentIndex(index !== -1 ? index : 0);
                     console.warn("[PlayerScreen] Displaying cached data due to initialization error.");
@@ -603,37 +608,46 @@ export default function PlayerScreen() {
   }, [episodes, savePositionLocally, syncAllLocalPositionsToSupabase, currentIndex]);
 
   const handleNext = useCallback(async () => {
-    const status = await audioManager.getStatusAsync();
-    if (status?.isLoaded && currentEpisodeIdRef.current) {
-      const currentTimeMillis = status.currentTime * 1000;
-      console.log(`[PlayerScreen] Saving position ${currentTimeMillis}ms for ${currentEpisodeIdRef.current} before going Next`);
-      await savePositionLocally(currentEpisodeIdRef.current, currentTimeMillis);
-      // --- STOP/UNLOAD audio before next
-      await audioManager.unloadSound();
-      audioManager.stopAllSounds();
-    }
-    if (currentIndex !== null && currentIndex < episodes.length - 1) {
+    if (currentIndex !== null && currentIndex > 0) {
       console.log("[PlayerScreen] Navigating to Next episode");
-      setCurrentIndex(currentIndex - 1);
-    } else { console.log("Already at the last episode"); }
-  }, [currentIndex, episodes.length, savePositionLocally]);
+      
+      // Sauvegarder la position actuelle avant de changer
+      const status = await audioManager.getStatusAsync();
+      if (status?.isLoaded && currentEpisodeIdRef.current) {
+        const currentTimeMillis = status.currentTime * 1000;
+        await savePositionLocally(currentEpisodeIdRef.current, currentTimeMillis);
+      }
+      
+      // Utiliser la méthode skipToNext corrigée de l'AudioManager
+      const success = await audioManager.skipToNext();
+      if (success) {
+        setCurrentIndex(currentIndex - 1);
+      }
+    } else { 
+      console.log("Already at the last episode"); 
+    }
+  }, [currentIndex, audioManager, savePositionLocally]);
 
   const handlePrevious = useCallback(async () => {
-    const status = await audioManager.getStatusAsync();
-    if (status?.isLoaded && currentEpisodeIdRef.current) {
-      const currentTimeMillis = status.currentTime * 1000;
-      console.log(`[PlayerScreen] Saving position ${currentTimeMillis}ms for ${currentEpisodeIdRef.current} before going Previous`);
-      await savePositionLocally(currentEpisodeIdRef.current, currentTimeMillis);
-      // --- STOP/UNLOAD audio before previous
-      await audioManager.unloadSound();
-      audioManager.stopAllSounds();
-    }
-    if (currentIndex !== null && currentIndex > 0) {
+    if (currentIndex !== null && currentIndex < episodes.length - 1) {
       console.log("[PlayerScreen] Navigating to Previous episode");
-      setCurrentIndex(currentIndex + 1);
-      audioManager.stopAllSounds();
-    } else { console.log("Already at the first episode"); }
-  }, [currentIndex, savePositionLocally]);
+      
+      // Sauvegarder la position actuelle avant de changer
+      const status = await audioManager.getStatusAsync();
+      if (status?.isLoaded && currentEpisodeIdRef.current) {
+        const currentTimeMillis = status.currentTime * 1000;
+        await savePositionLocally(currentEpisodeIdRef.current, currentTimeMillis);
+      }
+      
+      // Utiliser la méthode skipToPrevious corrigée de l'AudioManager
+      const success = await audioManager.skipToPrevious();
+      if (success) {
+        setCurrentIndex(currentIndex + 1);
+      }
+    } else { 
+      console.log("Already at the first episode"); 
+    }
+  }, [currentIndex, episodes.length, audioManager, savePositionLocally]);
 
   const handleRetryLoad = useCallback(() => {
     console.log("[PlayerScreen] Retrying load...");
@@ -660,6 +674,14 @@ export default function PlayerScreen() {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
     return () => backHandler.remove();
   }, [router, saveCurrentPlaybackState]);
+
+  // --- Synchroniser l'index actuel dans l'AudioManager quand currentIndex change ---
+  useEffect(() => {
+    if (episodes.length > 0 && currentIndex !== null) {
+      console.log(`[PlayerScreen] Synchronizing AudioManager with current index: ${currentIndex}`);
+      audioManager.setEpisodesList(episodes, currentIndex);
+    }
+  }, [currentIndex, episodes, audioManager]);
 
   // --- Rendering Logic ---
   const currentEpisode = !loading && currentIndex !== null && episodes.length > currentIndex ? episodes[currentIndex] : null;
