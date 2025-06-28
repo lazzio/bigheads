@@ -27,7 +27,7 @@
     "internal": {
       "extends": "base",
       "environment": "production",
-      "autoIncrement": "version",
+      "autoIncrement": true,
       "distribution": "internal",
       "android": {
         "buildType": "app-bundle"
