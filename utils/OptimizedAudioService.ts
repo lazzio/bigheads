@@ -3,10 +3,11 @@ import TrackPlayer, {
   Capability,
   Event as TrackPlayerEvent,
   Track,
+  AppKilledPlaybackBehavior,
 } from 'react-native-track-player';
 import { Episode } from '../types/episode';
 import { normalizeAudioUrl } from './commons/timeUtils';
-import { savePositionLocally } from './cache/LocalStorageService';
+import { savePositionLocally, getPositionLocally } from './cache/LocalStorageService';
 import NetInfo from '@react-native-community/netinfo';
 import { supabase } from '../lib/supabase';
 
@@ -35,6 +36,7 @@ class AudioManager {
   private initialSeekPositionMillis: number | null = null;
   private isPlayerReady = false;
   private isLoadingNewSound = false;
+  private wasExplicitlyPaused = false; // Flag pour traquer si l'utilisateur a volontairement mis en pause
 
   private constructor() {}
 
@@ -47,7 +49,10 @@ class AudioManager {
 
   public async setupAudio(): Promise<void> {
     if (this.isPlayerReady) return;
-    await TrackPlayer.setupPlayer();
+    await TrackPlayer.setupPlayer({
+      // Configuration spécifique pour Android
+      autoHandleInterruptions: false, // Gérer manuellement les interruptions
+    });
     await TrackPlayer.updateOptions({
       capabilities: [
         Capability.Play,
@@ -64,14 +69,18 @@ class AudioManager {
         // Capability.SkipToPrevious,
         Capability.Stop,
       ],
+      // Options Android spécifiques
+      android: {
+        appKilledPlaybackBehavior: AppKilledPlaybackBehavior.PausePlayback, // Pause quand l'app est tuée
+      },
     });
     TrackPlayer.addEventListener(TrackPlayerEvent.PlaybackState, this.onPlaybackStatusUpdate);
     TrackPlayer.addEventListener(TrackPlayerEvent.PlaybackActiveTrackChanged, this.onTrackChanged);
     TrackPlayer.addEventListener(TrackPlayerEvent.PlaybackQueueEnded, this.onQueueEnded);
     TrackPlayer.addEventListener(TrackPlayerEvent.PlaybackError, this.onPlaybackStatusUpdate);
     TrackPlayer.addEventListener(TrackPlayerEvent.PlaybackProgressUpdated, this.onPlaybackStatusUpdate);
-    TrackPlayer.addEventListener(TrackPlayerEvent.RemotePlay, this.onPlaybackStatusUpdate);
-    TrackPlayer.addEventListener(TrackPlayerEvent.RemotePause, this.onPlaybackStatusUpdate);
+    TrackPlayer.addEventListener(TrackPlayerEvent.RemotePlay, this.onRemotePlay.bind(this));
+    TrackPlayer.addEventListener(TrackPlayerEvent.RemotePause, this.onRemotePause.bind(this));
     TrackPlayer.addEventListener(TrackPlayerEvent.RemoteNext, this.skipToNext.bind(this));
     TrackPlayer.addEventListener(TrackPlayerEvent.RemotePrevious, this.skipToPrevious.bind(this));
     TrackPlayer.addEventListener(TrackPlayerEvent.RemoteSeek, async (data) => {
@@ -83,6 +92,10 @@ class AudioManager {
       }
     });
     TrackPlayer.addEventListener(TrackPlayerEvent.RemoteStop, this.unloadSound.bind(this));
+    
+    // Gérer les interruptions audio (importantes pour Android)
+    TrackPlayer.addEventListener(TrackPlayerEvent.PlaybackMetadataReceived, this.onPlaybackStatusUpdate);
+    
     this.isPlayerReady = true;
   }
 
@@ -109,7 +122,12 @@ class AudioManager {
     const nextEpisode = this.episodesList[nextIndex];
     try {
       this.currentEpisodeIndex = nextIndex;
-      await this.loadSound(nextEpisode, 0);
+      
+      // Récupérer la position sauvegardée pour le nouvel épisode
+      const savedPositionMillis = await this.getPlaybackPosition(nextEpisode.id);
+      const initialPositionMillis = savedPositionMillis || 0;
+      
+      await this.loadSound(nextEpisode, initialPositionMillis);
       await this.play();
       return true;
     } catch (error) {
@@ -123,27 +141,26 @@ class AudioManager {
       console.warn('[AudioManager] Cannot skip to previous: No episodes list set');
       return false;
     }
-    const currentStatus = await this.getStatusAsync();
-    if (currentStatus.currentTime < 3) {
-      // Dans votre logique, "previous" signifie l'index + 1 (épisode plus ancien)
-      if (this.currentEpisodeIndex >= this.episodesList.length - 1) {
-        console.warn('[AudioManager] Cannot skip to previous: Already at first episode');
-        return false;
-      }
-      const prevIndex = this.currentEpisodeIndex + 1;
-      const prevEpisode = this.episodesList[prevIndex];
-      try {
-        this.currentEpisodeIndex = prevIndex;
-        await this.loadSound(prevEpisode, 0);
-        await this.play();
-        return true;
-      } catch (error) {
-        console.error('[AudioManager] Error skipping to previous episode:', error);
-        return false;
-      }
-    } else {
-      await this.seekTo(0);
+    // Dans votre logique, "previous" signifie l'index + 1 (épisode plus ancien)
+    if (this.currentEpisodeIndex >= this.episodesList.length - 1) {
+      console.warn('[AudioManager] Cannot skip to previous: Already at first episode');
+      return false;
+    }
+    const prevIndex = this.currentEpisodeIndex + 1;
+    const prevEpisode = this.episodesList[prevIndex];
+    try {
+      this.currentEpisodeIndex = prevIndex;
+      
+      // Récupérer la position sauvegardée pour le nouvel épisode
+      const savedPositionMillis = await this.getPlaybackPosition(prevEpisode.id);
+      const initialPositionMillis = savedPositionMillis || 0;
+      
+      await this.loadSound(prevEpisode, initialPositionMillis);
+      await this.play();
       return true;
+    } catch (error) {
+      console.error('[AudioManager] Error skipping to previous episode:', error);
+      return false;
     }
   }
 
@@ -197,6 +214,7 @@ class AudioManager {
     this.isBuffering = true;
     this.isLoadingNewSound = true;
     this.initialSeekPositionMillis = initialPositionMillis;
+    this.wasExplicitlyPaused = false; // Réinitialiser le flag pour un nouvel épisode
 
     const track: Track = {
       id: episode.id,
@@ -255,6 +273,33 @@ class AudioManager {
     this.notifyListeners({ type: 'finished', episodeId: this.currentEpisode?.id ?? null });
   };
 
+  private onRemotePlay = async () => {
+    console.log('[AudioManager] RemotePlay event received');
+    // Ne jouer que si l'utilisateur n'a pas explicitement mis en pause
+    if (this.wasExplicitlyPaused) {
+      console.log('[AudioManager] RemotePlay: Ignored - user explicitly paused playback');
+      return;
+    }
+    
+    // Ne jouer que si on a un épisode chargé et que l'utilisateur veut vraiment jouer
+    const state = await TrackPlayer.getState();
+    if (state !== TrackPlayerState.None && this.currentEpisode) {
+      console.log('[AudioManager] RemotePlay: Starting playback');
+      await this.play();
+    } else {
+      console.log('[AudioManager] RemotePlay: Ignored - no episode loaded or not ready');
+    }
+    // Mettre à jour le statut dans tous les cas
+    await this.onPlaybackStatusUpdate();
+  };
+
+  private onRemotePause = async () => {
+    console.log('[AudioManager] RemotePause event received');
+    await this.pause();
+    // Mettre à jour le statut
+    await this.onPlaybackStatusUpdate();
+  };
+
   public async getStatusAsync(): Promise<AudioStatus> {
     if (!this.isPlayerReady) {
       return {
@@ -301,6 +346,7 @@ class AudioManager {
     try {
       await TrackPlayer.play();
       this.isPlaying = true;
+      this.wasExplicitlyPaused = false; // Réinitialiser le flag quand on joue
     } catch (error) {
       console.error('[AudioManager] Error playing sound:', error);
     }
@@ -310,6 +356,7 @@ class AudioManager {
     try {
       await TrackPlayer.pause();
       this.isPlaying = false;
+      this.wasExplicitlyPaused = true; // Marquer que l'utilisateur a volontairement mis en pause
     } catch (error) {
       console.error('[AudioManager] Error pausing sound:', error);
     }
@@ -382,6 +429,54 @@ class AudioManager {
     this.initialSeekPositionMillis = null;
     this.notifyListeners({ type: 'unloaded', episodeId: null });
     this.notifyListeners({ type: 'status', position: 0, duration: 0, isPlaying: false, isBuffering: false, isLoaded: false, episodeId: null });
+  }
+
+  private async getPlaybackPosition(episodeId: string): Promise<number | null> {
+    const localPositionMillis = await getPositionLocally(episodeId);
+    if (localPositionMillis !== null) {
+      console.log(`[AudioManager] Using local position for ${episodeId}: ${localPositionMillis}ms`);
+      return localPositionMillis;
+    }
+
+    const netInfoState = await NetInfo.fetch();
+    if (netInfoState.isConnected && netInfoState.isInternetReachable) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          console.warn("[AudioManager] Cannot fetch remote position: no user logged in.");
+          return null;
+        }
+
+        console.log(`[AudioManager] No local position for ${episodeId}, checking Supabase...`);
+        const { data, error } = await supabase
+          .from('watched_episodes')
+          .select('playback_position, is_finished')
+          .eq('user_id', user.id)
+          .eq('episode_id', episodeId)
+          .maybeSingle();
+
+        if (error) {
+          console.error("[AudioManager] Supabase fetch position error:", error.message);
+        } else if (data) {
+          const remotePositionSeconds = data.is_finished ? 0 : data.playback_position;
+          if (remotePositionSeconds !== null && isFinite(remotePositionSeconds)) {
+            const remotePositionMillis = remotePositionSeconds * 1000;
+            console.log(`[AudioManager] Found remote position for ${episodeId}: ${remotePositionSeconds}s (Finished: ${data.is_finished}). Saving locally.`);
+            await savePositionLocally(episodeId, remotePositionMillis);
+            return remotePositionMillis;
+          }
+        } else {
+          console.log(`[AudioManager] No remote position found for ${episodeId} in Supabase.`);
+        }
+      } catch (err) {
+        console.error("[AudioManager] Exception fetching remote position:", err);
+      }
+    } else {
+        console.log(`[AudioManager] Offline, cannot check remote position for ${episodeId}.`);
+    }
+
+    console.log(`[AudioManager] No position found for ${episodeId}, starting from beginning.`);
+    return null;
   }
 }
 
