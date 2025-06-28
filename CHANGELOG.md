@@ -1,3 +1,12 @@
+## [5.1.1](https://github.com/lazzio/bigheads/-/compare/v5.1.0...v5.1.1) (2025-06-28)
+
+### Bug Fixes
+
+* disable restart play after alarm ([3e1f4d7](https://github.com/lazzio/bigheads/-/commit/3e1f4d7f4841144762934d9e8bfc395efed468a6))
+* new release ([#64](https://github.com/lazzio/bigheads/-/issues/64)) ([3815106](https://github.com/lazzio/bigheads/-/commit/3815106145587d17e33dec536bee7eb6498aaeb0))
+* publish app ([41e0b07](https://github.com/lazzio/bigheads/-/commit/41e0b0791857c8e4c32fd20944f2b0b0cff2ecd0))
+* restart after alarm ([#63](https://github.com/lazzio/bigheads/-/issues/63)) ([750c8a6](https://github.com/lazzio/bigheads/-/commit/750c8a676a268ec1713936a36a5269460139584e))
+
 ## [5.1.0](https://github.com/lazzio/bigheads/-/compare/v5.0.1...v5.1.0) (2025-06-28)
 
 ### Features
