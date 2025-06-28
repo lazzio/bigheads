@@ -100,7 +100,12 @@ class AudioManager {
       console.warn('[AudioManager] Cannot skip to next: No episodes list set');
       return false;
     }
-    const nextIndex = (this.currentEpisodeIndex + 1) % this.episodesList.length;
+    // Dans votre logique, "next" signifie l'index - 1 (épisode plus récent)
+    if (this.currentEpisodeIndex <= 0) {
+      console.warn('[AudioManager] Cannot skip to next: Already at last episode');
+      return false;
+    }
+    const nextIndex = this.currentEpisodeIndex - 1;
     const nextEpisode = this.episodesList[nextIndex];
     try {
       this.currentEpisodeIndex = nextIndex;
@@ -120,7 +125,12 @@ class AudioManager {
     }
     const currentStatus = await this.getStatusAsync();
     if (currentStatus.currentTime < 3) {
-      const prevIndex = (this.currentEpisodeIndex - 1 + this.episodesList.length) % this.episodesList.length;
+      // Dans votre logique, "previous" signifie l'index + 1 (épisode plus ancien)
+      if (this.currentEpisodeIndex >= this.episodesList.length - 1) {
+        console.warn('[AudioManager] Cannot skip to previous: Already at first episode');
+        return false;
+      }
+      const prevIndex = this.currentEpisodeIndex + 1;
       const prevEpisode = this.episodesList[prevIndex];
       try {
         this.currentEpisodeIndex = prevIndex;
