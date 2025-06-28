@@ -51,7 +51,22 @@ jobs:
       - name: Build Android Preview
         id: build
         run: |
-          BUILD_JSON=$(eas build --platform android --profile internal --non-interactive --json)
+          # Tentative 1 : Avec cache
+          echo "🚀 Attempting build with cache..."
+          if BUILD_JSON=$(eas build --platform android --profile internal --non-interactive --json 2>&1); then
+            if echo "$BUILD_JSON" | grep -q "Cache service responded with 503"; then
+              echo "⚠️ Cache service unavailable, retrying with no-cache profile..."
+              BUILD_JSON=$(eas build --platform android --profile internal-no-cache --non-interactive --json)
+              echo "✅ Build successful with no-cache profile"
+            else
+              echo "✅ Build successful with cache"
+            fi
+          else
+            echo "⚠️ Build failed, retrying with no-cache profile..."
+            BUILD_JSON=$(eas build --platform android --profile internal-no-cache --non-interactive --json)
+            echo "✅ Build successful with no-cache profile"
+          fi
+          
           BUILD_ID=$(echo $BUILD_JSON | jq -r '.[0].id')
           echo "Build ID: $BUILD_ID"
           echo "buildId=$BUILD_ID" >> "$GITHUB_OUTPUT"
@@ -124,19 +139,9 @@ jobs:
           fi
           echo "✅ Service account JSON is valid"
 
-      - name: Submit as draft
+      - name: Submit to Play Store
         run: |
-          eas submit --id ${{ needs.expo-build.outputs.android_build_id }} \
-            --platform android \
-            --profile internal-draft \
-            --non-interactive \
-            --verbose
-
-      - name: Promote to completed
-        run: |
-          # Attendre quelques minutes pour que le draft soit traité
-          sleep 120
-          
+          echo "🚀 Submitting build to Google Play Store (Internal Testing)"
           eas submit --id ${{ needs.expo-build.outputs.android_build_id }} \
             --platform android \
             --profile internal \

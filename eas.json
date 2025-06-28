@@ -27,6 +27,18 @@
     "internal": {
       "extends": "base",
       "environment": "production",
+      "autoIncrement": "version",
+      "distribution": "internal",
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EAS_NO_VCS": "1"
+      }
+    },
+    "internal-no-cache": {
+      "extends": "base",
+      "environment": "production",
       "autoIncrement": true,
       "distribution": "internal",
       "android": {
@@ -34,6 +46,9 @@
       },
       "env": {
         "EAS_NO_VCS": "1"
+      },
+      "cache": {
+        "disabled": true
       }
     }
   },
