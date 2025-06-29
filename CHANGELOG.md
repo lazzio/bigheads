@@ -1,3 +1,9 @@
+## [5.1.3](https://github.com/lazzio/bigheads/-/compare/v5.1.2...v5.1.3) (2025-06-29)
+
+### Bug Fixes
+
+* new release 3 ([#66](https://github.com/lazzio/bigheads/-/issues/66)) ([f8a297c](https://github.com/lazzio/bigheads/-/commit/f8a297c0b7e430b428ee87135cfc2cc09c84655b))
+
 ## [5.1.2](https://github.com/lazzio/bigheads/-/compare/v5.1.1...v5.1.2) (2025-06-28)
 
 ### Bug Fixes
