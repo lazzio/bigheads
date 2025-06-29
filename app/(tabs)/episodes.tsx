@@ -148,7 +148,7 @@ const EpisodeListItem = React.memo(({
       {currentEpisodeId === item.id ? (
         <MusicEqualizer />
       ) : watchedEpisodes.has(item.id) ? (
-        <MaterialIcons name="check-circle" size={30} color={theme.colors.primary} />
+        <MaterialIcons name="check-circle" size={48} color={theme.colors.playPauseButtonBackground} />
       ) : (
         <MaterialIcons name="play-circle" size={48} color={theme.colors.playPauseButtonBackground} />
       )}
