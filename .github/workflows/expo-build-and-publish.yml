@@ -1,9 +1,12 @@
 name: Build Android Preview
 
+permissions:
+  contents: read
+  actions: write
+
 on:
   release:
     types: [published] # Trigger when a release is published
-
 
 jobs:
   expo-build:
@@ -51,22 +54,7 @@ jobs:
       - name: Build Android Preview
         id: build
         run: |
-          # Tentative 1 : Avec cache
-          echo "🚀 Attempting build with cache..."
-          if BUILD_JSON=$(eas build --platform android --profile internal --non-interactive --json 2>&1); then
-            if echo "$BUILD_JSON" | grep -q "Cache service responded with 503"; then
-              echo "⚠️ Cache service unavailable, retrying with no-cache profile..."
-              BUILD_JSON=$(eas build --platform android --profile internal-no-cache --non-interactive --json)
-              echo "✅ Build successful with no-cache profile"
-            else
-              echo "✅ Build successful with cache"
-            fi
-          else
-            echo "⚠️ Build failed, retrying with no-cache profile..."
-            BUILD_JSON=$(eas build --platform android --profile internal-no-cache --non-interactive --json)
-            echo "✅ Build successful with no-cache profile"
-          fi
-          
+          BUILD_JSON=$(eas build --platform android --profile internal --non-interactive --json)
           BUILD_ID=$(echo $BUILD_JSON | jq -r '.[0].id')
           echo "Build ID: $BUILD_ID"
           echo "buildId=$BUILD_ID" >> "$GITHUB_OUTPUT"
@@ -125,19 +113,6 @@ jobs:
         run: |
           echo '${{ secrets.ANDROID_PLAY_STORE_SERVICE_ACCOUNT_JSON }}' > ./credentials/google-play-service-account.json
           echo "✅ Service account JSON file created"
-          
-      - name: Verify Service Account JSON
-        run: |
-          if [ ! -f "./credentials/google-play-service-account.json" ]; then
-            echo "❌ Service account JSON file not found"
-            exit 1
-          fi
-          # Vérifier que le JSON est valide
-          if ! jq empty ./credentials/google-play-service-account.json; then
-            echo "❌ Invalid JSON in service account file"
-            exit 1
-          fi
-          echo "✅ Service account JSON is valid"
 
       - name: Submit to Play Store
         run: |
