@@ -22,6 +22,7 @@ import {
   getCurrentEpisodeId
 } from '../../utils/cache/LocalStorageService';
 import { getImageUrlFromDescription } from '../../components/GTPersons';
+import { getDownloadedEpisodes } from '../../utils/commons/downloadUtils';
 import Animated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-native-reanimated';
 import MiniPlayerSpacer from '../../components/MiniPlayerSpacer';
 
@@ -229,10 +230,38 @@ export default function EpisodesScreen() {
       let episodesToSet: Episode[] = [];
 
       if (offline) {
+        // En mode hors-ligne, charger d'abord le cache
         const cachedEpisodes = await loadCachedEpisodes();
-        if (cachedEpisodes.length > 0) {
+        
+        // Ensuite, charger aussi les épisodes téléchargés
+        const downloadedEpisodes = await getDownloadedEpisodes(cachedEpisodes);
+        
+        // Fusionner les épisodes du cache avec les épisodes téléchargés
+        const episodeMap = new Map<string, Episode>();
+        
+        // Ajouter d'abord les épisodes du cache
+        cachedEpisodes.forEach(ep => {
+          episodeMap.set(ep.id, ep);
+        });
+        
+        // Ajouter ou mettre à jour avec les épisodes téléchargés
+        downloadedEpisodes.forEach((ep: Episode) => {
+          if (episodeMap.has(ep.id)) {
+            // Fusionner avec l'épisode existant du cache
+            const cachedEp = episodeMap.get(ep.id);
+            episodeMap.set(ep.id, { ...cachedEp, ...ep });
+          } else {
+            // Ajouter le nouvel épisode téléchargé
+            episodeMap.set(ep.id, ep);
+          }
+        });
+        
+        episodesToSet = Array.from(episodeMap.values());
+        
+        // Augmenter avec les artworks si nécessaire
+        if (episodesToSet.length > 0) {
           let needsRecache = false;
-          const augmentedEpisodes = cachedEpisodes.map(ep => {
+          const augmentedEpisodes = episodesToSet.map(ep => {
             if (typeof ep.artwork === 'undefined' && ep.description) {
               needsRecache = true;
               return { ...ep, artwork: getImageUrlFromDescription(ep.description) };
@@ -251,7 +280,7 @@ export default function EpisodesScreen() {
           }
           setError(null);
         } else {
-          setError(null);
+          setError('Aucun épisode disponible en mode hors-ligne');
         }
       } else {
         // Try cache first even if online
