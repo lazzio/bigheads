@@ -1,3 +1,9 @@
+## [5.1.4](https://github.com/lazzio/bigheads/-/compare/v5.1.3...v5.1.4) (2025-08-07)
+
+### Bug Fixes
+
+* offline access ([#67](https://github.com/lazzio/bigheads/-/issues/67)) ([1333038](https://github.com/lazzio/bigheads/-/commit/1333038327061ef7db2506fb199e21a55dd92929))
+
 ## [5.1.3](https://github.com/lazzio/bigheads/-/compare/v5.1.2...v5.1.3) (2025-06-29)
 
 ### Bug Fixes
