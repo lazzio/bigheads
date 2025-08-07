@@ -5,11 +5,13 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { supabase } from '../lib/supabase';
+import { storage } from '../lib/storage';
 import { initEpisodeNotificationService, setupNotificationListener, syncPushTokenAfterLogin } from '../utils/notifications/EpisodeNotificationService';
 import NetInfo from '@react-native-community/netinfo';
 import * as Sentry from '@sentry/react-native';
 import { cleanupStaleLocalPositions } from '../utils/cache/LocalPositionCleanupService';
 import { getStringItem, removeStringItem } from '../utils/cache/LocalStorageService';
+import { checkLocalAuthSession } from '../utils/commons/authUtils';
 import { AudioProvider } from '../components/AudioContext';
 import { theme } from '@/styles/global';
 import TrackPlayer from 'react-native-track-player';
@@ -56,117 +58,152 @@ export default function RootLayout() {
       let redirectPath: '/auth/login' | '/(tabs)' = '/auth/login'; // Default redirect path with specific type
 
       try {
-        // 1. Setup onAuthStateChange listener (always active)
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-          console.log('[RootLayout] Auth state changed:', event, !!session);
-          if (!appMounted.current || !isAppReady) { // Guard with isAppReady
-            console.log('[RootLayout] Auth state change ignored: app not ready or unmounted.');
-            return;
-          }
+        // Vérifier d'abord l'état de la connectivité
+        const networkState = await NetInfo.fetch();
+        const isOnline = networkState.isConnected && networkState.isInternetReachable;
+        
+        console.log('[RootLayout] Network status:', isOnline ? 'Online' : 'Offline');
 
-          if (event === 'SIGNED_IN') {
-            console.log('[RootLayout] Auth event: SIGNED_IN. Syncing token.');
-            await syncPushTokenAfterLogin();
-            // Potentially navigate to tabs if coming from a login/register screen
-            // Check current route to avoid unnecessary navigation if already in tabs
-            // Conditional navigation to /(tabs)
-            router.replace('/(tabs)');
-          } else if (event === 'SIGNED_OUT') {
-            console.log('[RootLayout] Auth event: SIGNED_OUT. Redirecting to login.');
-            router.replace('/auth/login');
-          }
-        });
-        authSubscriptionRef.current = subscription;
+        // 1. Setup onAuthStateChange listener (seulement si en ligne)
+        if (isOnline) {
+          const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+            console.log('[RootLayout] Auth state changed:', event, !!session);
+            if (!appMounted.current || !isAppReady) { // Guard with isAppReady
+              console.log('[RootLayout] Auth state change ignored: app not ready or unmounted.');
+              return;
+            }
 
-        // 2. Check initial session state for the very first load
-        const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
-
-        if (!appMounted.current) return;
-
-        if (sessionError) {
-          console.error('[RootLayout] Error fetching initial session:', sessionError.message);
-          Sentry.captureException(sessionError);
-          redirectPath = '/auth/login';
-        } else if (initialSession) {
-          console.log('[RootLayout] Initial session found. Proceeding with authenticated app init.');
-          await syncPushTokenAfterLogin(); // Sync for existing session
-          redirectPath = '/(tabs)'; // Set redirect path for authenticated user
-
-          // Initialiser le service de notification (et autres services authentifiés)
-          try {
-            await initEpisodeNotificationService();
-            setupNotificationListener((episodeId) => {
-              console.log(`[NotificationHandler] Received notification for episode ${episodeId}`);
-              const navigateToPlayer = () => {
-                if (!appMounted.current || !isAppReady) { // Guard with isAppReady
-                  console.log('[NotificationHandler] Navigation to player ignored: app not ready or unmounted.');
-                  return;
-                }
-                console.log('[NotificationHandler] Navigating to player tab');
-                router.navigate({
-                  pathname: '/player/play',
-                  params: { episodeId: episodeId, source: 'notification', timestamp: Date.now() }
-                });
-              };
-
-              if (appMounted.current && isAppReady) {
-                navigateToPlayer();
-              } else {
-                console.log('[NotificationHandler] App not ready or component unmounted, queuing navigation...');
-                const readyCheckInterval = setInterval(() => {
-                  if (!appMounted.current) {
-                    clearInterval(readyCheckInterval);
-                    return;
-                  }
-                  if (isAppReady) {
-                    console.log('[NotificationHandler] App now ready, navigating...');
-                    clearInterval(readyCheckInterval);
-                    navigateToPlayer();
-                  }
-                }, 200);
-                setTimeout(() => {
-                  if (appMounted.current) clearInterval(readyCheckInterval);
-                }, 10000); // Timeout
-              }
-            });
-
-            const checkLastRequestedEpisode = async () => {
-              if (!appMounted.current || !isAppReady) return; // Guard with isAppReady
-              try {
-                const lastEpisodeId = await getStringItem('lastRequestedEpisodeId');
-                if (lastEpisodeId) {
-                  console.log(`[Layout] Found last requested episode ${lastEpisodeId}, clearing and navigating`);
-                  await removeStringItem('lastRequestedEpisodeId');
-                  router.navigate({
-                    pathname: '/player/play',
-                    params: { episodeId: lastEpisodeId, source: 'notification', timestamp: Date.now() }
-                  });
-                }
-              } catch (error) { console.error('[Layout] Error checking last requested episode:', error); }
-            };
-            if (appMounted.current) setTimeout(checkLastRequestedEpisode, 1000);
-            
-            console.log('[RootLayout] Episode notification service initialized for authenticated user.');
-          } catch (notificationError) {
-            console.error('[RootLayout] Error initializing episode notification service:', notificationError);
-            Sentry.captureException(notificationError);
-          }
-
-          netInfoUnsubscribeRef.current = NetInfo.addEventListener(state => {
-            if (state.isConnected && state.isInternetReachable) {
-              console.log('Device is online, syncing playback state...');
+            if (event === 'SIGNED_IN') {
+              console.log('[RootLayout] Auth event: SIGNED_IN. Syncing token.');
+              await syncPushTokenAfterLogin();
+              // Potentially navigate to tabs if coming from a login/register screen
+              // Check current route to avoid unnecessary navigation if already in tabs
+              // Conditional navigation to /(tabs)
+              router.replace('/(tabs)');
+            } else if (event === 'SIGNED_OUT') {
+              console.log('[RootLayout] Auth event: SIGNED_OUT. Redirecting to login.');
+              router.replace('/auth/login');
             }
           });
-          performedAuthenticatedInit = true;
+          authSubscriptionRef.current = subscription;
+        }
+
+        // 2. Gestion différente selon l'état de connexion
+        if (isOnline) {
+          // Mode en ligne : vérifier la session avec Supabase
+          try {
+            const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
+
+            if (!appMounted.current) return;
+
+            if (sessionError) {
+              console.error('[RootLayout] Error fetching initial session:', sessionError.message);
+              Sentry.captureException(sessionError);
+              redirectPath = '/auth/login';
+            } else if (initialSession) {
+              console.log('[RootLayout] Initial session found. Proceeding with authenticated app init.');
+              await syncPushTokenAfterLogin(); // Sync for existing session
+              redirectPath = '/(tabs)'; // Set redirect path for authenticated user
+
+              // Initialiser le service de notification (et autres services authentifiés)
+              try {
+                await initEpisodeNotificationService();
+                setupNotificationListener((episodeId) => {
+                  console.log(`[NotificationHandler] Received notification for episode ${episodeId}`);
+                  const navigateToPlayer = () => {
+                    if (!appMounted.current || !isAppReady) { // Guard with isAppReady
+                      console.log('[NotificationHandler] Navigation to player ignored: app not ready or unmounted.');
+                      return;
+                    }
+                    console.log('[NotificationHandler] Navigating to player tab');
+                    router.navigate({
+                      pathname: '/player/play',
+                      params: { episodeId: episodeId, source: 'notification', timestamp: Date.now() }
+                    });
+                  };
+
+                  if (appMounted.current && isAppReady) {
+                    navigateToPlayer();
+                  } else {
+                    console.log('[NotificationHandler] App not ready or component unmounted, queuing navigation...');
+                    const readyCheckInterval = setInterval(() => {
+                      if (!appMounted.current) {
+                        clearInterval(readyCheckInterval);
+                        return;
+                      }
+                      if (isAppReady) {
+                        console.log('[NotificationHandler] App now ready, navigating...');
+                        clearInterval(readyCheckInterval);
+                        navigateToPlayer();
+                      }
+                    }, 200);
+                    setTimeout(() => {
+                      if (appMounted.current) clearInterval(readyCheckInterval);
+                    }, 10000); // Timeout
+                  }
+                });
+
+                const checkLastRequestedEpisode = async () => {
+                  if (!appMounted.current || !isAppReady) return; // Guard with isAppReady
+                  try {
+                    const lastEpisodeId = await getStringItem('lastRequestedEpisodeId');
+                    if (lastEpisodeId) {
+                      console.log(`[Layout] Found last requested episode ${lastEpisodeId}, clearing and navigating`);
+                      await removeStringItem('lastRequestedEpisodeId');
+                      router.navigate({
+                        pathname: '/player/play',
+                        params: { episodeId: lastEpisodeId, source: 'notification', timestamp: Date.now() }
+                      });
+                    }
+                  } catch (error) { console.error('[Layout] Error checking last requested episode:', error); }
+                };
+                if (appMounted.current) setTimeout(checkLastRequestedEpisode, 1000);
+                
+                console.log('[RootLayout] Episode notification service initialized for authenticated user.');
+              } catch (notificationError) {
+                console.error('[RootLayout] Error initializing episode notification service:', notificationError);
+                Sentry.captureException(notificationError);
+              }
+
+              netInfoUnsubscribeRef.current = NetInfo.addEventListener(state => {
+                if (state.isConnected && state.isInternetReachable) {
+                  console.log('Device is online, syncing playback state...');
+                }
+              });
+              performedAuthenticatedInit = true;
+            } else {
+              console.log('[RootLayout] No initial session. Setting redirect to login.');
+              redirectPath = '/auth/login';
+            }
+          } catch (sessionFetchError) {
+            console.error('[RootLayout] Failed to fetch session, treating as offline mode:', sessionFetchError);
+            // Si on n'arrive pas à récupérer la session mais qu'on devrait être en ligne,
+            // vérifier s'il y a une session locale stockée
+            const hasLocalSession = await checkLocalSession();
+            redirectPath = hasLocalSession ? '/(tabs)' : '/auth/login';
+          }
         } else {
-          console.log('[RootLayout] No initial session. Setting redirect to login.');
-          redirectPath = '/auth/login';
+          // Mode hors ligne : vérifier s'il y a une session locale stockée
+          console.log('[RootLayout] Offline mode: checking for local session...');
+          const hasLocalSession = await checkLocalSession();
+          
+          if (hasLocalSession) {
+            console.log('[RootLayout] Local session found, allowing access to app in offline mode.');
+            redirectPath = '/(tabs)';
+            performedAuthenticatedInit = true; // Considérer comme initialisé pour l'accès hors ligne
+          } else {
+            console.log('[RootLayout] No local session found, redirecting to login.');
+            redirectPath = '/auth/login';
+          }
         }
 
       } catch (error) {
         console.error('[RootLayout] General initialization error:', error);
         Sentry.captureException(error);
-        redirectPath = '/auth/login'; // Fallback redirect
+        
+        // En cas d'erreur, vérifier quand même s'il y a une session locale
+        const hasLocalSession = await checkLocalSession();
+        redirectPath = hasLocalSession ? '/(tabs)' : '/auth/login';
       } finally {
         if (appMounted.current) {
           setInitialRedirectPath(redirectPath);
@@ -179,6 +216,11 @@ export default function RootLayout() {
           }
         }
       }
+    };
+
+    // Fonction helper pour vérifier la session locale
+    const checkLocalSession = async (): Promise<boolean> => {
+      return await checkLocalAuthSession();
     };
 
     initializeApp();

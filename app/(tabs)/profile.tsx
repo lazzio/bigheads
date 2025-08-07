@@ -6,19 +6,34 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../../lib/supabase';
 import MaterialIcons from '@react-native-vector-icons/material-icons';
 import { storage } from '../../lib/storage';
+import NetInfo from '@react-native-community/netinfo';
 import { theme } from '../../styles/global';
 import { componentStyle } from '../../styles/componentStyle';
 import { getGoogleUserInfo, GoogleUserInfo } from '../../lib/user';
+import { OfflineIndicator } from '../../components/SharedUI';
+import { clearLocalAuthSession } from '../../utils/commons/authUtils';
 
 export default function ProfileScreen() {
   // State
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [userInfo, setUserInfo] = useState<GoogleUserInfo | null>(null);
+  const [isOffline, setIsOffline] = useState(false);
   const avatarUrl = userInfo?.avatarUrl || 'https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y';
 
   // Hook for navigation
   const router = useRouter();
+
+  // Check network connectivity
+  const checkNetworkStatus = useCallback(async () => {
+    try {
+      const state = await NetInfo.fetch();
+      setIsOffline(!state.isConnected);
+    } catch (error) {
+      console.warn('Error checking network status:', error);
+      setIsOffline(false);
+    }
+  }, []);
 
   // Manage logout with memoization to avoid unnecessary re-creations
   const handleLogout = useCallback(async () => {
@@ -32,18 +47,30 @@ export default function ProfileScreen() {
       setIsLoggingOut(true);
       setShowLogoutModal(false);
 
-      // Unconnecting the user
-      const { data } = await supabase.auth.getSession();
+      // Check if we're online for proper logout
+      const networkState = await NetInfo.fetch();
+      const isOnline = networkState.isConnected && networkState.isInternetReachable;
 
-      if (data.session) {
-        // Use signOut method which already handles token cleanup
-        await supabase.auth.signOut();
+      if (isOnline) {
+        // Online logout: use Supabase signOut
+        const { data } = await supabase.auth.getSession();
 
-        // Additional cleanup in case signOut doesn't clear local storage
-        storage.removeItem('supabase.auth.token').catch(() => { });
-        storage.removeItem('supabase.auth.refreshToken').catch(() => { });
-        storage.removeItem('supabase.auth.user').catch(() => { });
+        if (data.session) {
+          // Use signOut method which already handles token cleanup
+          await supabase.auth.signOut();
+        }
+      } else {
+        // Offline logout: just clear local data
+        console.log('[Profile] Performing offline logout');
       }
+
+      // Clear all local authentication data in both cases
+      await clearLocalAuthSession();
+
+      // Additional cleanup for any remaining Supabase tokens
+      storage.removeItem('supabase.auth.token').catch(() => { });
+      storage.removeItem('supabase.auth.refreshToken').catch(() => { });
+      storage.removeItem('supabase.auth.user').catch(() => { });
 
       // Redirection
       router.replace('/auth/login');
@@ -61,11 +88,20 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     const fetchUser = async () => {
-      const user = await getGoogleUserInfo();
-      setUserInfo(user);
+      // Check network status first
+      await checkNetworkStatus();
+      
+      // Try to get user info (this should work offline too if cached)
+      try {
+        const user = await getGoogleUserInfo();
+        setUserInfo(user);
+      } catch (error) {
+        console.warn('[Profile] Error fetching user info:', error);
+        // In offline mode, we might not have user info, that's ok
+      }
     };
     fetchUser();
-  }, []);
+  }, [checkNetworkStatus]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -86,6 +122,11 @@ export default function ProfileScreen() {
             <Text style={componentStyle.headerTitle}>
               Paramètres du compte
             </Text>
+            {isOffline && (
+              <View style={{ marginLeft: 'auto' }}>
+                <OfflineIndicator />
+              </View>
+            )}
           </View>
 
           {/* Contenu principal */}
@@ -94,6 +135,15 @@ export default function ProfileScreen() {
               <View style={styles.profileCard}>
                 <MaterialIcons name="email" size={24} color={theme.colors.text} />
                 <Text style={styles.profileText}>{userInfo.email}</Text>
+              </View>
+            )}
+
+            {isOffline && (
+              <View style={styles.offlineNotice}>
+                <MaterialIcons name="info-outline" size={20} color={theme.colors.description} />
+                <Text style={styles.offlineNoticeText}>
+                  Certaines fonctionnalités peuvent être limitées en mode hors-ligne.
+                </Text>
               </View>
             )}
           </View>
@@ -186,6 +236,21 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     fontSize: 16,
     fontWeight: '500',
+  },
+  offlineNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 193, 7, 0.1)',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 20,
+    gap: 8,
+  },
+  offlineNoticeText: {
+    color: theme.colors.description,
+    fontSize: 14,
+    flex: 1,
+    lineHeight: 18,
   },
   logoutButton: {
     flexDirection: 'row',
