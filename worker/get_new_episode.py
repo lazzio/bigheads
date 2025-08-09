@@ -12,6 +12,7 @@ from google.cloud import storage
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 from mutagen.mp3 import MP3
+from get_podlink_rss_url import get_rss_from_podlink
 
 """
 Logger Configuration
@@ -479,9 +480,13 @@ def main():
         # if not rss_link:
         #     logger.error("Could not find RSS link")
         #     return
-            
+        rss_url = get_rss_from_podlink(AUDIO_SOURCE_URL)
+        if not rss_url:
+            logger.error("Could not find RSS URL")
+            return
+
         # Get and parse feed
-        xml_content = fetcher.get_feed_content(AUDIO_SOURCE_URL)
+        xml_content = fetcher.get_feed_content(rss_url)
         if not xml_content:
             logger.error("Could not fetch feed content")
             return
