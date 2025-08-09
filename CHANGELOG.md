@@ -1,3 +1,9 @@
+## [5.1.5](https://github.com/lazzio/bigheads/-/compare/v5.1.4...v5.1.5) (2025-08-09)
+
+### Bug Fixes
+
+* get new rss url ([#68](https://github.com/lazzio/bigheads/-/issues/68)) ([cebd62e](https://github.com/lazzio/bigheads/-/commit/cebd62e5e0dada79d24ee0dd63119454a33f00f1))
+
 ## [5.1.4](https://github.com/lazzio/bigheads/-/compare/v5.1.3...v5.1.4) (2025-08-07)
 
 ### Bug Fixes
